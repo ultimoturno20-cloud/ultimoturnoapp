@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 16px;
+      color: #1f1f1f;
+    }
+    .status {
+      white-space: pre-line;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+    .bar {
+      width: 100%;
+      height: 10px;
+      background: #e5e5e5;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: #1a73e8;
+      transition: width 0.2s ease;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .secondary {
+      background: #f1f3f4;
+      color: #1f1f1f;
+    }
+  </style>
+</head>
+<body>
+  <div id="status" class="status">Preparando exportacion...</div>
+  <div class="bar"><div id="fill" class="fill"></div></div>
+  <canvas id="gridCanvas" style="display:none;"></canvas>
+  <div class="actions">
+    <button class="secondary" onclick="google.script.host.close()">Cerrar</button>
+  </div>
+
+  <script>
+    const exportConfig = <?= exportConfigJson ?>;
+    const statusEl = document.getElementById('status');
+    const fillEl = document.getElementById('fill');
+    const canvas = document.getElementById('gridCanvas');
+    const ctx = canvas.getContext('2d');
+
+    start();
+
+    function start() {
+      google.script.run
+        .withSuccessHandler(runExport)
+        .withFailureHandler(showError)
+        .getReadyImageGridPayload(exportConfig);
+    }
+
+    async function runExport(payload) {
+      const batches = payload.batches || [];
+      if (!batches.length) {
+        showError(new Error('No se encontraron URLs para exportar.'));
+        return;
+      }
+
+      let saved = 0;
+      let skipped = 0;
+      let folderUrl = '';
+
+      for (let i = 0; i < batches.length; i++) {
+        updateProgress(i, batches.length, `Descargando imagenes ${i + 1} de ${batches.length}...`);
+        const batchData = await runServer('getReadyImageGridBatchData', exportConfig, i);
+        updateProgress(i, batches.length, `Renderizando grid ${i + 1} de ${batches.length}...`);
+        const result = await renderBatchToCanvas(batchData, payload);
+        skipped += result.skipped;
+
+        const dataUrl = canvas.toDataURL('image/png');
+        const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const fileName = `${payload.filePrefix}-${timestamp}.png`;
+
+        updateProgress(i + 0.5, batches.length, `Guardando PNG ${i + 1} de ${batches.length} en Drive...`);
+        const saveResult = await runServer(
+          'saveGeneratedReadyGridPng',
+          fileName,
+          dataUrl,
+          payload.outputFolderName,
+          payload.rowNumbers
+        );
+        folderUrl = saveResult.folderUrl || folderUrl;
+        saved++;
+      }
+
+      fillEl.style.width = '100%';
+      statusEl.textContent =
+        `Exportacion completa.\n` +
+        `PNG creados: ${saved}\n` +
+        `Imagenes omitidas: ${skipped}\n` +
+        `Carpeta: ${folderUrl}`;
+    }
+
+    async function renderBatchToCanvas(batchData, payload) {
+      const columns = Number(payload.columns) || 5;
+      const rows = Number(payload.rows) || 6;
+      const outerMargin = Number(payload.outerMargin) || 0;
+      const cellGap = Number(payload.cellGap) || 0;
+      const cardAspectRatio = payload.cardAspectRatio || (63 / 88);
+      const cellWidth = Math.floor((payload.canvasWidth - (outerMargin * 2) - (cellGap * (columns - 1))) / columns);
+      const cellHeight = Math.round(cellWidth / cardAspectRatio);
+      const canvasHeight = (outerMargin * 2) + (cellHeight * rows) + (cellGap * (rows - 1));
+
+      canvas.width = payload.canvasWidth;
+      canvas.height = canvasHeight;
+      ctx.fillStyle = payload.backgroundColor || '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const images = (batchData && batchData.images) || [];
+      let skipped = 0;
+      for (let index = 0; index < images.length; index++) {
+        const row = Math.floor(index / columns);
+        const col = index % columns;
+        const x = outerMargin + col * (cellWidth + cellGap);
+        const y = outerMargin + row * (cellHeight + cellGap);
+
+        try {
+          if (!images[index].ok || !images[index].dataUrl) {
+            throw new Error(images[index].error || 'Image not available');
+          }
+          const img = await loadImage(images[index].dataUrl);
+          ctx.drawImage(img, x, y, cellWidth, cellHeight);
+        } catch (error) {
+          skipped++;
+          drawPlaceholder(x, y, cellWidth, cellHeight, index + 1);
+        }
+      }
+
+      return { skipped };
+    }
+
+    function drawPlaceholder(x, y, width, height, number) {
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeStyle = '#d0d0d0';
+      ctx.strokeRect(x, y, width, height);
+      ctx.fillStyle = '#777777';
+      ctx.font = '24px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Image ${number}`, x + width / 2, y + (height / 2) - 8);
+      ctx.fillText('not available', x + width / 2, y + (height / 2) + 24);
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    function runServer(functionName, ...args) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          [functionName](...args);
+      });
+    }
+
+    function updateProgress(current, total, message) {
+      const percent = Math.max(0, Math.min(100, (current / total) * 100));
+      fillEl.style.width = `${percent}%`;
+      statusEl.textContent = message;
+    }
+
+    function showError(error) {
+      statusEl.textContent = `Error: ${error.message || error}`;
+      fillEl.style.width = '0%';
+    }
+  </script>
+</body>
+</html>

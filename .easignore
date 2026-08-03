@@ -1,0 +1,17 @@
+.git/
+.agents/
+.android-sdk/
+.android-tools/
+.android-user/
+apps-script/
+outputs/
+tools/
+node_modules/
+mobile-app/node_modules/
+mobile-app/.expo/
+mobile-app/dist/
+mobile-app/dist-*/
+mobile-app/*.log
+mobile-app/*.out.log
+mobile-app/*.err.log
+npm-debug.log*

@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+
+      .wrap {
+        padding: 18px;
+      }
+
+      .header {
+        margin-bottom: 12px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      p {
+        margin: 0;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 390px;
+        resize: vertical;
+        padding: 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #0f172a;
+        font: 12px/1.4 Consolas, "Courier New", monospace;
+        outline: none;
+      }
+
+      textarea:focus {
+        border-color: #0369a1;
+        box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.16);
+      }
+
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .meta {
+        color: #64748b;
+        font-size: 12px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 8px 12px;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: #0369a1;
+        background: #0369a1;
+        color: #ffffff;
+      }
+
+      button:disabled {
+        cursor: progress;
+        opacity: 0.65;
+      }
+
+      .status {
+        min-height: 18px;
+        margin-top: 10px;
+        font-size: 13px;
+      }
+
+      .ok {
+        color: #166534;
+      }
+
+      .error {
+        color: #991b1b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="header">
+        <h1>Pegar CSV MonPrice</h1>
+        <p>Copia el contenido completo del CSV, incluyendo la fila de headers. El separador `;` se detecta automaticamente.</p>
+      </div>
+
+      <textarea id="csv" spellcheck="false" placeholder="ID;Name;Number;Set;Series;Rarity;..."></textarea>
+
+      <div class="bar">
+        <div class="meta" id="meta">0 lineas</div>
+        <div class="actions">
+          <button type="button" id="saveBtn" onclick="submitCsv(false)">Guardar en Raw</button>
+          <button type="button" id="convertBtn" class="primary" onclick="submitCsv(true)">Guardar y convertir</button>
+        </div>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+
+    <script>
+      const textarea = document.getElementById("csv");
+      const meta = document.getElementById("meta");
+      const statusEl = document.getElementById("status");
+      const buttons = [document.getElementById("saveBtn"), document.getElementById("convertBtn")];
+
+      textarea.addEventListener("input", updateMeta);
+      updateMeta();
+
+      function updateMeta() {
+        const text = textarea.value.trim();
+        const lines = text ? text.split(/\r\n|\r|\n/).length : 0;
+        meta.textContent = `${lines} lineas`;
+      }
+
+      function setBusy(busy) {
+        buttons.forEach((button) => button.disabled = busy);
+        statusEl.className = "status";
+        statusEl.textContent = busy ? "Procesando..." : "";
+      }
+
+      function submitCsv(convertNow) {
+        const text = textarea.value;
+        if (!text.trim()) {
+          statusEl.className = "status error";
+          statusEl.textContent = "Pegaste un CSV vacio.";
+          return;
+        }
+
+        setBusy(true);
+        google.script.run
+          .withSuccessHandler((result) => {
+            buttons.forEach((button) => button.disabled = false);
+            statusEl.className = "status ok";
+            statusEl.textContent = result && result.message ? result.message : "Listo.";
+          })
+          .withFailureHandler((err) => {
+            buttons.forEach((button) => button.disabled = false);
+            statusEl.className = "status error";
+            statusEl.textContent = err && err.message ? err.message : String(err);
+          })
+          .importPastedMonPriceCsv(text, convertNow);
+      }
+    </script>
+  </body>
+</html>

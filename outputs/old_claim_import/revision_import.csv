@@ -1,0 +1,232 @@
+﻿Tipo,Fuente,Hoja,Fila,Fecha,Comprador,Dato,ARS,USD,Notas
+ADMIN_DEUDA_MANUAL,Administracion Melody.xlsx,a cobrar,2,,Hernan,Fila manual sin detalle carta por carta,1016500.0,960.0,No se importa automaticamente
+ADMIN_DEUDA_MANUAL,Administracion Melody.xlsx,a cobrar,8,,Dario j infante,Fila manual sin detalle carta por carta,,115.0,No se importa automaticamente
+ADMIN_DEUDA_MANUAL,Administracion Melody.xlsx,a cobrar,9,,dany,Fila manual sin detalle carta por carta,50000.0,,No se importa automaticamente
+ADMIN_DEUDA_MANUAL,Administracion Melody.xlsx,a cobrar,11,,jesus,Fila manual sin detalle carta por carta,53000.0,,No se importa automaticamente
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,294,2026-07-12,Hino +4210,Pikachu [Pokemon Day] - POP Series 9 - $150,,150.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,295,2026-07-12,Hino +4210,Pikachu [Pokemon Day] - HeartGold & SoulSilver - $90,,90.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,296,2026-07-12,Sebastian Andres +1328,Pikachu [Pokemon Day] - POP Series 6 - $100,,100.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,304,2026-07-12,Hino +4210,Pikachu Berkemeja Batik - Promo - $30,,30.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,305,2026-07-12,Hino +4210,Pikachu Berkemeja Batik - Promo - $30,,30.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,306,2026-07-12,Hino +4210,Pikachu Berkemeja Batik - Promo - $30,,30.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,307,2026-07-12,Hino +4210,Pikachu Berkemeja Batik - Promo - $30,,30.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,308,2026-07-12,Hino +4210,Pikachu Berkemeja Batik - Promo - $100,,100.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,370,2026-07-12,Lucas +7880,Lillie's Clefairy Ex - Ascended Heroes - $190,,190.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 12 de Julio.xlsx,LISTA,371,2026-07-12,Renzo +4252,Hoopa - Japanese Promo - $130,,130.0,Precio final viejo interpretado como USD
+PRECIO_USD_DETECTADO,Claim 26 de julio.xlsx,LISTA,261,2026-07-26,Alejandro (aleloi) +7845,Mega Venusaur Ex - Mega Evolution - $150,,150.0,Precio final viejo interpretado como USD
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,8,2026-07-26,3500.0,,3500.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,10,2026-07-26,1000.0,,1000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,11,2026-07-26,1000.0,,1000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,12,2026-07-26,12000.0,,12000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,13,2026-07-26,12000.0,,12000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,15,2026-07-26,2500.0,,2500.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,17,2026-07-26,9000.0,,9000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,19,2026-07-26,17000.0,,17000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,20,2026-07-26,6500.0,,6500.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,21,2026-07-26,69300,,45.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,22,2026-07-26,65000.0,,65000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,23,2026-07-26,3500.0,,,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,24,2026-07-26,5000.0,,5000.0,,Fila derecha sin carta o comprador claro
+EXTRA_INCOMPLETA,Claim 26 de julio.xlsx,gratis y repetidas,25,2026-07-26,2002000,,1300.0,,Fila derecha sin carta o comprador claro
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Ammi +8425,Claim 2 de julio,1000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Brendrux +3992,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Cami +1242,Claim 2 de julio,800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Cami +9673,Claim 2 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Emiliano +8988,Claim 2 de julio,12500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Fabricio Fran +3534,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Francisco B. Manhiem +0566,Claim 2 de julio,12500.0,230.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,hernan,Claim 2 de julio,,1450.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Julián +2555,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Lucas de los santos +2291,Claim 2 de julio,4000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Lucho +6717,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Matias +4789,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Mauro +0654,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Maxi +6984,Claim 2 de julio,1000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Nahuel Spinotti +3932,Claim 2 de julio,1500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,rodri,Claim 2 de julio,800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,Tiago⁷ +3555,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-02,torre japo,Claim 2 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,adrian avalos,Claim 12 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Alison +8252,Claim 12 de julio,10700.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Anael dias +2839,Claim 12 de julio,19000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Andres +2460,Claim 12 de julio,20000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Anto cakes +7817,Claim 12 de julio,219000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Axel landini +8694,Claim 12 de julio,46000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,brendru,Claim 12 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,brendrux,Claim 12 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Cami +9673,Claim 12 de julio,43300.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Dai +9200,Claim 12 de julio,116600.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Dany B +9135,Claim 12 de julio,7000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Dylan +5656,Claim 12 de julio,6000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Eduardo Montoya +2231,Claim 12 de julio,110000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,fabian 0053,Claim 12 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Facu Addala +9181,Claim 12 de julio,19000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,facundo +0732,Claim 12 de julio,3000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,fede molina +4792,Claim 12 de julio,11000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,feith! +3530,Claim 12 de julio,5000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Francisco Valle +1477,Claim 12 de julio,26500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Gabriel +4222,Claim 12 de julio,6500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,German Castel,Claim 12 de julio,37000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Giuliano +5194,Claim 12 de julio,44000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Giuliano +9237,Claim 12 de julio,35500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Grace +0260,Claim 12 de julio,47500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Hernan +1889,Claim 12 de julio,4000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Hino +4210,Claim 12 de julio,75000.0,460.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Ignacio +8077,Claim 12 de julio,190105.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,J +7832,Claim 12 de julio,15800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,jesus +9436,Claim 12 de julio,10500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Jo Se +0951,Claim 12 de julio,10000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Juan Jose +2157,Claim 12 de julio,800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Juan Manuel +0070,Claim 12 de julio,117500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Kardia,Claim 12 de julio,25500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Kiara +5457,Claim 12 de julio,16000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,kidd,Claim 12 de julio,4000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,kidd +1708,Claim 12 de julio,23500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lau +2352,Claim 12 de julio,7000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lean +2825,Claim 12 de julio,12000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,leo +9189,Claim 12 de julio,41000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Loli Levi +8141,Claim 12 de julio,33500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lucas +5831,Claim 12 de julio,192000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lucas +7880,Claim 12 de julio,80000.0,190.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lucas Dominguez +6429,Claim 12 de julio,30000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lucas Gelvez +1534,Claim 12 de julio,17500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Lukas +9069,Claim 12 de julio,38000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,matias +4789,Claim 12 de julio,4500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Matti +9048,Claim 12 de julio,20000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Mauro +0654,Claim 12 de julio,50800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Mauro +4491,Claim 12 de julio,65000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Meru +2907,Claim 12 de julio,1000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Miguel +0219,Claim 12 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,milu +7399,Claim 12 de julio,31500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Mina +0303,Claim 12 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,municoy +2932,Claim 12 de julio,4000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,nahui's +7479,Claim 12 de julio,9000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Naylabelu +1510,Claim 12 de julio,7000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Nico Riondini +5353,Claim 12 de julio,8000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Nico soto +9486,Claim 12 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,nicolas Albarracin +3032,Claim 12 de julio,76000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Pandi +4627,Claim 12 de julio,15000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Pato +6893,Claim 12 de julio,17000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Quimey +6691,Claim 12 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Renzo +4252,Claim 12 de julio,,155.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Rodrigo +5210,Claim 12 de julio,40000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,rodrii 4636,Claim 12 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Rodriii +4636,Claim 12 de julio,9000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Rolando +0892,Claim 12 de julio,14000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Rome +5898,Claim 12 de julio,62000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Sebas +7406,Claim 12 de julio,6000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,sebastian +1198,Claim 12 de julio,11500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Sebastian +5631,Claim 12 de julio,13000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Sebastian Andres +1328,Claim 12 de julio,12000.0,190.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Sergio +7458,Claim 12 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Sergio Gonzalez +1197,Claim 12 de julio,30000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Teo +3352,Claim 12 de julio,35800.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,Tiago +3555,Claim 12 de julio,27000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-12,vale.. +0900,Claim 12 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,17000.0,Claim 26 de julio,17000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,3500.0,Claim 26 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,😎 +5005,Claim 26 de julio,1500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,AKAKO,Claim 26 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Alejandro (Aleloi) +7845,Claim 26 de julio,226000.0,150.0,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Anael Dias +2839,Claim 26 de julio,22500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Bautista Rios +3931,Claim 26 de julio,74000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Benja +0888,Claim 26 de julio,66000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Brian Muñoz +7400,Claim 26 de julio,10000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Cam +7263,Claim 26 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Cami +9673,Claim 26 de julio,18500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,😎Cris +3932,Claim 26 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,cristian nuñez +9141,Claim 26 de julio,5000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Crypt +1541,Claim 26 de julio,5000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Danel Uyu +6651,Claim 26 de julio,42000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Fabricio Fran +3534,Claim 26 de julio,36500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Facu +6787,Claim 26 de julio,17000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Facundo +0964,Claim 26 de julio,39000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,facundo rios +4346,Claim 26 de julio,6000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Fede Gonzalez +3222,Claim 26 de julio,34500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Fede V +5212,Claim 26 de julio,1500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Felipe +7164,Claim 26 de julio,110000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,FerGi +7947,Claim 26 de julio,40000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Fran +1300,Claim 26 de julio,2500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Fran +5964,Claim 26 de julio,54000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Franco +8503,Claim 26 de julio,4500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,German +2420,Claim 26 de julio,33000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Grace +0260,Claim 26 de julio,10000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Gustavo +0710,Claim 26 de julio,43500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Heli +2040,Claim 26 de julio,59500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Jairo D. Yañez +4755,Claim 26 de julio,106700.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Jean Pelizer +1230,Claim 26 de julio,20000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Jesus +9436,Claim 26 de julio,23000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Jo se +0951,Claim 26 de julio,9500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Juan Manuel +0070,Claim 26 de julio,452000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,JuanCon +3622,Claim 26 de julio,2000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Juani +2906,Claim 26 de julio,32500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Kardia +4135,Claim 26 de julio,40000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Kari +1786,Claim 26 de julio,3500.0,,No encontre comprador+fecha en Administracion Melody
+TOTAL_DISTINTO_ADMIN,Administracion Melody / Hoja 19,,34,2026-07-26,Kiara +5457,Total claim vs admin,4000.0,,Admin ARS=16000.0 USD=0.0
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Kidd +1708,Claim 26 de julio,10000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Leo +5057,Claim 26 de julio,184000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Lorena Molina +7999,Claim 26 de julio,10500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Lu +7708,Claim 26 de julio,8500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Lucas Gelvez +1534,Claim 26 de julio,15000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,luciano crosina +8799,Claim 26 de julio,5000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Mariano +4765,Claim 26 de julio,61000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Mateo Montenegro +2504,Claim 26 de julio,30000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Matias +4789,Claim 26 de julio,80000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Matias Dellea +8075,Claim 26 de julio,139500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Maxii +5388,Claim 26 de julio,174000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Melisa Franco +8605,Claim 26 de julio,7500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Nemi +5294,Claim 26 de julio,26000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Pablo +0510,Claim 26 de julio,46500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,°^•Pri•^° +4780,Claim 26 de julio,,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Ramiro +4068,Claim 26 de julio,70000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Renzo +4252,Claim 26 de julio,15000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Rome +5898,Claim 26 de julio,117000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Ruth +7341,Claim 26 de julio,3000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Sapph +3588,Claim 26 de julio,3000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Sebastian +1198,Claim 26 de julio,2500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Simon Romano +1053,Claim 26 de julio,144000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Tiago +3555,Claim 26 de julio,600000.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,valen 0428,Claim 26 de julio,2500.0,,No encontre comprador+fecha en Administracion Melody
+SIN_MATCH_ADMIN,Claims import,,,2026-07-26,Yamil +6807,Claim 26 de julio,65000.0,,No encontre comprador+fecha en Administracion Melody
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,2,2026-07-26,ROLANDO 0892,Resumen sin cartas en claims cargados,14000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,3,2026-07-26,MUNICOY 2932,Resumen sin cartas en claims cargados,4000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,4,2026-07-26,FEDE MOLINA,Resumen sin cartas en claims cargados,11000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,5,2026-07-26,LUKAS 9069,Resumen sin cartas en claims cargados,38000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,6,2026-07-26,FEITH 3530,Resumen sin cartas en claims cargados,5000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,7,2026-07-26,LUCAS DOMINGUEZ,Resumen sin cartas en claims cargados,30000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,8,2026-07-26,FRANCISCO VALEE,Resumen sin cartas en claims cargados,26500.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,9,2026-07-26,GIULIANO 9237,Resumen sin cartas en claims cargados,35500.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,10,2026-07-26,FELIPE,Resumen sin cartas en claims cargados,63000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,5,2026-07-26,FELIPE,Resumen sin cartas en claims cargados,63000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,11,2026-07-26,fabian 0053,Resumen sin cartas en claims cargados,30000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,12,2026-07-26,cami 1242,Resumen sin cartas en claims cargados,39400.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,13,2026-07-26,cami 1242,Resumen sin cartas en claims cargados,15600.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,14,2026-07-26,CHINO 7848,Resumen sin cartas en claims cargados,30000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,15,2026-07-26,LUCAS 5831,Resumen sin cartas en claims cargados,192000.0,,PAGA EL 8/8
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,6,2026-07-26,LUCAS 5831,Resumen sin cartas en claims cargados,192000.0,,PAGA EL 8/8
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,16,2026-07-26,QUIMEY 6691,Resumen sin cartas en claims cargados,3500.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,17,2026-07-26,LUCIO,Resumen sin cartas en claims cargados,186500.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,18,2026-07-26,LUCIO,Resumen sin cartas en claims cargados,,25.0,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,19,2026-07-26,LIAM,Resumen sin cartas en claims cargados,4000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,20,2026-07-26,cami,Resumen sin cartas en claims cargados,10200.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,35,2026-07-26,CAMI,Resumen sin cartas en claims cargados,43300.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,12,2026-07-26,CAMI,Resumen sin cartas en claims cargados,43300.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,14,2026-07-26,cami,Resumen sin cartas en claims cargados,10200.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,21,2026-07-26,LUCAS DE LOS SANTOS,Resumen sin cartas en claims cargados,36000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,22,2026-07-26,FABIAN MALDONADO,Resumen sin cartas en claims cargados,10000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,7,2026-07-26,FABIAN MALDONADO,Resumen sin cartas en claims cargados,10000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,23,2026-07-26,ERIC AGUIRRE,Resumen sin cartas en claims cargados,3800.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,24,2026-07-26,ERIC AGUIRRE,Resumen sin cartas en claims cargados,24000.0,,VENCIO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,25,2026-07-26,SEBASTIAN 5631,Resumen sin cartas en claims cargados,13000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,26,2026-07-26,NICO SOTO,Resumen sin cartas en claims cargados,3500.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,27,2026-07-26,KIDD,Resumen sin cartas en claims cargados,27500.0,,PAGA MAÑANA
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,28,2026-07-26,IGNACIO 8077,Resumen sin cartas en claims cargados,190000.0,105.0,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,29,2026-07-26,EDUARDO MONTOYA 2231,Resumen sin cartas en claims cargados,55000.0,,PAGA AGOSTO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,9,2026-07-26,EDUARDO MONTOYA 2231,Resumen sin cartas en claims cargados,55000.0,,PAGA AGOSTO
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,30,2026-07-26,PANDI,Resumen sin cartas en claims cargados,15000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,31,2026-07-26,PATO,Resumen sin cartas en claims cargados,17000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,10,2026-07-26,PATO,Resumen sin cartas en claims cargados,17000.0,,paga sabado
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,32,2026-07-26,FACUNDO 0732,Resumen sin cartas en claims cargados,3000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,33,2026-07-26,MATI 9048,Resumen sin cartas en claims cargados,20000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,36,2026-07-26,IGNACIO MAROGLIO,Resumen sin cartas en claims cargados,140000.0,,
+ADMIN_SIN_DETALLE,Administracion Melody / Hoja 19,Hoja 19,13,2026-07-26,ignacio maroglio,Resumen sin cartas en claims cargados,140000.0,,

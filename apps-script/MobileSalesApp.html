@@ -1,0 +1,637 @@
+<!doctype html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #111827;
+        --muted: #64748b;
+        --line: #d6dee8;
+        --page: #f7f8fb;
+        --panel: #ffffff;
+        --green: #0f766e;
+        --green-soft: #dff7ef;
+        --blue: #1d4ed8;
+        --red: #b91c1c;
+        --amber: #a16207;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font-family: Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        padding: env(safe-area-inset-top) 0 calc(152px + env(safe-area-inset-bottom));
+      }
+
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        padding: 12px 12px 10px;
+        background: rgba(247, 248, 251, 0.96);
+        border-bottom: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .pill {
+        min-width: 42px;
+        padding: 5px 8px;
+        border-radius: 999px;
+        background: var(--green-soft);
+        color: #115e59;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .search {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+
+      .search input,
+      .field input,
+      .field select,
+      .money {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--ink);
+        outline: none;
+      }
+
+      .search input {
+        height: 42px;
+        padding: 0 12px;
+        font-size: 16px;
+      }
+
+      .search input:focus,
+      .field input:focus,
+      .field select:focus,
+      .money:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+      }
+
+      .icon-btn,
+      .add-btn,
+      .close-btn,
+      .ghost-btn {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--ink);
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .icon-btn {
+        width: 42px;
+        height: 42px;
+      }
+
+      .status {
+        padding: 10px 14px 0;
+        min-height: 30px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status.error {
+        color: var(--red);
+      }
+
+      .results {
+        display: grid;
+        gap: 8px;
+        padding: 8px 10px 0;
+      }
+
+      .item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .name {
+        margin: 0 0 3px;
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.25;
+      }
+
+      .sub,
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .chip {
+        padding: 3px 6px;
+        border-radius: 999px;
+        background: #eef2f7;
+        color: #334155;
+        font-weight: 700;
+      }
+
+      .chip.warn {
+        background: #fef3c7;
+        color: var(--amber);
+      }
+
+      .add-btn {
+        align-self: start;
+        min-width: 44px;
+        height: 38px;
+        background: var(--green);
+        border-color: var(--green);
+        color: #ffffff;
+        font-size: 18px;
+      }
+
+      .cart {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 10;
+        max-height: 72vh;
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: 0 -12px 28px rgba(15, 23, 42, 0.12);
+      }
+
+      .cart-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 12px;
+      }
+
+      .cart-title {
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .total {
+        text-align: right;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .cart-body {
+        display: none;
+        padding: 0 12px 12px;
+        overflow: auto;
+        max-height: calc(72vh - 52px);
+      }
+
+      .cart.open .cart-body {
+        display: block;
+      }
+
+      .cart-line {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        padding: 10px 0;
+        border-top: 1px solid #eef2f7;
+      }
+
+      .line-controls {
+        display: grid;
+        grid-template-columns: repeat(3, 34px);
+        gap: 4px;
+        align-content: start;
+      }
+
+      .line-controls button {
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        font-weight: 800;
+      }
+
+      .line-controls .remove {
+        color: var(--red);
+      }
+
+      .prices {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .money {
+        height: 36px;
+        padding: 0 8px;
+      }
+
+      .fields {
+        display: grid;
+        grid-template-columns: 1fr 112px;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid #eef2f7;
+      }
+
+      .field label,
+      .price-label {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .field input,
+      .field select {
+        height: 38px;
+        padding: 0 8px;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .close-btn {
+        min-height: 42px;
+        background: var(--green);
+        border-color: var(--green);
+        color: #ffffff;
+      }
+
+      .ghost-btn {
+        min-height: 42px;
+        padding: 0 12px;
+      }
+
+      .empty {
+        padding: 24px 10px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      @media (min-width: 680px) {
+        .app {
+          max-width: 680px;
+          margin: 0 auto;
+          border-left: 1px solid var(--line);
+          border-right: 1px solid var(--line);
+        }
+
+        .cart {
+          left: 50%;
+          right: auto;
+          width: 680px;
+          transform: translateX(-50%);
+          border-left: 1px solid var(--line);
+          border-right: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="top">
+        <div class="titlebar">
+          <h1>Venta mesa</h1>
+          <div class="pill" id="cartCount">0</div>
+        </div>
+        <div class="search">
+          <input id="searchInput" type="search" inputmode="search" autocomplete="off" placeholder="Buscar carta, expansion, numero o SKU">
+          <button class="icon-btn" type="button" onclick="runSearch()">Go</button>
+        </div>
+      </section>
+
+      <div class="status" id="status">Listo</div>
+      <section class="results" id="results"></section>
+    </main>
+
+    <aside class="cart" id="cart">
+      <div class="cart-head" onclick="toggleCart()">
+        <div class="cart-title">Carrito</div>
+        <div class="total" id="cartTotal">$0</div>
+      </div>
+      <div class="cart-body">
+        <div id="cartLines"></div>
+        <div class="fields">
+          <div class="field">
+            <label for="buyer">Comprador</label>
+            <input id="buyer" type="text" autocomplete="off" placeholder="Mesa">
+          </div>
+          <div class="field">
+            <label for="origin">Origen</label>
+            <select id="origin">
+              <option>Mesa</option>
+              <option>Evento</option>
+              <option>Online</option>
+              <option>Local</option>
+              <option>Otro</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="close-btn" type="button" onclick="closeSale()">Cerrar venta</button>
+          <button class="ghost-btn" type="button" onclick="clearCart()">Vaciar</button>
+        </div>
+      </div>
+    </aside>
+
+    <script>
+      const state = {
+        cart: loadCart(),
+        results: [],
+        busy: false,
+        searchTimer: null
+      };
+
+      const els = {
+        search: document.getElementById("searchInput"),
+        status: document.getElementById("status"),
+        results: document.getElementById("results"),
+        cart: document.getElementById("cart"),
+        cartCount: document.getElementById("cartCount"),
+        cartTotal: document.getElementById("cartTotal"),
+        cartLines: document.getElementById("cartLines"),
+        buyer: document.getElementById("buyer"),
+        origin: document.getElementById("origin")
+      };
+
+      els.search.addEventListener("input", () => {
+        clearTimeout(state.searchTimer);
+        state.searchTimer = setTimeout(runSearch, 260);
+      });
+
+      renderCart();
+      runSearch();
+
+      function runSearch() {
+        const query = els.search.value.trim();
+        setStatus(query ? "Buscando..." : "Stock disponible");
+        google.script.run
+          .withSuccessHandler((items) => {
+            state.results = items || [];
+            renderResults();
+            setStatus(state.results.length ? `${state.results.length} resultados` : "Sin resultados");
+          })
+          .withFailureHandler((err) => setStatus(errorText(err), true))
+          .mobileSearchStock(query, 30);
+      }
+
+      function renderResults() {
+        if (!state.results.length) {
+          els.results.innerHTML = '<div class="empty">Sin cartas para mostrar</div>';
+          return;
+        }
+
+        els.results.innerHTML = state.results.map((item) => `
+          <article class="item">
+            <div>
+              <p class="name">${escapeHtml(item.nombre)}</p>
+              <div class="sub">${escapeHtml(item.expansion)}${item.numero ? ` #${escapeHtml(item.numero)}` : ""}</div>
+              <div class="meta">
+                <span class="chip">Stock ${formatQty(item.quantity)}</span>
+                <span class="chip">${formatArs(item.precioFinalArs)}</span>
+                <span class="chip">${formatUsd(item.pcUsd)} PC</span>
+                <span class="chip ${item.ultimaCompraUsd ? "" : "warn"}">${item.ultimaCompraUsd ? `${formatUsd(item.ultimaCompraUsd)} compra` : "Sin compra"}</span>
+              </div>
+            </div>
+            <button class="add-btn" type="button" onclick="addToCart('${escapeAttr(item.sku)}')">+</button>
+          </article>
+        `).join("");
+      }
+
+      function addToCart(sku) {
+        const item = state.results.find((result) => result.sku === sku);
+        if (!item) return;
+        const existing = state.cart.find((line) => line.sku === sku);
+        if (existing) {
+          if (existing.quantity < item.quantity) existing.quantity += 1;
+        } else {
+          state.cart.push({
+            sku: item.sku,
+            nombre: item.nombre,
+            expansion: item.expansion,
+            numero: item.numero,
+            available: item.quantity,
+            quantity: 1,
+            priceArs: Number(item.precioFinalArs) || 0,
+            priceUsd: 0,
+            pcUsd: Number(item.pcUsd) || 0,
+            ultimaCompraUsd: Number(item.ultimaCompraUsd) || 0
+          });
+        }
+        els.cart.classList.add("open");
+        saveCart();
+        renderCart();
+      }
+
+      function renderCart() {
+        const count = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+        const totalArs = state.cart.reduce((sum, item) => sum + (Number(item.priceArs) || 0) * item.quantity, 0);
+        const totalUsd = state.cart.reduce((sum, item) => sum + (Number(item.priceUsd) || 0) * item.quantity, 0);
+        els.cartCount.textContent = count;
+        els.cartTotal.textContent = `${formatArs(totalArs)}${totalUsd ? ` + ${formatUsd(totalUsd)}` : ""}`;
+
+        if (!state.cart.length) {
+          els.cartLines.innerHTML = '<div class="empty">Carrito vacio</div>';
+          els.cart.classList.remove("open");
+          saveCart();
+          return;
+        }
+
+        els.cartLines.innerHTML = state.cart.map((item, index) => `
+          <div class="cart-line">
+            <div>
+              <p class="name">${escapeHtml(item.nombre)}</p>
+              <div class="sub">${escapeHtml(item.expansion)}${item.numero ? ` #${escapeHtml(item.numero)}` : ""}</div>
+              <div class="meta">
+                <span class="chip">Cant ${item.quantity}</span>
+                <span class="chip">Disp ${formatQty(item.available)}</span>
+                <span class="chip">${item.ultimaCompraUsd ? `${formatUsd(item.ultimaCompraUsd)} compra` : "Sin compra"}</span>
+              </div>
+              <div class="prices">
+                <label>
+                  <span class="price-label">ARS unidad</span>
+                  <input class="money" type="number" min="0" step="100" value="${escapeAttr(item.priceArs)}" onchange="setCartPrice(${index}, 'priceArs', this.value)">
+                </label>
+                <label>
+                  <span class="price-label">USD unidad</span>
+                  <input class="money" type="number" min="0" step="1" value="${escapeAttr(item.priceUsd)}" onchange="setCartPrice(${index}, 'priceUsd', this.value)">
+                </label>
+              </div>
+            </div>
+            <div class="line-controls">
+              <button type="button" onclick="changeQty(${index}, 1)">+</button>
+              <button type="button" onclick="changeQty(${index}, -1)">-</button>
+              <button class="remove" type="button" onclick="removeCartItem(${index})">x</button>
+            </div>
+          </div>
+        `).join("");
+        saveCart();
+      }
+
+      function changeQty(index, delta) {
+        const item = state.cart[index];
+        if (!item) return;
+        item.quantity = Math.max(1, Math.min(item.available, item.quantity + delta));
+        renderCart();
+      }
+
+      function setCartPrice(index, key, value) {
+        if (!state.cart[index]) return;
+        state.cart[index][key] = Math.max(0, Number(value) || 0);
+        renderCart();
+      }
+
+      function removeCartItem(index) {
+        state.cart.splice(index, 1);
+        renderCart();
+      }
+
+      function clearCart() {
+        state.cart = [];
+        renderCart();
+      }
+
+      function toggleCart() {
+        if (state.cart.length) els.cart.classList.toggle("open");
+      }
+
+      function closeSale() {
+        if (!state.cart.length || state.busy) return;
+        state.busy = true;
+        setStatus("Cerrando venta...");
+
+        const payload = {
+          buyer: els.buyer.value.trim(),
+          origin: els.origin.value,
+          items: state.cart.map((item) => ({
+            sku: item.sku,
+            quantity: item.quantity,
+            priceArs: Number(item.priceArs) || 0,
+            priceUsd: Number(item.priceUsd) || 0
+          }))
+        };
+
+        google.script.run
+          .withSuccessHandler((result) => {
+            state.busy = false;
+            state.cart = [];
+            saveCart();
+            renderCart();
+            runSearch();
+            setStatus(`Venta cerrada: ${formatArs(result.totalArs)}${result.totalUsd ? ` + ${formatUsd(result.totalUsd)}` : ""}`);
+          })
+          .withFailureHandler((err) => {
+            state.busy = false;
+            setStatus(errorText(err), true);
+          })
+          .mobileCloseSale(payload);
+      }
+
+      function saveCart() {
+        localStorage.setItem("ut_mobile_cart", JSON.stringify(state.cart));
+      }
+
+      function loadCart() {
+        try {
+          return JSON.parse(localStorage.getItem("ut_mobile_cart") || "[]");
+        } catch (err) {
+          return [];
+        }
+      }
+
+      function setStatus(message, error) {
+        els.status.textContent = message;
+        els.status.classList.toggle("error", !!error);
+      }
+
+      function formatArs(value) {
+        const n = Number(value) || 0;
+        return "$" + n.toLocaleString("es-AR", { maximumFractionDigits: 0 });
+      }
+
+      function formatUsd(value) {
+        const n = Number(value) || 0;
+        return "USD " + n.toLocaleString("es-AR", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+      }
+
+      function formatQty(value) {
+        return (Number(value) || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
+      }
+
+      function errorText(err) {
+        return err && err.message ? err.message : String(err || "Error");
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value);
+      }
+    </script>
+  </body>
+</html>

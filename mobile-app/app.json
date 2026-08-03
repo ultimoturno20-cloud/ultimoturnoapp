@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "UltimoTurno",
+    "slug": "ultimo-turno-mobile",
+    "version": "2.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1c1c1d"
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "UltimoTurno usa biometria para entrar rapido al perfil."
+        }
+      ],
+      "expo-document-picker",
+      "expo-font"
+    ],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ultimoturno.app"
+    },
+    "android": {
+      "package": "com.ultimoturno.app",
+      "versionCode": 6,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0b0b0c"
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "extra": {
+      "apiUrl": "",
+      "apiToken": "",
+      "eas": {
+        "projectId": "5891726a-d286-48ec-9141-cd1e05303a28"
+      }
+    }
+  }
+}
