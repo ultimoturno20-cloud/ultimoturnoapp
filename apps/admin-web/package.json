@@ -1,0 +1,15 @@
+{
+  "name": "@ultimoturno/admin-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --configLoader native",
+    "build": "tsc -p tsconfig.json && vite build --configLoader native",
+    "preview": "vite preview --configLoader native"
+  },
+  "dependencies": {
+    "@ultimoturno/domain": "0.1.0"
+  },
+  "devDependencies": {}
+}

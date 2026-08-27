@@ -1,0 +1,38 @@
+{
+  "name": "ultimoturno-new-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nueva version aislada de UltimoTurno: API, admin web y modelo PostgreSQL sin tocar legacy.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @ultimoturno/api",
+    "dev:web": "npm run dev -w @ultimoturno/admin-web",
+    "build": "npm run build -w @ultimoturno/domain && npm run build -w @ultimoturno/importers && npm run build -w @ultimoturno/db && npm run build -w @ultimoturno/api && npm run build -w @ultimoturno/admin-web",
+    "lint": "node scripts/lint-new-platform.mjs",
+    "card-index:tcgcsv": "tsx tools/tcgcsv-card-index-worker.ts",
+    "card-index:images": "tsx tools/card-index-image-worker.ts",
+    "images:worker": "tsx tools/pricecharting-image-worker.ts",
+    "images-worker": "tsx tools/pricecharting-image-worker.ts",
+    "typecheck": "tsc -b",
+    "test": "tsx --test packages/domain/src/*.test.ts packages/importers/src/*.test.ts packages/db/src/*.test.ts",
+    "db:verify": "npm run verify -w @ultimoturno/db",
+    "check:new": "npm run lint && npm run typecheck && npm run test && npm run db:verify && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  }
+}

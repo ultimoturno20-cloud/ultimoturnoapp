@@ -1,10 +1,18 @@
 node_modules/
 **/node_modules/
+apps/*/dist/
+apps/*/dist-types/
+apps/*/tsconfig.tsbuildinfo
+packages/*/dist/
+packages/*/tsconfig.tsbuildinfo
 mobile-app/dist/
 mobile-app/dist-*/
 .expo/
 mobile-app/.expo/
 npm-debug.log*
+*.log
+*.out.log
+*.err.log
 .android-sdk/
 .android-tools/
 .android-user/
@@ -16,3 +24,5 @@ mobile-app/*.err.log
 .env
 .env.*
 !.env.example
+.data/
+outputs/
