@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
-import { PGlite } from "@electric-sql/pglite";
+import type { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
 
 export type DatabaseCheck = {
@@ -280,6 +280,7 @@ async function readSql(relativePath: string): Promise<string> {
 }
 
 export async function createDemoDatabase(): Promise<PGlite> {
+  const { PGlite } = await import("@electric-sql/pglite");
   const db = markDatabaseDriver(new PGlite(), "pglite");
   for (const file of migrationFiles) {
     await db.exec(await readSql(`migrations/${file}`));
@@ -792,6 +793,7 @@ export async function createOperationalDatabase(options: OperationalDatabaseOpti
   } else {
     const dataDir = options.dataDir || path.resolve(process.cwd(), ".data", "ultimoturno-pglite");
     await mkdir(dataDir, { recursive: true });
+    const { PGlite } = await import("@electric-sql/pglite");
     db = markDatabaseDriver(new PGlite(dataDir), "pglite");
   }
   await runOperationalMigrations(db);
@@ -5981,3 +5983,5 @@ export async function changeOrderBoard(db: PGlite, input: {action:string; name?:
   });
   return input.action === "move" ? readOrderBoards(db,actor.businessId) : getOrderBoards(db,actor.businessId);
 }
+
+
