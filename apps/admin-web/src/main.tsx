@@ -5927,7 +5927,7 @@ function normalizeApiBase(rawValue: string | undefined) {
     const url = new URL(raw);
     const pathname = url.pathname.replace(/\/+$/, "");
     const hostname = url.hostname.toLowerCase();
-    const isLocalApi = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    const isLocalApi = isLocalHostname(hostname);
 
     if (!pathname && !isLocalApi) {
       url.pathname = "/api";
@@ -5942,10 +5942,29 @@ function normalizeApiBase(rawValue: string | undefined) {
   }
 }
 
+function isLocalHostname(hostname: string) {
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname.toLowerCase());
+}
+
+function shouldUseApiDispatch() {
+  if (typeof window !== "undefined" && isLocalHostname(window.location.hostname)) return false;
+  try {
+    const url = new URL(apiBase);
+    return !isLocalHostname(url.hostname);
+  } catch {
+    return apiBase === "/api";
+  }
+}
+
+function buildApiRequestUrl(path: string) {
+  const requestPath = path.startsWith("/") ? path : `/${path}`;
+  if (!shouldUseApiDispatch()) return `${apiBase}${requestPath}`;
+  return `${apiBase}/dispatch?path=${encodeURIComponent(requestPath)}`;
+}
+
 async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
   const accessKey = getStoredAccessKey();
-  const requestPath = path.startsWith("/") ? path : `/${path}`;
-  const requestUrl = `${apiBase}${requestPath}`;
+  const requestUrl = buildApiRequestUrl(path);
   const method = options.method || "GET";
   const response = await fetch(requestUrl, {
     method,
@@ -6587,12 +6606,12 @@ function shortError(value: string) {
 
 function assetUrl(value: string) {
   if (!value.startsWith("/pricecharting-images/")) return value;
-  return `${apiBase}${value}`;
+  return buildApiRequestUrl(value);
 }
 
 function canvasAssetUrl(value: string) {
   const resolved = assetUrl(value);
-  if (/^https?:\/\//i.test(resolved)) return `${apiBase}/image-proxy?url=${encodeURIComponent(resolved)}`;
+  if (/^https?:\/\//i.test(resolved)) return buildApiRequestUrl(`/image-proxy?url=${encodeURIComponent(resolved)}`);
   return resolved;
 }
 
@@ -7039,6 +7058,7 @@ function errorMessage(error: unknown) {
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+
 
 
 

@@ -11,10 +11,20 @@ function loadApiServer(): Promise<ApiServerModule> {
   return apiServerPromise;
 }
 
+function normalizeRequestUrl(request: IncomingMessage) {
+  if (!request.url) return;
+  request.url = request.url.replace(/^\/api(?=\/|$)/, "") || "/";
+
+  const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  if (url.pathname !== "/dispatch") return;
+
+  const targetPath = url.searchParams.get("path") || "/";
+  request.url = targetPath.startsWith("/") && !targetPath.startsWith("//") ? targetPath : "/";
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
-  if (request.url) {
-    request.url = request.url.replace(/^\/api(?=\/|$)/, "") || "/";
-  }
+  normalizeRequestUrl(request);
   const { handleRequest } = await loadApiServer();
   await handleRequest(request, response);
 }
+
