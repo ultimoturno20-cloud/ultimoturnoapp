@@ -124,6 +124,22 @@ const allowedOrigins = String(process.env.ULTIMOTURNO_ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim().replace(/\/+$/, ""))
   .filter(Boolean);
+for (const vercelHost of [
+  process.env.VERCEL_URL,
+  process.env.VERCEL_BRANCH_URL,
+  process.env.VERCEL_PROJECT_PRODUCTION_URL
+]) {
+  const normalizedHost = String(vercelHost || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  if (normalizedHost) allowedOrigins.push(`https://${normalizedHost}`);
+}
+for (const vercelHost of [
+  process.env.VERCEL_URL,
+  process.env.VERCEL_BRANCH_URL,
+  process.env.VERCEL_PROJECT_PRODUCTION_URL
+]) {
+  const normalizedHost = String(vercelHost || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  if (normalizedHost) allowedOrigins.push(`https://${normalizedHost}`);
+}
 const dataProfile = String(process.env.ULTIMOTURNO_DATA_PROFILE || "PILOTO REAL").trim() || "PILOTO REAL";
 const allowExamples = String(process.env.ULTIMOTURNO_ALLOW_EXAMPLES || "false").toLowerCase() !== "false";
 const priceChartingAutoRefreshEnabled = String(process.env.PRICECHARTING_AUTO_REFRESH_ENABLED || "false").toLowerCase() !== "false";
@@ -2755,7 +2771,7 @@ async function searchMobileInventoryCandidates(db: Awaited<typeof dbPromise>, us
   return { candidates };
 }
 
-async function handleRequest(request: IncomingMessage, response: ServerResponse) {
+export async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   applyCorsHeaders(request, response);
   if (request.method === "OPTIONS") {
     response.writeHead(requestCorsOrigin(request) ? 204 : 403);
@@ -3494,3 +3510,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
 }
+
+
