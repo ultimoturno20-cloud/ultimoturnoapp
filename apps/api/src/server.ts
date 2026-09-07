@@ -2386,6 +2386,40 @@ function requestHasAccess(request: IncomingMessage) {
   return accessKeyMatches(parseCookies(request.headers.cookie).ultimoturno_access_key || "");
 }
 
+async function readPublicDataStatus() {
+  try {
+    const db = await dbPromise;
+    const result = await db.query<{
+      inventory_items: string;
+      stock_units: string;
+      sales: string;
+      claim_cards: string;
+    }>(`
+      select
+        (select count(*)::text from inventory_items where active = true) as inventory_items,
+        (select coalesce(sum(quantity_on_hand), 0)::text from inventory_items where active = true) as stock_units,
+        (select count(*)::text from sales) as sales,
+        (select count(*)::text from claim_cards) as claim_cards
+    `);
+    const row = result.rows[0];
+    return {
+      databaseReachable: true,
+      hasInventoryItems: Number(row?.inventory_items || 0) > 0,
+      hasStockUnits: Number(row?.stock_units || 0) > 0,
+      hasSales: Number(row?.sales || 0) > 0,
+      hasClaimCards: Number(row?.claim_cards || 0) > 0
+    };
+  } catch {
+    return {
+      databaseReachable: false,
+      hasInventoryItems: false,
+      hasStockUnits: false,
+      hasSales: false,
+      hasClaimCards: false
+    };
+  }
+}
+
 type MobileInventoryCandidate = {
   id: string;
   matchType: "inventory" | "card_index";
@@ -2792,6 +2826,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/public-status" && request.method === "GET") {
+      const data = await readPublicDataStatus();
       sendJson(response, 200, {
         ok: true,
         environment: {
@@ -2801,7 +2836,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
           dataProfile,
           allowExamples,
           requiresAccessKey: Boolean(sharedAccessKey)
-        }
+        },
+        data
       });
       return;
     }
