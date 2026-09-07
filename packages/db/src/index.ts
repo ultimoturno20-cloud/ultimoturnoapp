@@ -194,16 +194,18 @@ type PgPoolLike = PgClientLike & {
   connect(): Promise<PgClientLike>;
   end(): Promise<void>;
 };
+type PgModule = {
+  Pool: new (config: Record<string, unknown>) => PgPoolLike;
+  types?: { setTypeParser: (oid: number, parser: (value: string) => string) => void };
+};
+const pgModule = require("pg") as PgModule;
 
 class PostgresOperationalDatabase {
   private readonly pool: PgPoolLike;
   private manualTransactionClient: PgClientLike | null = null;
 
   constructor(options: { databaseUrl: string; ssl?: boolean; poolMax?: number }) {
-    const { Pool, types } = require("pg") as {
-      Pool: new (config: Record<string, unknown>) => PgPoolLike;
-      types?: { setTypeParser: (oid: number, parser: (value: string) => string) => void };
-    };
+    const { Pool, types } = pgModule;
     types?.setTypeParser(1082, (value) => value); // date
     types?.setTypeParser(1114, (value) => value); // timestamp
     types?.setTypeParser(1184, (value) => value); // timestamptz

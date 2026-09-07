@@ -13,6 +13,7 @@
   "dependencies": {
     "@ultimoturno/db": "0.1.0",
     "@ultimoturno/domain": "0.1.0",
-    "@ultimoturno/importers": "0.1.0"
+    "@ultimoturno/importers": "0.1.0",
+    "pg": "^8.23.0"
   }
 }
