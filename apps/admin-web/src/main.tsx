@@ -713,7 +713,7 @@ type InventoryFormState = {
   notes: string;
 };
 
-const apiBase = import.meta.env.VITE_API_BASE_URL || "/api";
+const apiBase = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 const accessKeyStorageKey = "ultimoturno_access_key";
 const accessKeyCookieName = "ultimoturno_access_key";
 const importDraftStorageKey = "ultimoturno_import_stock_draft_v2";
@@ -5920,9 +5920,33 @@ function isAccessError(error: unknown) {
   return Boolean(error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 401);
 }
 
+function normalizeApiBase(rawValue: string | undefined) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "/api";
+
+  try {
+    const url = new URL(raw);
+    const pathname = url.pathname.replace(/\/+$/, "");
+    const hostname = url.hostname.toLowerCase();
+    const isLocalApi = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+
+    if (!pathname && !isLocalApi) {
+      url.pathname = "/api";
+    } else {
+      url.pathname = pathname || "";
+    }
+
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    const relative = raw.startsWith("/") ? raw : `/${raw}`;
+    return relative.replace(/\/+$/, "") || "/api";
+  }
+}
+
 async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
   const accessKey = getStoredAccessKey();
-  const response = await fetch(`${apiBase}${path}`, {
+  const requestPath = path.startsWith("/") ? path : `/${path}`;
+  const response = await fetch(`${apiBase}${requestPath}`, {
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
@@ -7013,3 +7037,4 @@ function errorMessage(error: unknown) {
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+
