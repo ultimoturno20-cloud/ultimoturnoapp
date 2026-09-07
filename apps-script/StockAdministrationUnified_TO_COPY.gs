@@ -22,6 +22,7 @@ var SAU = {
     AUDITORIA: "Auditoria App",
     PAGOS: "Pagos Ordenes",
     EMBALAJE: "Embalaje Detalle",
+    ETIQUETAS_ORDENES: "Etiquetas A4",
     ACCIONES_APP: "Acciones App",
     USUARIOS_APP: "Usuarios App",
     SESIONES_APP: "Sesiones App"
@@ -241,6 +242,8 @@ function onOpen() {
       .addItem("Procesar compras recibidas", "processReceivedPurchases"))
     .addSubMenu(ui.createMenu("Ventas y ordenes")
       .addItem("Completar ventas desde cache", "completeSalesFromPriceChartingCache")
+      .addItem("Generar mensaje para comprador", "promptGenerateSauBuyerMessage")
+      .addItem("Generar etiquetas A4", "generateSauOrderLabelsSheet")
       .addItem("Procesar ordenes listas", "processReadyOrders")
       .addItem("Sincronizar ventas y frees listas", "syncReadySalesAndFrees")
       .addItem("Archivar ordenes entregadas", "archiveDeliveredOrders"))
@@ -994,6 +997,12 @@ function handleSauMobileApi_(request) {
     }
     if (normalizedAction === "completeorder") {
       return mobileSauJson_({ ok: true, data: mobileCompleteOrder(request.payload || request) });
+    }
+    if (normalizedAction === "generateorderbuyermessage" || normalizedAction === "orderbuyermessage") {
+      return mobileSauJson_({ ok: true, data: mobileGenerateOrderBuyerMessage(request.payload || request) });
+    }
+    if (normalizedAction === "generatependingorderlabels" || normalizedAction === "pendingorderlabels") {
+      return mobileSauJson_({ ok: true, data: mobileGeneratePendingOrderLabels(request.payload || request) });
     }
     if (normalizedAction === "updatepackingline") {
       return mobileSauJson_({ ok: true, data: mobileUpdatePackingLine(request.payload || request) });
@@ -3072,6 +3081,285 @@ function logSauFinishedClaim_(generator, claimName, claimUrl, soldRows, freeRows
   if (hubLog) appendSauRows_(hubLog, [[now, claimName, claimUrl, Object.keys(buyers).length, soldRows.length, totalArs, freeRows.length, "App", ""]]);
 }
 
+function generateSauOrderLabelsSheet() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var orders = ss.getSheetByName(SAU.SHEETS.ORDENES);
+    if (!orders) throw new Error("No existe hoja Ordenes.");
+    var labels = getSauOrdersForLabels_(ss, orders);
+    if (!labels.length) {
+      ui.alert("No encontre ordenes para etiquetar. Selecciona filas en Ordenes o revisa que haya ordenes no entregadas.");
+      return;
+    }
+    var sheet = buildSauOrderLabelsSheet_(ss, labels);
+    ss.setActiveSheet(sheet);
+    ui.alert("Etiquetas listas", "Genere " + labels.length + " etiquetas en la hoja " + SAU.SHEETS.ETIQUETAS_ORDENES + ". Ya podes imprimirla en A4.", ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert("No pude generar etiquetas: " + (err && err.message ? err.message : err));
+  }
+}
+
+function mobileGeneratePendingOrderLabels(payload) {
+  payload = payload || {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orders = ss.getSheetByName(SAU.SHEETS.ORDENES);
+  if (!orders) throw new Error("No existe hoja Ordenes.");
+  var labels = getSauPendingOrdersForLabels_(orders);
+  var sheet = buildSauOrderLabelsSheet_(ss, labels);
+  appendSauAudit_("Generar etiquetas", "Ordenes", SAU.SHEETS.ETIQUETAS_ORDENES, String(payload.actor || "App"), labels.length + " etiquetas pendientes", String(payload.actionId || ""));
+  return {
+    labels: labels.length,
+    sheetName: sheet.getName(),
+    message: labels.length ? "Etiquetas listas para imprimir" : "No hay ordenes pendientes para etiquetar"
+  };
+}
+
+function getSauOrdersForLabels_(ss, orders) {
+  var activeSheet = ss.getActiveSheet();
+  var activeRange = activeSheet ? activeSheet.getActiveRange() : null;
+  var labels = [];
+  if (activeSheet && activeSheet.getName() === SAU.SHEETS.ORDENES && activeRange && activeRange.getLastRow() >= 2) {
+    var start = Math.max(2, activeRange.getRow());
+    var end = activeRange.getLastRow();
+    var selected = orders.getRange(start, 1, end - start + 1, SAU.ORDEN_COL.PAGO_NOTAS).getValues();
+    selected.forEach(function(row) {
+      var label = buildSauOrderLabel_(row);
+      if (label) labels.push(label);
+    });
+    if (labels.length) return labels;
+  }
+  return getSauPendingOrdersForLabels_(orders);
+}
+
+function getSauPendingOrdersForLabels_(orders) {
+  var labels = [];
+  if (orders.getLastRow() < 2) return labels;
+  var values = orders.getRange(2, 1, orders.getLastRow() - 1, SAU.ORDEN_COL.PAGO_NOTAS).getValues();
+  values.forEach(function(row) {
+    if (toSauBoolean_(row[SAU.ORDEN_COL.ENTREGADO - 1])) return;
+    var label = buildSauOrderLabel_(row);
+    if (label) labels.push(label);
+  });
+  return labels;
+}
+
+function buildSauOrderLabel_(row) {
+  var orderId = String(row[SAU.ORDEN_COL.ORDER_ID - 1] || "").trim();
+  var buyer = String(row[SAU.ORDEN_COL.COMPRADOR - 1] || "").trim();
+  if (!orderId || !buyer) return null;
+  return {
+    orderId: orderId,
+    buyer: buyer,
+    amount: formatSauBuyerMessageTotals_(row[SAU.ORDEN_COL.TOTAL_ARS - 1], row[SAU.ORDEN_COL.TOTAL_USD - 1]) || "$0",
+    paid: toSauBoolean_(row[SAU.ORDEN_COL.PAGADO - 1])
+  };
+}
+
+function buildSauOrderLabelsSheet_(ss, labels) {
+  var sheet = ss.getSheetByName(SAU.SHEETS.ETIQUETAS_ORDENES) || ss.insertSheet(SAU.SHEETS.ETIQUETAS_ORDENES);
+  sheet.clear();
+  sheet.setHiddenGridlines(true);
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
+
+  var columnsPerLabel = 3;
+  var rowsPerLabel = 5;
+  var labelsPerRow = 2;
+  var spacerColumn = 4;
+  var totalRows = Math.max(rowsPerLabel * Math.ceil(labels.length / labelsPerRow), rowsPerLabel);
+  if (sheet.getMaxRows() < totalRows) sheet.insertRowsAfter(sheet.getMaxRows(), totalRows - sheet.getMaxRows());
+  if (sheet.getMaxColumns() < 7) sheet.insertColumnsAfter(sheet.getMaxColumns(), 7 - sheet.getMaxColumns());
+  if (sheet.getMaxRows() > totalRows) sheet.deleteRows(totalRows + 1, sheet.getMaxRows() - totalRows);
+
+  sheet.setColumnWidths(1, 3, 84);
+  sheet.setColumnWidth(spacerColumn, 18);
+  sheet.setColumnWidths(5, 3, 84);
+  for (var r = 1; r <= totalRows; r++) sheet.setRowHeight(r, 30);
+
+  labels.forEach(function(label, index) {
+    var rowBlock = Math.floor(index / labelsPerRow);
+    var colBlock = index % labelsPerRow;
+    var row = rowBlock * rowsPerLabel + 1;
+    var col = colBlock === 0 ? 1 : 5;
+    var range = sheet.getRange(row, col, rowsPerLabel, columnsPerLabel);
+    range.merge();
+    range
+      .setValue(buildSauOrderLabelText_(label))
+      .setWrap(true)
+      .setVerticalAlignment("middle")
+      .setHorizontalAlignment("center")
+      .setFontFamily("Arial")
+      .setFontSize(12)
+      .setFontWeight("bold")
+      .setBackground("#ffffff")
+      .setBorder(true, true, true, true, true, true, "#111111", SpreadsheetApp.BorderStyle.SOLID);
+  });
+
+  sheet.getRange(1, 1, totalRows, 7).setVerticalAlignment("middle");
+  sheet.setFrozenRows(0);
+  return sheet;
+}
+
+function buildSauOrderLabelText_(label) {
+  return String(label.buyer || "").toUpperCase() +
+    "\n" + label.amount +
+    "\n" + (label.paid ? "☑ Pagado" : "☐ Pagado");
+}
+
+function promptGenerateSauBuyerMessage() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var activeSheet = ss.getActiveSheet();
+    var activeRange = activeSheet ? activeSheet.getActiveRange() : null;
+    var orderId = "";
+    if (activeSheet && activeSheet.getName() === SAU.SHEETS.ORDENES && activeRange && activeRange.getRow() >= 2) {
+      orderId = String(activeSheet.getRange(activeRange.getRow(), SAU.ORDEN_COL.ORDER_ID).getValue() || "").trim();
+    }
+    if (!orderId) {
+      var prompt = ui.prompt("Mensaje para comprador", "Selecciona una fila de Ordenes o pega el Order ID.", ui.ButtonSet.OK_CANCEL);
+      if (prompt.getSelectedButton() !== ui.Button.OK) return;
+      orderId = String(prompt.getResponseText() || "").trim();
+    }
+    if (!orderId) throw new Error("Falta Order ID.");
+    var result = buildSauBuyerMessageForOrder_(orderId);
+    showSauBuyerMessageDialog_(result);
+  } catch (err) {
+    ui.alert("No pude generar el mensaje: " + (err && err.message ? err.message : err));
+  }
+}
+
+function mobileGenerateOrderBuyerMessage(payload) {
+  payload = payload || {};
+  var orderId = String(payload.orderId || "").trim();
+  if (!orderId) throw new Error("Falta orderId.");
+  return buildSauBuyerMessageForOrder_(orderId);
+}
+
+function buildSauBuyerMessageForOrder_(orderId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var orders = ss.getSheetByName(SAU.SHEETS.ORDENES);
+  if (!orders) throw new Error("No existe hoja Ordenes.");
+  var rowNumber = findSauOrderRow_(orders, orderId);
+  if (!rowNumber) throw new Error("No encontre la orden: " + orderId);
+
+  var row = orders.getRange(rowNumber, 1, 1, SAU.ORDEN_COL.PAGO_NOTAS).getValues()[0];
+  var details = buildSauMobileOrderDetails_(makeSauKeyMap_([orderId]));
+  var order = buildSauMobileOrder_(row, rowNumber, details);
+  var config = readSauConfig_();
+  var claimDate = formatSauClaimDateForBuyerMessage_(row[SAU.ORDEN_COL.FECHA_CLAIM - 1], order.reference);
+  var alias = String(config.buyer_message_payment_alias || "(configurar alias en Config)").trim();
+  var pickupText = String(config.buyer_message_pickup_text || "Podes retirar por Microcentro o los sabados en nuestra mesa en Lo de Charly (Caballito)").trim();
+  var shippingText = String(config.buyer_message_shipping_text || "Tambien hacemos envios a todo el pais :D").trim();
+  var closingText = String(config.buyer_message_closing_text || "Avisame cualquier duda. Saludos!").trim();
+  var greetingTemplate = String(config.buyer_message_greeting || "Hola! Te envio tu resumen del claim del dia {claim_date}").trim();
+
+  var lines = [];
+  lines.push("🧾 " + greetingTemplate.replace("{claim_date}", claimDate || "dia del claim"));
+  lines.push("");
+  var items = order.items || [];
+  if (!items.length) {
+    lines.push("- Sin detalle de cartas cargado");
+  } else {
+    items.forEach(function(item) {
+      lines.push(formatSauBuyerMessageItem_(item));
+    });
+  }
+  if (order.frees && order.frees.length) {
+    lines.push("");
+    lines.push("Frees:");
+    order.frees.forEach(function(item) {
+      lines.push("- " + (item.quantity > 1 ? item.quantity + "x " : "") + String(item.name || "Free"));
+    });
+  }
+  lines.push("");
+  var totalText = formatSauBuyerMessageTotals_(order.totalArs, order.totalUsd);
+  if (totalText) lines.push("Total: " + totalText);
+  lines.push("💸 Podes abonar al siguiente alias: " + alias);
+  lines.push("");
+  lines.push("📍 " + pickupText);
+  lines.push("");
+  lines.push("📦 " + shippingText);
+  lines.push("");
+  lines.push("✨ " + closingText);
+
+  var message = lines.join("\n");
+  return {
+    orderId: order.orderId,
+    buyer: order.buyer,
+    claim: order.reference,
+    claimDate: claimDate,
+    totalArs: order.totalArs,
+    totalUsd: order.totalUsd,
+    cards: order.cards,
+    message: message
+  };
+}
+
+function showSauBuyerMessageDialog_(result) {
+  var html = HtmlService.createHtmlOutput(
+    '<div style="font-family:Arial,sans-serif;padding:14px;background:#111;color:#fff;">' +
+      '<h2 style="margin:0 0 8px;">Mensaje para ' + escapeSauHtml_(result.buyer || result.orderId) + '</h2>' +
+      '<p style="margin:0 0 12px;color:#bbb;">Copialo y pegalo en WhatsApp/Instagram.</p>' +
+      '<textarea id="msg" style="width:100%;height:360px;box-sizing:border-box;background:#050505;color:#fff;border:1px solid #333;border-radius:8px;padding:12px;font-size:14px;line-height:1.45;">' +
+        escapeSauHtml_(result.message) +
+      '</textarea>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;">' +
+        '<button onclick="copyMsg()" style="background:#f52546;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:bold;">Copiar mensaje</button>' +
+        '<button onclick="google.script.host.close()" style="background:#222;color:#fff;border:1px solid #444;border-radius:8px;padding:10px 14px;font-weight:bold;">Cerrar</button>' +
+      '</div>' +
+      '<script>function copyMsg(){var el=document.getElementById("msg");el.focus();el.select();document.execCommand("copy");}</script>' +
+    '</div>'
+  ).setWidth(620).setHeight(560);
+  SpreadsheetApp.getUi().showModalDialog(html, "Mensaje para comprador");
+}
+
+function formatSauBuyerMessageItem_(item) {
+  var qty = Number(item.quantity) || 1;
+  var prices = formatSauBuyerMessageTotals_(item.ars, item.usd);
+  var name = cleanSauBuyerMessageItemName_(item.name || "Carta");
+  return "- " + (qty > 1 ? qty + "x " : "") + name + (prices ? " - " + prices : "");
+}
+
+function cleanSauBuyerMessageItemName_(name) {
+  return String(name || "")
+    .replace(/\s+-\s+(?:\$|ARS\s*)[\d.,]+(?:\s+ARS)?\s*$/i, "")
+    .replace(/\s+-\s+USD\s*[\d.,]+\s*$/i, "")
+    .trim();
+}
+
+function formatSauBuyerMessageTotals_(ars, usd) {
+  var parts = [];
+  if (Number(ars)) parts.push(formatSauMoneyArs_(ars));
+  if (Number(usd)) parts.push(formatSauMoneyUsd_(usd));
+  return parts.join(" + ");
+}
+
+function formatSauClaimDateForBuyerMessage_(dateValue, fallbackClaim) {
+  var date = dateValue ? new Date(dateValue) : null;
+  if (date && !isNaN(date.getTime())) {
+    var months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+    return date.getDate() + " de " + months[date.getMonth()];
+  }
+  var match = String(fallbackClaim || "").match(/(\d{1,2}\s+de\s+[a-záéíóúñ]+)/i);
+  return match ? match[1] : String(fallbackClaim || "").trim();
+}
+
+function makeSauKeyMap_(keys) {
+  var out = {};
+  keys.forEach(function(key) { out[String(key)] = true; });
+  return out;
+}
+
+function escapeSauHtml_(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function mobileListOrders(request) {
   request = request || {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -4029,7 +4317,12 @@ function setupSauConfig_(ss) {
     ["image_repair_batch_size", 40],
     ["fast_lookup_max_rows", 80],
     ["require_user_session", true],
-    ["pause_user_passwords", true]
+    ["pause_user_passwords", true],
+    ["buyer_message_payment_alias", "CONFIGURAR_ALIAS"],
+    ["buyer_message_greeting", "Hola! Te envio tu resumen del claim del dia {claim_date}"],
+    ["buyer_message_pickup_text", "Podes retirar por Microcentro o los sabados en nuestra mesa en Lo de Charly (Caballito)"],
+    ["buyer_message_shipping_text", "Tambien hacemos envios a todo el pais :D"],
+    ["buyer_message_closing_text", "Avisame cualquier duda. Saludos!"]
   ]);
   sheet.getRange("A1:B1").setFontWeight("bold").setBackground("#263238").setFontColor("#ffffff");
   sheet.setFrozenRows(1);

@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
 
@@ -11,12 +12,15 @@ export type DatabaseCheck = {
 };
 
 export type DbStockRow = {
+  purchaseCost: number | null;
+  purchaseCurrency: string;
   id: string;
   businessId: string;
   sku: string;
   location: string;
   intakeBatch: string;
   inventoryStatus: string;
+  tags: string;
   quantityOnHand: number;
   quantityReserved: number;
   active: boolean;
@@ -106,6 +110,59 @@ export type DbImportReviewRow = {
   matchedInventoryItemId?: string;
 };
 
+export type MobileInventoryEntry = {
+  id: string;
+  businessId: string;
+  status: "pending" | "reviewed" | "rejected";
+  helperName: string;
+  source: string;
+  matchType: "inventory" | "card_index" | "manual";
+  inventoryItemId?: string;
+  priceChartingId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  language: string;
+  condition: string;
+  finish: string;
+  gradingCompany: string;
+  grade: string;
+  location: string;
+  intakeBatch: string;
+  quantityOnHand: number;
+  priceArs: number;
+  priceUsd: number | null;
+  imageUrl: string;
+  notes: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedByName?: string;
+};
+
+export type MobileInventoryInput = {
+  helperName?: string;
+  matchType?: "inventory" | "card_index" | "manual";
+  inventoryItemId?: string;
+  priceChartingId?: string;
+  sku?: string;
+  name?: string;
+  expansion?: string;
+  number?: string;
+  language?: string;
+  condition?: string;
+  finish?: string;
+  gradingCompany?: string;
+  grade?: string;
+  location?: string;
+  intakeBatch?: string;
+  quantityOnHand?: number;
+  priceArs?: number;
+  priceUsd?: number | null;
+  imageUrl?: string;
+  notes?: string;
+};
+
 export type DbReservationRow = {
   id: string;
   inventoryItemId: string;
@@ -117,7 +174,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -125,13 +182,105 @@ const packageRoot = path.resolve(__dirname, "..");
 const demoBusinessId = "11111111-1111-4111-8111-111111111111";
 const localBusinessName = "UltimoTurno";
 const localBusinessSlug = "ultimoturno";
+const require = createRequire(import.meta.url);
+const databaseDrivers = new WeakMap<object, "pglite" | "postgres">();
+
+type QueryLikeResult<T> = { rows: T[] };
+type PgClientLike = {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryLikeResult<T>>;
+  release?: () => void;
+};
+type PgPoolLike = PgClientLike & {
+  connect(): Promise<PgClientLike>;
+  end(): Promise<void>;
+};
+
+class PostgresOperationalDatabase {
+  private readonly pool: PgPoolLike;
+  private manualTransactionClient: PgClientLike | null = null;
+
+  constructor(options: { databaseUrl: string; ssl?: boolean; poolMax?: number }) {
+    const { Pool, types } = require("pg") as {
+      Pool: new (config: Record<string, unknown>) => PgPoolLike;
+      types?: { setTypeParser: (oid: number, parser: (value: string) => string) => void };
+    };
+    types?.setTypeParser(1082, (value) => value); // date
+    types?.setTypeParser(1114, (value) => value); // timestamp
+    types?.setTypeParser(1184, (value) => value); // timestamptz
+    this.pool = new Pool({
+      connectionString: options.databaseUrl,
+      max: options.poolMax || 10,
+      ssl: options.ssl ? { rejectUnauthorized: false } : undefined
+    });
+    databaseDrivers.set(this, "postgres");
+  }
+
+  async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryLikeResult<T>> {
+    return (this.manualTransactionClient || this.pool).query<T>(sql, params);
+  }
+
+  async exec(sql: string): Promise<void> {
+    const command = sql.trim().replace(/;+$/, "").toLowerCase();
+    if (command === "begin") {
+      if (this.manualTransactionClient) throw new Error("Ya hay una transaccion manual activa.");
+      this.manualTransactionClient = await this.pool.connect();
+      await this.manualTransactionClient.query("begin");
+      return;
+    }
+    if (command === "commit" || command === "rollback") {
+      const client = this.manualTransactionClient;
+      if (!client) throw new Error(`No hay una transaccion manual activa para ${command}.`);
+      try {
+        await client.query(command);
+      } finally {
+        this.manualTransactionClient = null;
+        client.release?.();
+      }
+      return;
+    }
+    await this.query(sql);
+  }
+
+  async transaction<T>(work: (connection: PGlite) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    const connection = {
+      query: <Row = Record<string, unknown>>(sql: string, params?: unknown[]) => client.query<Row>(sql, params),
+      exec: async (sql: string) => { await client.query(sql); }
+    } as unknown as PGlite;
+    databaseDrivers.set(connection, "postgres");
+    await client.query("begin");
+    try {
+      const result = await work(connection);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release?.();
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.pool.end();
+  }
+}
+
+function markDatabaseDriver<T extends object>(db: T, driver: "pglite" | "postgres"): T {
+  databaseDrivers.set(db, driver);
+  return db;
+}
+
+export function getOperationalDatabaseDriver(db: PGlite): "pglite" | "postgres" {
+  return databaseDrivers.get(db) || "pglite";
+}
 
 async function readSql(relativePath: string): Promise<string> {
   return readFile(path.join(packageRoot, relativePath), "utf8");
 }
 
 export async function createDemoDatabase(): Promise<PGlite> {
-  const db = new PGlite();
+  const db = markDatabaseDriver(new PGlite(), "pglite");
   for (const file of migrationFiles) {
     await db.exec(await readSql(`migrations/${file}`));
   }
@@ -142,7 +291,11 @@ export async function createDemoDatabase(): Promise<PGlite> {
 }
 
 export type OperationalDatabaseOptions = {
-  dataDir: string;
+  dataDir?: string;
+  databaseUrl?: string;
+  driver?: "pglite" | "postgres";
+  ssl?: boolean;
+  poolMax?: number;
   adminEmail?: string;
   adminPassword?: string;
   adminName?: string;
@@ -156,6 +309,9 @@ export type AuthenticatedUser = {
 };
 
 export type UpsertInventoryInput = {
+  mobileEntryId?: string;
+  purchaseCost?: number | null;
+  purchaseCurrency?: string;
   sku?: string;
   name: string;
   expansion: string;
@@ -173,11 +329,14 @@ export type UpsertInventoryInput = {
   location?: string;
   intakeBatch?: string;
   inventoryStatus?: string;
+  tags?: string;
   quantityOnHand: number;
   quantityReserved?: number;
   priceArs?: number;
   priceUsd?: number | null;
   notes?: string;
+  stockMovementNote?: string;
+  stockMovementReferenceType?: string;
 };
 
 export type InventoryAdjustmentInput = {
@@ -191,6 +350,12 @@ export type InventoryAdjustmentInput = {
 export type ExampleInventoryResult = {
   created: number;
   skipped: number;
+};
+
+export type InventoryResetResult = {
+  touchedSkus: number;
+  unitsCleared: number;
+  reservationsCleared: number;
 };
 
 export type SnapshotPreviewRow = UpsertInventoryInput & {
@@ -538,6 +703,13 @@ export type CardIndexStatus = {
   };
 };
 
+export type CardIndexPriceChartingBatchResult = {
+  processed: number;
+  nextAfterId: string;
+  complete: boolean;
+  status: CardIndexStatus;
+};
+
 export type CardIndexEntry = {
   id: string;
   priceChartingId: string;
@@ -607,8 +779,21 @@ export type PriceChartingImageDownloadSuccess = {
 };
 
 export async function createOperationalDatabase(options: OperationalDatabaseOptions): Promise<PGlite> {
-  await mkdir(options.dataDir, { recursive: true });
-  const db = new PGlite(options.dataDir);
+  const driver = options.driver || "pglite";
+  let db: PGlite;
+  if (driver === "postgres") {
+    const databaseUrl = String(options.databaseUrl || "").trim();
+    if (!databaseUrl) throw new Error("DATABASE_URL es obligatorio cuando ULTIMOTURNO_DB_DRIVER=postgres.");
+    db = new PostgresOperationalDatabase({
+      databaseUrl,
+      ssl: options.ssl,
+      poolMax: options.poolMax
+    }) as unknown as PGlite;
+  } else {
+    const dataDir = options.dataDir || path.resolve(process.cwd(), ".data", "ultimoturno-pglite");
+    await mkdir(dataDir, { recursive: true });
+    db = markDatabaseDriver(new PGlite(dataDir), "pglite");
+  }
   await runOperationalMigrations(db);
   await ensureOperationalBootstrap(db, options);
   return db;
@@ -685,10 +870,11 @@ export async function getDefaultOperationalUser(db: PGlite): Promise<Authenticat
 
 export async function getHealth(db: PGlite) {
   const result = await db.query<{ slug: string; name: string }>("select slug, name from businesses limit 1");
+  const driver = getOperationalDatabaseDriver(db);
   return {
     ok: true,
     service: "ultimoturno-new-api",
-    mode: "pglite-postgresql",
+    mode: driver === "postgres" ? "postgresql" : "pglite-postgresql",
     business: result.rows[0]?.slug || "sin-negocio",
     businessName: result.rows[0]?.name || "Sin negocio"
   };
@@ -983,9 +1169,16 @@ export async function getTcgplayerPriceCacheStatus(db: PGlite): Promise<Tcgplaye
   };
 }
 
-export async function refreshCardIndexFromPriceCharting(db: PGlite): Promise<CardIndexStatus> {
-  let lastId = "";
-  for (;;) {
+export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options: {
+  afterId?: string;
+  limit?: number;
+} = {}): Promise<CardIndexPriceChartingBatchResult> {
+  let lastId = String(options.afterId || "");
+  const limit = Math.max(1, Math.min(5000, Math.floor(options.limit || 1000)));
+  let processed = 0;
+  let complete = false;
+  while (processed < limit) {
+    const chunkLimit = Math.min(500, limit - processed);
     const rows = await db.query<Record<string, unknown>>(`
       select
         pce.pricecharting_id,
@@ -1000,10 +1193,13 @@ export async function refreshCardIndexFromPriceCharting(db: PGlite): Promise<Car
       left join pricecharting_image_cache pic using (pricecharting_id)
       where pce.pricecharting_id > $1
       order by pce.pricecharting_id
-      limit 500
-    `, [lastId]);
+      limit $2
+    `, [lastId, chunkLimit]);
     const chunk = rows.rows;
-    if (!chunk.length) break;
+    if (!chunk.length) {
+      complete = true;
+      break;
+    }
     const params: unknown[] = [];
     const values = chunk.map((row, index) => {
       const base = index * 11;
@@ -1046,9 +1242,28 @@ export async function refreshCardIndexFromPriceCharting(db: PGlite): Promise<Car
     `, params);
     await upsertPriceChartingSourceLinks(db, chunk);
     lastId = String(chunk[chunk.length - 1].pricecharting_id || lastId);
+    processed += chunk.length;
+    if (chunk.length < chunkLimit) {
+      complete = true;
+      break;
+    }
   }
 
-  return getCardIndexStatus(db);
+  return {
+    processed,
+    nextAfterId: complete ? "" : lastId,
+    complete,
+    status: await getCardIndexStatus(db)
+  };
+}
+
+export async function refreshCardIndexFromPriceCharting(db: PGlite): Promise<CardIndexStatus> {
+  let afterId = "";
+  for (;;) {
+    const batch = await refreshCardIndexFromPriceChartingBatch(db, { afterId, limit: 5000 });
+    if (batch.complete || !batch.nextAfterId) return batch.status;
+    afterId = batch.nextAfterId;
+  }
 }
 
 export async function getCardIndexStatus(db: PGlite): Promise<CardIndexStatus> {
@@ -1879,6 +2094,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       ii.location,
       ii.intake_batch,
       ii.inventory_status,
+      ii.tags, ii.purchase_cost, ii.purchase_currency,
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
@@ -1992,6 +2208,7 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       ii.location,
       ii.intake_batch,
       ii.inventory_status,
+      ii.tags, ii.purchase_cost, ii.purchase_currency,
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
@@ -2175,6 +2392,102 @@ export async function listImportRows(db: PGlite): Promise<{ rows: DbImportReview
   };
 }
 
+export async function listMobileInventoryEntries(db: PGlite, businessId = demoBusinessId, status = "pending", limit = 500): Promise<{ entries: MobileInventoryEntry[] }> {
+  const params: unknown[] = [businessId];
+  const where = ["mie.business_id = $1"];
+  if (status !== "all") {
+    params.push(status);
+    where.push(`mie.status = $${params.length}`);
+  }
+  const safeLimit = Math.max(1, Math.min(20000, Math.floor(Number(limit || 500))));
+  params.push(safeLimit);
+  const limitParam = `$${params.length}`;
+  const result = await db.query<Record<string, unknown>>(`
+    select mie.*, u.display_name as reviewed_by_name
+    from mobile_inventory_entries mie
+    left join app_users u on u.id = mie.reviewed_by
+    where ${where.join(" and ")}
+    order by mie.created_at desc
+    limit ${limitParam}
+  `, params);
+  return { entries: result.rows.map(toMobileInventoryEntry) };
+}
+
+export async function createMobileInventoryEntry(db: PGlite, input: MobileInventoryInput, actor: AuthenticatedUser): Promise<MobileInventoryEntry> {
+  const quantity = Math.max(1, Math.floor(Number(input.quantityOnHand || 1)));
+  const name = String(input.name || "").trim();
+  const inventoryItemId = String(input.inventoryItemId || "").trim();
+  const priceChartingId = String(input.priceChartingId || "").trim();
+  if (!name && !inventoryItemId && !priceChartingId) throw new Error("Busca o identifica una carta antes de guardarla.");
+  if (inventoryItemId && !(await getInventoryItem(db, inventoryItemId, actor.businessId))) throw new Error("La carta elegida ya no existe en inventario.");
+  const id = crypto.randomUUID();
+  const matchType = input.matchType === "inventory" || input.matchType === "card_index" ? input.matchType : "manual";
+  await db.query(`
+    insert into mobile_inventory_entries (
+      id, business_id, helper_name, source, match_type, inventory_item_id, pricecharting_id,
+      sku, name, expansion, card_number, language, condition, finish, grading_company,
+      grade, location, intake_batch, quantity_on_hand, price_ars, price_usd, image_url, notes
+    ) values (
+      $1, $2, $3, 'mobile', $4, $5, $6,
+      $7, $8, $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18, $19, $20, $21, $22
+    )
+  `, [
+    id,
+    actor.businessId,
+    String(input.helperName || "").trim().slice(0, 80),
+    matchType,
+    inventoryItemId || null,
+    priceChartingId,
+    String(input.sku || "").trim(),
+    name,
+    String(input.expansion || "").trim(),
+    String(input.number || "").trim(),
+    String(input.language || "EN").trim().toUpperCase().slice(0, 12),
+    String(input.condition || "NM").trim().toUpperCase().slice(0, 24),
+    String(input.finish || "normal").trim() || "normal",
+    String(input.gradingCompany || "").trim().toUpperCase().slice(0, 24),
+    String(input.grade || "").trim().slice(0, 24),
+    String(input.location || "").trim().slice(0, 120),
+    String(input.intakeBatch || "").trim().slice(0, 160),
+    quantity,
+    Math.max(0, Number(input.priceArs || 0)),
+    input.priceUsd === null || input.priceUsd === undefined ? null : Math.max(0, Number(input.priceUsd || 0)),
+    String(input.imageUrl || "").trim(),
+    String(input.notes || "").trim().slice(0, 1000)
+  ]);
+  const saved = await db.query<Record<string, unknown>>("select * from mobile_inventory_entries where id = $1", [id]);
+  await writeAudit(db, actor, "mobile_inventory.create", "mobile_inventory_entry", id, null, input);
+  return toMobileInventoryEntry(saved.rows[0]);
+}
+
+export async function updateMobileInventoryEntryStatus(db: PGlite, id: string, status: "pending" | "reviewed" | "rejected", actor: AuthenticatedUser): Promise<MobileInventoryEntry> {
+  const result = await db.query<Record<string, unknown>>(`
+    update mobile_inventory_entries
+    set status = $3,
+      reviewed_at = case when $3 = 'pending' then null else now() end,
+      reviewed_by = case when $3 = 'pending' then null else $2::uuid end,
+      updated_at = now()
+    where id = $1 and business_id = $4
+    returning *
+  `, [id, actor.id, status, actor.businessId]);
+  if (!result.rows[0]) throw new Error("Entrada movil no encontrada.");
+  await writeAudit(db, actor, "mobile_inventory.status", "mobile_inventory_entry", id, null, { status });
+  return toMobileInventoryEntry(result.rows[0]);
+}
+
+export async function deleteMobileInventoryEntry(db: PGlite, id: string, actor: AuthenticatedUser): Promise<{ deleted: boolean; entry?: MobileInventoryEntry }> {
+  const result = await db.query<Record<string, unknown>>(`
+    delete from mobile_inventory_entries
+    where id = $1 and business_id = $2
+    returning *
+  `, [id, actor.businessId]);
+  if (!result.rows[0]) return { deleted: false };
+  const entry = toMobileInventoryEntry(result.rows[0]);
+  await writeAudit(db, actor, "mobile_inventory.delete", "mobile_inventory_entry", id, entry, null);
+  return { deleted: true, entry };
+}
+
 export async function listReservations(db: PGlite): Promise<{ reservations: DbReservationRow[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select id, inventory_item_id, quantity, status, channel, external_cart_id, expires_at, created_at
@@ -2196,13 +2509,55 @@ export async function listReservations(db: PGlite): Promise<{ reservations: DbRe
   };
 }
 
+// PGlite serializes callback transactions. Pass the transaction connection to every
+// nested operation so stock and its intake receipt commit or roll back together.
+const inventoryTransactions = new WeakSet<object>();
+export async function inventoryTransaction<T>(db: PGlite, work: (connection: PGlite) => Promise<T>): Promise<T> {
+  if (inventoryTransactions.has(db)) return work(db);
+  return db.transaction(async (tx) => {
+    const connection = tx as unknown as PGlite;
+    inventoryTransactions.add(connection);
+    try { return await work(connection); }
+    finally { inventoryTransactions.delete(connection); }
+  });
+}
+
+export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput, actor: AuthenticatedUser): Promise<DbStockRow> {
+  return inventoryTransaction(db, async (connection) => {
+    if (!Number.isInteger(input.quantityOnHand) || input.quantityOnHand <= 0) throw new Error("Indica una cantidad mayor a cero.");
+    const stock = await listStockForBusiness(connection, actor.businessId);
+    const same = (a: unknown, b: unknown) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+    const existing = stock.items.find((item) =>
+      same(item.product.name, input.name) && same(item.product.expansion, input.expansion) && same(item.product.number, input.number)
+      && same(item.variant.language, input.language) && same(item.variant.condition, input.gradingCompany || input.grade ? "GRADED" : input.condition)
+      && same(item.variant.finish, input.finish) && same(item.variant.gradingCompany, input.gradingCompany)
+      && same(item.variant.grade, input.grade) && same(item.variant.gradingCert, input.gradingCert)
+      && (!input.location || same(item.location, input.location)));
+    const existingNotes = existing ? await connection.query<{ notes: string }>("select notes from card_products where id = $1 and business_id = $2", [existing.product.id, actor.businessId]) : null;
+    return upsertInventoryItem(connection, {
+      ...input,
+      sku: existing?.sku || `INTAKE-${crypto.randomUUID()}`,
+      quantityOnHand: (existing?.quantityOnHand || 0) + input.quantityOnHand,
+      quantityReserved: existing?.quantityReserved || 0,
+      location: input.location || existing?.location,
+      intakeBatch: input.intakeBatch || existing?.intakeBatch,
+      tags: input.tags || existing?.tags,
+      notes: input.notes || existingNotes?.rows[0]?.notes || "",
+      inventoryStatus: existing?.inventoryStatus || input.inventoryStatus,
+      stockMovementReferenceType: "intake",
+      stockMovementNote: "Ingreso rapido de stock"
+    }, actor);
+  });
+}
+
 export async function upsertInventoryItem(
   db: PGlite,
   input: UpsertInventoryInput,
   actor: AuthenticatedUser
 ): Promise<DbStockRow> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, (connection) => upsertInventoryItem(connection, input, actor));
   validateInventoryInput(input);
-  const before = input.sku ? (await findStockBySku(db, actor.businessId, input.sku)) : null;
+  const before = await findStockBySku(db, actor.businessId, input.sku?.trim() || buildSku(input));
   const productId = before?.product.id || crypto.randomUUID();
   const variantId = before?.variant.id || crypto.randomUUID();
   const itemId = before?.id || crypto.randomUUID();
@@ -2215,9 +2570,10 @@ export async function upsertInventoryItem(
   const finish = input.finish.trim();
   const intakeBatch = input.intakeBatch?.trim() || "";
   const inventoryStatus = normalizeInventoryStatus(input.inventoryStatus);
+  const tags = input.tags === undefined ? before?.tags || "" : normalizeInventoryTags(input.tags);
+  const quantityDelta = input.quantityOnHand - (before?.quantityOnHand || 0);
 
-  await db.exec("begin");
-  try {
+  {
     if (before) {
       await db.query(`
         update card_products
@@ -2231,9 +2587,9 @@ export async function upsertInventoryItem(
       `, [input.language.trim(), condition, finish, gradingCompany, grade, gradingCert, variantId, actor.businessId]);
       await db.query(`
         update inventory_items
-        set sku = $1, location = $2, intake_batch = $3, inventory_status = $4, quantity_on_hand = $5, quantity_reserved = $6, active = true, updated_at = now()
-        where id = $7 and business_id = $8
-      `, [sku, input.location || "", intakeBatch, inventoryStatus, input.quantityOnHand, input.quantityReserved || 0, itemId, actor.businessId]);
+        set sku = $1, location = $2, intake_batch = $3, inventory_status = $4, tags = $5, quantity_on_hand = $6, quantity_reserved = $7, active = true, updated_at = now()
+        where id = $8 and business_id = $9
+      `, [sku, input.location || "", intakeBatch, inventoryStatus, tags, input.quantityOnHand, input.quantityReserved || 0, itemId, actor.businessId]);
     } else {
       await db.query(`
         insert into card_products (id, business_id, name, expansion, card_number, image_url, notes)
@@ -2244,11 +2600,37 @@ export async function upsertInventoryItem(
         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `, [variantId, actor.businessId, productId, input.language.trim(), condition, finish, gradingCompany, grade, gradingCert]);
       await db.query(`
-        insert into inventory_items (id, business_id, sku, product_id, variant_id, location, intake_batch, inventory_status, quantity_on_hand, quantity_reserved, active)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
-      `, [itemId, actor.businessId, sku, productId, variantId, input.location || "", intakeBatch, inventoryStatus, input.quantityOnHand, input.quantityReserved || 0]);
+        insert into inventory_items (id, business_id, sku, product_id, variant_id, location, intake_batch, inventory_status, tags, quantity_on_hand, quantity_reserved, active)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+      `, [itemId, actor.businessId, sku, productId, variantId, input.location || "", intakeBatch, inventoryStatus, tags, input.quantityOnHand, input.quantityReserved || 0]);
     }
 
+    if (quantityDelta !== 0) {
+      const stockMovementReferenceType = input.stockMovementReferenceType?.trim() || "admin";
+      const stockMovementNote = input.stockMovementNote?.trim()
+        || (before ? "Ajuste desde edicion manual de inventario" : "Carga manual inicial de inventario");
+      await db.query(`
+        insert into inventory_movements (
+          id, business_id, inventory_item_id, movement_type, quantity_delta,
+          reference_type, reference_id, idempotency_key, note, created_by
+        )
+        values ($1, $2, $3, 'manual_adjustment', $4, $5, $6, $7, $8, $9)
+      `, [
+        crypto.randomUUID(),
+        actor.businessId,
+        itemId,
+        quantityDelta,
+        stockMovementReferenceType,
+        itemId,
+        `movement-manual-upsert-${itemId}-${crypto.randomUUID()}`,
+        stockMovementNote,
+        actor.id
+      ]);
+    }
+
+    if (input.purchaseCost !== undefined) {
+      await db.query("update inventory_items set purchase_cost = $1, purchase_currency = $2 where id = $3 and business_id = $4", [input.purchaseCost, input.purchaseCurrency || "ARS", itemId, actor.businessId]);
+    }
     await db.query(`
       insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
       values ($1, $2, $3, $4, true)
@@ -2263,15 +2645,38 @@ export async function upsertInventoryItem(
     await upsertExternalIdentifier(db, actor.businessId, productId, variantId, "monprice", input.monPriceId || "", undefined);
 
     await writeAudit(db, actor, before ? "inventory.update" : "inventory.create", "inventory_item", itemId, before, { ...input, sku });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
   }
 
   const created = await getInventoryItem(db, itemId, actor.businessId);
   if (!created) throw new Error("No se pudo leer el item guardado");
   return created;
+}
+
+export async function updateInventoryItemTags(
+  db: PGlite,
+  inventoryItemId: string,
+  tags: string,
+  actor: AuthenticatedUser
+): Promise<DbStockRow> {
+  const before = await getInventoryItem(db, inventoryItemId, actor.businessId);
+  if (!before) throw new Error("No se encontro el item de inventario");
+  const normalizedTags = normalizeInventoryTags(tags);
+  await db.exec("begin");
+  try {
+    await db.query(`
+      update inventory_items
+      set tags = $1, updated_at = now()
+      where id = $2 and business_id = $3
+    `, [normalizedTags, inventoryItemId, actor.businessId]);
+    await writeAudit(db, actor, "inventory.tags.update", "inventory_item", inventoryItemId, { tags: before.tags }, { tags: normalizedTags });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  const updated = await getInventoryItem(db, inventoryItemId, actor.businessId);
+  if (!updated) throw new Error("No se pudo leer el item actualizado");
+  return updated;
 }
 
 async function upsertExternalIdentifier(
@@ -2309,14 +2714,14 @@ export async function adjustInventoryQuantity(
   input: InventoryAdjustmentInput,
   actor: AuthenticatedUser
 ): Promise<DbStockRow> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, (connection) => adjustInventoryQuantity(connection, input, actor));
   if (!Number.isInteger(input.quantityDelta) || input.quantityDelta === 0) throw new Error("El ajuste debe ser un numero entero distinto de cero");
   const before = await getInventoryItem(db, input.inventoryItemId, actor.businessId);
   if (!before) throw new Error("No se encontro el item de inventario");
   const nextQuantity = before.quantityOnHand + input.quantityDelta;
   if (nextQuantity < before.quantityReserved) throw new Error("El ajuste dejaria menos stock que unidades reservadas");
 
-  await db.exec("begin");
-  try {
+  {
     await db.query(`
       update inventory_items
       set quantity_on_hand = $1, updated_at = now()
@@ -2327,10 +2732,6 @@ export async function adjustInventoryQuantity(
       values ($1, $2, $3, 'manual_adjustment', $4, $5, $6, 'admin', $7, $8, $9)
     `, [crypto.randomUUID(), actor.businessId, input.inventoryItemId, input.quantityDelta, input.unitCostArs || null, input.unitCostUsd || null, crypto.randomUUID(), input.note.trim(), actor.id]);
     await writeAudit(db, actor, "inventory.adjust", "inventory_item", input.inventoryItemId, before, { quantityOnHand: nextQuantity, ...input });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
   }
 
   const updated = await getInventoryItem(db, input.inventoryItemId, actor.businessId);
@@ -2338,17 +2739,83 @@ export async function adjustInventoryQuantity(
   return updated;
 }
 
+export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser): Promise<InventoryResetResult> {
+  const rows = await db.query<Record<string, unknown>>(`
+    select id, sku, quantity_on_hand, quantity_reserved
+    from inventory_items
+    where business_id = $1
+      and active = true
+      and (quantity_on_hand <> 0 or quantity_reserved <> 0)
+  `, [actor.businessId]);
+  const touchedSkus = rows.rows.length;
+  const unitsCleared = rows.rows.reduce((sum, row) => sum + Number(row.quantity_on_hand || 0), 0);
+  const reservationsCleared = rows.rows.reduce((sum, row) => sum + Number(row.quantity_reserved || 0), 0);
+  if (!touchedSkus) return { touchedSkus, unitsCleared, reservationsCleared };
+
+  const runId = crypto.randomUUID();
+  await db.exec("begin");
+  try {
+    for (const row of rows.rows) {
+      const quantity = Number(row.quantity_on_hand || 0);
+      if (!quantity) continue;
+      await db.query(`
+        insert into inventory_movements (
+          id, business_id, inventory_item_id, movement_type, quantity_delta,
+          reference_type, reference_id, idempotency_key, note, created_by
+        )
+        values ($1, $2, $3, 'manual_adjustment', $4, 'admin_reset', $5, $6, $7, $8)
+      `, [
+        crypto.randomUUID(),
+        actor.businessId,
+        String(row.id),
+        -quantity,
+        runId,
+        `movement-inventory-reset-${runId}-${String(row.id)}`,
+        `Reset de inventario a cero desde Admin${String(row.sku || "") ? ` (${String(row.sku)})` : ""}`,
+        actor.id
+      ]);
+    }
+    await db.query(`
+      update inventory_items
+      set quantity_on_hand = 0,
+          quantity_reserved = 0,
+          updated_at = now()
+      where business_id = $1
+        and active = true
+        and (quantity_on_hand <> 0 or quantity_reserved <> 0)
+    `, [actor.businessId]);
+    await writeAudit(db, actor, "inventory.reset_stock", "inventory", runId, { touchedSkus, unitsCleared, reservationsCleared }, { touchedSkus, totalUnits: 0, reservedUnits: 0 });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  return { touchedSkus, unitsCleared, reservationsCleared };
+}
+
 export async function listSales(db: PGlite, businessId = demoBusinessId): Promise<{ sales: SaleRecord[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select s.id, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.payment_due_at, s.internal_note, s.message_sent_at,
       s.created_at, s.completed_at, si.id as sale_item_id, si.inventory_item_id, si.quantity,
-      si.unit_price_ars, si.unit_price_usd, si.line_total_ars, si.line_total_usd, si.price_currency, si.packed_at, ii.sku, p.name, p.image_url, si.display_name, si.sku_snapshot,
+      si.unit_price_ars, si.unit_price_usd, si.line_total_ars, si.line_total_usd, si.price_currency, si.packed_at, ii.sku, p.name,
+      coalesce(
+        nullif(p.image_url, ''),
+        nullif(sale_pic.public_url, ''),
+        nullif(sale_pic.source_image_url, ''),
+        nullif(sale_index.image_url, ''),
+        nullif(sale_index.tcgplayer_image_url, ''),
+        nullif(sale_index.pricecharting_image_url, ''),
+        ''
+      ) as image_url,
+      si.display_name, si.sku_snapshot,
       v.language, v.condition, v.finish, v.grading_company, v.grade, v.grading_cert
     from sales s
     left join sale_items si on si.sale_id = s.id
     left join inventory_items ii on ii.id = si.inventory_item_id
     left join card_products p on p.id = ii.product_id
     left join card_variants v on v.id = ii.variant_id
+    left join pricecharting_image_cache sale_pic on sale_pic.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
+    left join card_index_entries sale_index on sale_index.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
     where s.business_id = $1
     order by s.created_at desc, si.id
   `, [businessId]);
@@ -2462,6 +2929,7 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
     await db.exec("rollback");
     throw error;
   }
+  if (input.saleType === "reservation") await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   const created = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
   if (!created) throw new Error("No se pudo leer la operacion guardada");
   return created;
@@ -2483,7 +2951,8 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
         values ($1, $2, $3, 'reservation_sale', $4, 'sale', $5, $6, $7, $8)
       `, [crypto.randomUUID(), actor.businessId, line.inventoryItemId, -line.quantity, saleId, `movement-complete-${saleId}-${line.inventoryItemId}`, `Reserva cobrada a ${sale.customerName}`, actor.id]);
     }
-    await db.query("update sales set status = 'paid', completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
+    await db.query("update sales set status = 'paid', amount_paid_ars = total_ars, completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
+    await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, "sale.complete", "sale", saleId, sale, { status: "paid" });
     await db.exec("commit");
   } catch (error) {
@@ -2503,6 +2972,7 @@ export async function updateSalePayment(db: PGlite, saleId: string, amountPaidAr
     where id = $3 and business_id = $4
   `, [amount, paymentDueAt === undefined ? null : paymentDueAt, saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.payment.update", "sale", saleId, null, { amountPaidArs: amount, paymentDueAt });
+  await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
@@ -2530,10 +3000,9 @@ export async function updateSaleItemPacked(db: PGlite, saleItemId: string, packe
   const saleId = row.rows[0]?.sale_id;
   if (!saleId) throw new Error("La linea de orden ya no existe.");
   await db.query("update sale_items set packed_at = case when $1 then coalesce(packed_at, now()) else null end where id = $2 and business_id = $3", [packed, saleItemId, actor.businessId]);
-  if (!packed) {
-    await db.query("update sales set status = 'pending' where id = $1 and business_id = $2 and status = 'packed'", [saleId, actor.businessId]);
-  }
+  await syncSalePackedStatus(db, actor.businessId, saleId);
   await writeAudit(db, actor, "sale.item.pack", "sale_item", saleItemId, null, { packed });
+  await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   const sale = (await listSales(db, actor.businessId)).sales.find((item) => item.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
@@ -2541,10 +3010,11 @@ export async function updateSaleItemPacked(db: PGlite, saleItemId: string, packe
 
 export async function markSalePacked(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
   const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
-  if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La orden no esta pendiente.");
+  if (!sale || sale.saleType !== "reservation" || !["pending", "packed", "paid"].includes(sale.status)) throw new Error("La orden no esta pendiente.");
   await db.query("update sale_items set packed_at = coalesce(packed_at, now()) where sale_id = $1 and business_id = $2", [saleId, actor.businessId]);
-  await db.query("update sales set status = 'packed' where id = $1 and business_id = $2", [saleId, actor.businessId]);
+  await db.query("update sales set status = case when status = 'paid' then status else 'packed' end where id = $1 and business_id = $2", [saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.pack", "sale", saleId, sale, { status: "packed" });
+  await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
 }
 
@@ -2553,6 +3023,7 @@ export async function markSaleDelivered(db: PGlite, saleId: string, actor: Authe
   if (!sale || sale.saleType !== "reservation" || sale.status !== "paid") throw new Error("La orden tiene que estar pagada antes de entregarla.");
   await db.query("update sales set status = 'delivered' where id = $1 and business_id = $2", [saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.deliver", "sale", saleId, sale, { status: "delivered" });
+  await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
 }
 
@@ -2632,6 +3103,7 @@ export async function cancelReservationSale(db: PGlite, saleId: string, actor: A
       `, [crypto.randomUUID(), actor.businessId, line.inventoryItemId, saleId, `movement-cancel-${saleId}-${line.inventoryItemId}`, `Reserva cancelada de ${sale.customerName}`, actor.id]);
     }
     await db.query("update sales set status = 'cancelled', cancelled_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
+    await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, "sale.cancel", "sale", saleId, sale, { status: "cancelled" });
     await db.exec("commit");
   } catch (error) {
@@ -3508,17 +3980,26 @@ export async function applyInventorySnapshot(
   actor: AuthenticatedUser,
   resolutions: Array<{ rowNumber: number; resolution: "create" | "update" | "ignore"; matchedInventoryItemId?: string; priceChartingId?: string }> = [],
   options: { batchName?: string; defaultLocation?: string; defaultInventoryStatus?: string; note?: string } = {}
-): Promise<{ applied: number; skipped: number; importRunId: string }> {
+): Promise<{ applied: number; skipped: number; importRunId: string; alreadyApplied?: boolean }> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, (connection) => applyInventorySnapshot(connection, csvText, actor, resolutions, options));
+  const requestKey = crypto.createHash("sha256").update(JSON.stringify({csvText: csvText.trim(), options, resolutions: [...resolutions].sort((a, b) => a.rowNumber - b.rowNumber)})).digest("hex");
+  const previous = await db.query<{ id: string; applied_rows: number; summary_json: { skipped?: number } }>(
+    "select id, applied_rows, summary_json from import_runs where business_id = $1 and source = 'stock_csv' and status = 'completed' and summary_json->>'requestKey' = $2 limit 1", [actor.businessId, requestKey]);
+  if (previous.rows[0]) return { applied: Number(previous.rows[0].applied_rows), skipped: Number(previous.rows[0].summary_json.skipped || 0), importRunId: previous.rows[0].id, alreadyApplied: true };
   const preview = await previewInventorySnapshot(db, csvText, actor.businessId);
   if (preview.summary.invalid > 0) throw new Error("La importacion tiene filas invalidas. Corregilas antes de aplicar.");
+  const mobileReceipts = await db.query<{ id: string; status: string; applied_at: string | null }>("select id, status, applied_at from mobile_inventory_entries where business_id = $1", [actor.businessId]);
+  const mobileById = new Map(mobileReceipts.rows.map((row) => [row.id, row]));
+  const alreadyLoadedMobile = (row: SnapshotPreviewRow) => Boolean(row.mobileEntryId && mobileById.get(row.mobileEntryId)?.applied_at);
   const resolutionByRow = new Map(resolutions.map((item) => [item.rowNumber, item]));
-  const unresolved = preview.rows.filter((row) => row.action === "review" && !resolutionByRow.has(row.rowNumber));
+  const unresolved = preview.rows.filter((row) => row.action === "review" && !alreadyLoadedMobile(row) && !resolutionByRow.has(row.rowNumber));
   if (unresolved.length) throw new Error(`Quedan ${unresolved.length} filas con coincidencias por revisar.`);
   const importRunId = crypto.randomUUID();
   const batchName = String(options.batchName || "").trim();
   const defaultLocation = String(options.defaultLocation || "").trim();
   const defaultInventoryStatus = normalizeInventoryStatus(options.defaultInventoryStatus || "available");
   const summary = {
+    requestKey,
     ...preview.summary,
     units: preview.rows.reduce((sum, row) => sum + (row.quantityOnHand || 0), 0),
     valueArs: preview.rows.reduce((sum, row) => sum + (row.quantityOnHand || 0) * (row.priceArs || 0), 0),
@@ -3548,6 +4029,12 @@ export async function applyInventorySnapshot(
   let skipped = 0;
   try {
     for (const row of preview.rows) {
+      if (alreadyLoadedMobile(row)) {
+        skipped += 1;
+        await recordImportRow(db, actor.businessId, importRunId, row, "ignored", "Captura ya cargada al inventario");
+        continue;
+      }
+      if (row.mobileEntryId && mobileById.get(row.mobileEntryId)?.status !== "pending") throw new Error("La captura movil ya no esta pendiente. Actualiza la pre-base.");
       const resolution = resolutionByRow.get(row.rowNumber);
       if (resolution?.resolution === "ignore") {
         skipped += 1;
@@ -3577,13 +4064,24 @@ export async function applyInventorySnapshot(
         if (!selected) throw new Error(`Fila ${row.rowNumber}: elegi una coincidencia valida para actualizar.`);
         resolvedRow = { ...resolvedRow, sku: selected.sku };
       }
-      const saved = await upsertInventoryItem(db, resolvedRow, actor);
+      resolvedRow = {
+        ...resolvedRow,
+        stockMovementReferenceType: "import",
+        stockMovementNote: `Importacion de stock${batchName ? ` - ${batchName}` : ""}, fila ${row.rowNumber}`
+      };
+      const saved = row.mobileEntryId ? await addInventoryStock(db, resolvedRow, actor) : await upsertInventoryItem(db, resolvedRow, actor);
+      if (row.mobileEntryId) {
+        await updateMobileInventoryEntryStatus(db, row.mobileEntryId, "reviewed", actor);
+        await db.query("update mobile_inventory_entries set applied_at = now() where id = $1 and business_id = $2", [row.mobileEntryId, actor.businessId]);
+        mobileById.set(row.mobileEntryId, { id: row.mobileEntryId, status: "reviewed", applied_at: "loaded" });
+      }
       await recordImportRow(db, actor.businessId, importRunId, row, resolution?.resolution || row.action, "", saved.id);
       applied += 1;
     }
-    await db.query("update import_runs set status = 'completed', applied_rows = $1, updated_at = now() where id = $2", [applied, importRunId]);
+    await db.query("update import_runs set status = 'completed', applied_rows = $1, summary_json = summary_json || $3::jsonb, updated_at = now() where id = $2", [applied, importRunId, JSON.stringify({ skipped })]);
   } catch (error) {
-    await db.query("update import_runs set status = 'failed', applied_rows = $1, note = $2, updated_at = now() where id = $3", [applied, error instanceof Error ? error.message : String(error), importRunId]);
+    // The outer transaction rolls back both the run and every stock write.
+    // Preserve the original error; PostgreSQL rejects writes after a SQL failure.
     throw error;
   }
   return { applied, skipped, importRunId };
@@ -3966,12 +4464,15 @@ function doesProductNameMatchFinish(finish: string, productName: string): boolea
 
 function toStockRow(row: Record<string, unknown>): DbStockRow {
   return {
+    purchaseCost: optionalNumber(row.purchase_cost) ?? null,
+    purchaseCurrency: String(row.purchase_currency || "ARS"),
     id: String(row.id),
     businessId: String(row.business_id),
     sku: String(row.sku),
     location: String(row.location || ""),
     intakeBatch: String(row.intake_batch || ""),
     inventoryStatus: normalizeInventoryStatus(String(row.inventory_status || "")),
+    tags: String(row.tags || ""),
     quantityOnHand: Number(row.quantity_on_hand),
     quantityReserved: Number(row.quantity_reserved),
     active: Boolean(row.active),
@@ -4025,6 +4526,38 @@ function toStockRow(row: Record<string, unknown>): DbStockRow {
       grade: row.grade ? String(row.grade) : undefined,
       gradingCert: row.grading_cert ? String(row.grading_cert) : undefined
     }
+  };
+}
+
+function toMobileInventoryEntry(row: Record<string, unknown>): MobileInventoryEntry {
+  return {
+    id: String(row.id || ""),
+    businessId: String(row.business_id || ""),
+    status: String(row.status || "pending") as MobileInventoryEntry["status"],
+    helperName: String(row.helper_name || ""),
+    source: String(row.source || "mobile"),
+    matchType: String(row.match_type || "manual") as MobileInventoryEntry["matchType"],
+    inventoryItemId: row.inventory_item_id ? String(row.inventory_item_id) : undefined,
+    priceChartingId: String(row.pricecharting_id || ""),
+    sku: String(row.sku || ""),
+    name: String(row.name || ""),
+    expansion: String(row.expansion || ""),
+    number: String(row.card_number || ""),
+    language: String(row.language || "EN"),
+    condition: String(row.condition || "NM"),
+    finish: String(row.finish || "normal"),
+    gradingCompany: String(row.grading_company || ""),
+    grade: String(row.grade || ""),
+    location: String(row.location || ""),
+    intakeBatch: String(row.intake_batch || ""),
+    quantityOnHand: Number(row.quantity_on_hand || 0),
+    priceArs: Number(row.price_ars || 0),
+    priceUsd: optionalNumber(row.price_usd) ?? null,
+    imageUrl: String(row.image_url || ""),
+    notes: String(row.notes || ""),
+    createdAt: String(row.created_at || ""),
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
+    reviewedByName: row.reviewed_by_name ? String(row.reviewed_by_name) : undefined
   };
 }
 
@@ -4448,6 +4981,8 @@ async function findStockBySku(db: PGlite, businessId: string, sku: string): Prom
 }
 
 function validateInventoryInput(input: UpsertInventoryInput): void {
+  if (input.purchaseCost != null && (!Number.isFinite(input.purchaseCost) || input.purchaseCost < 0)) throw new Error("El costo debe ser positivo o quedar vacio.");
+  if (input.purchaseCurrency && !["ARS", "USD"].includes(input.purchaseCurrency)) throw new Error("Moneda de compra invalida.");
   if (!input.name?.trim()) throw new Error("El nombre es obligatorio");
   if (!input.expansion?.trim()) throw new Error("La expansion es obligatoria");
   if (!input.language?.trim()) throw new Error("El idioma es obligatorio");
@@ -4515,8 +5050,10 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
     const gradingCompany = get("gradingcompany", "grading_company", "grader", "empresa_grading", "empresagrading", "empresa_certificadora") || inferredGrading.company;
     const grade = get("grade", "gradinggrade", "grading_grade", "nota_grading", "notagrading", "calificacion") || inferredGrading.grade;
     const gradingCert = get("gradingcert", "grading_cert", "cert", "certificado", "certificacion", "certnumber", "certificadonumero");
+    const tags = get("tags", "categorias", "categoria", "category", "categories");
     return {
       rowNumber: indexInFile + 2,
+      mobileEntryId: get("mobileEntryId"),
       sku: get("sku", "identificador", "idlocal"),
       name: get("name", "nombre", "cardname", "nombrecarta", "productname", "nombrepc"),
       expansion: get("expansion", "set", "edition", "edicion", "coleccion", "expansionpc"),
@@ -4538,7 +5075,8 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
       quantityReserved: reserved ?? 0,
       priceArs: priceArs ?? 0,
       priceUsd: parseImportNumber(get("priceusd", "price_usd", "preciousd", "averageprice", "scanneraverageusd", "scanneravgusd")) ?? null,
-      notes: get("notes", "notas", "tags")
+      notes: get("notes", "notas"),
+      ...(tags ? { tags } : {})
     };
   });
 }
@@ -4600,6 +5138,20 @@ function normalizeInventoryStatus(value: string | undefined): string {
   if (["lote pendiente", "pendiente", "pending", "pending_intake"].includes(normalized)) return "pending_intake";
   if (["reservada", "reservado", "reserved"].includes(normalized)) return "reserved";
   return "available";
+}
+
+function normalizeInventoryTags(value: string): string {
+  const seen = new Set<string>();
+  return String(value || "")
+    .split(/[,;|]/)
+    .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .filter((tag) => {
+      if (seen.has(tag)) return false;
+      seen.add(tag);
+      return true;
+    })
+    .join(", ");
 }
 
 function optionalNumber(value: unknown): number | undefined {
@@ -5196,4 +5748,236 @@ export async function listPriceChartingImageCatalog(db: PGlite): Promise<ImageCa
       statusColor
     } as ImageCatalogEntry;
   });
+}
+
+
+export type OrderBoardWorkspace = {
+  boards: Array<{ id: string; name: string }>;
+  columns: Array<{ id: string; boardId: string; name: string; position: number }>;
+  cards: Array<{ saleId: string; columnId: string; position: number }>;
+};
+
+const mainOrderBoardName = "Embalaje";
+const completedOrderBoardName = "Completas";
+const mainOrderBoardColumns = ["Pendientes de embalar", "Embaladas", "Pagadas", "A entregar", "Vencidas"];
+const completedOrderBoardColumns = ["Entregadas", "Canceladas"];
+const ruleColumnNames = new Set([...mainOrderBoardColumns, "A enviar", ...completedOrderBoardColumns].map((name) => name.toLowerCase()));
+
+async function insertOrderBoard(db: PGlite, businessId: string, name: string, columns = mainOrderBoardColumns) {
+  const id = crypto.randomUUID();
+  await db.query("insert into order_boards (id,business_id,name) values ($1,$2,$3)", [id,businessId,name]);
+  for (const [position, label] of columns.entries()) {
+    await db.query("insert into order_board_columns (id,business_id,board_id,name,position) values ($1,$2,$3,$4,$5)", [crypto.randomUUID(),businessId,id,label,position]);
+  }
+  return id;
+}
+
+async function ensureOrderBoard(db: PGlite, businessId: string, name: string, columns: string[]) {
+  let board = await db.query<{id:string}>("select id from order_boards where business_id=$1 and lower(name)=lower($2) order by created_at,id limit 1", [businessId,name]);
+  const boardId = board.rows[0]?.id || await insertOrderBoard(db,businessId,name,columns);
+  for (const label of columns) await ensureOrderBoardColumn(db,businessId,boardId,label);
+  return boardId;
+}
+
+async function ensureOrderBoardColumn(db: PGlite, businessId: string, boardId: string, name: string) {
+  const existing = await db.query<{id:string}>("select id from order_board_columns where business_id=$1 and board_id=$2 and lower(name)=lower($3) order by position,id limit 1", [businessId,boardId,name]);
+  if (existing.rows[0]?.id) return existing.rows[0].id;
+  if (name === "A entregar") {
+    const legacy = await db.query<{id:string}>("select id from order_board_columns where business_id=$1 and board_id=$2 and lower(name)=lower('A enviar') order by position,id limit 1", [businessId,boardId]);
+    if (legacy.rows[0]?.id) {
+      await db.query("update order_board_columns set name=$1 where id=$2 and business_id=$3", [name,legacy.rows[0].id,businessId]);
+      return legacy.rows[0].id;
+    }
+  }
+  const id = crypto.randomUUID();
+  await db.query("insert into order_board_columns(id,business_id,board_id,name,position) select $1,$2,$3,$4,coalesce(max(position),-1)+1 from order_board_columns where board_id=$3 and business_id=$2", [id,businessId,boardId,name]);
+  return id;
+}
+
+async function ensureOrderBoardBasics(db: PGlite, businessId: string) {
+  const mainBoardId = await ensureOrderBoard(db,businessId,mainOrderBoardName,mainOrderBoardColumns);
+  const completedBoardId = await ensureOrderBoard(db,businessId,completedOrderBoardName,completedOrderBoardColumns);
+  return {mainBoardId, completedBoardId};
+}
+
+async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: string) {
+  const {mainBoardId, completedBoardId} = await ensureOrderBoardBasics(db,businessId);
+  const sale = await db.query<{status:string;total:number;packed:number;overdue:boolean|string;amountPaidArs:number;totalArs:number}>(`
+    select s.status,
+      count(si.id)::integer as total,
+      count(si.packed_at)::integer as packed,
+      (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
+      coalesce(s.amount_paid_ars,0)::numeric as "amountPaidArs",
+      coalesce(s.total_ars,0)::numeric as "totalArs"
+    from sales s
+    left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
+    where s.id=$1 and s.business_id=$2 and s.sale_type='reservation'
+    group by s.id,s.status,s.payment_due_at,s.amount_paid_ars,s.total_ars
+  `, [saleId,businessId]);
+  const row = sale.rows[0];
+  if (!row) return "";
+  const allPacked = Number(row.total || 0) > 0 && Number(row.total || 0) === Number(row.packed || 0);
+  const overdue = row.overdue === true || row.overdue === "true" || row.overdue === "t";
+  const debtArs = Math.max(0, Number(row.totalArs || 0) - Number(row.amountPaidArs || 0));
+  let boardId = mainBoardId;
+  let columnName = "Pendientes de embalar";
+  if (row.status === "delivered") {
+    boardId = completedBoardId;
+    columnName = "Entregadas";
+  } else if (row.status === "cancelled") {
+    boardId = completedBoardId;
+    columnName = "Canceladas";
+  } else if (row.status === "paid" && allPacked) {
+    columnName = "A entregar";
+  } else if (row.status === "paid") {
+    columnName = "Pagadas";
+  } else if (overdue && debtArs > 0) {
+    columnName = "Vencidas";
+  } else if (allPacked || row.status === "packed") {
+    columnName = "Embaladas";
+  }
+  return ensureOrderBoardColumn(db,businessId,boardId,columnName);
+}
+
+async function moveSaleToRuleColumn(db: PGlite, businessId: string, saleId: string, force = false) {
+  const columnId = await getRuleTargetColumn(db,businessId,saleId);
+  if (!columnId) return;
+  const current = await db.query<{column_id:string;name:string}>("select c.column_id,bc.name from order_board_cards c join order_board_columns bc on bc.id=c.column_id and bc.business_id=c.business_id where c.sale_id=$1 and c.business_id=$2 limit 1", [saleId,businessId]);
+  if (current.rows[0]?.column_id === columnId) return;
+  if (current.rows[0] && !force && !ruleColumnNames.has(String(current.rows[0].name || "").toLowerCase())) return;
+  const position = await db.query<{next:number}>("select coalesce(max(position)+1,0)::integer as next from order_board_cards where business_id=$1 and column_id=$2", [businessId,columnId]);
+  await db.query(`
+    insert into order_board_cards (sale_id,business_id,column_id,position)
+    values($1,$2,$3,$4)
+    on conflict(sale_id) do update set column_id=excluded.column_id,position=excluded.position
+    where order_board_cards.business_id=excluded.business_id
+  `, [saleId,businessId,columnId,Number(position.rows[0]?.next || 0)]);
+}
+
+async function syncOrderBoardRules(db: PGlite, businessId: string) {
+  const {mainBoardId, completedBoardId} = await ensureOrderBoardBasics(db,businessId);
+  const pendingColumnId = await ensureOrderBoardColumn(db,businessId,mainBoardId,"Pendientes de embalar");
+  const packedColumnId = await ensureOrderBoardColumn(db,businessId,mainBoardId,"Embaladas");
+  const paidColumnId = await ensureOrderBoardColumn(db,businessId,mainBoardId,"Pagadas");
+  const readyColumnId = await ensureOrderBoardColumn(db,businessId,mainBoardId,"A entregar");
+  const overdueColumnId = await ensureOrderBoardColumn(db,businessId,mainBoardId,"Vencidas");
+  const deliveredColumnId = await ensureOrderBoardColumn(db,businessId,completedBoardId,"Entregadas");
+  const cancelledColumnId = await ensureOrderBoardColumn(db,businessId,completedBoardId,"Canceladas");
+  const standardNames = [...ruleColumnNames];
+  const standardPlaceholders = standardNames.map((_, index) => `$${index + 9}`).join(",");
+  await db.query(`
+    with sale_state as (
+      select s.id as sale_id,
+        s.status,
+        count(si.id)::integer as total,
+        count(si.packed_at)::integer as packed,
+        (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
+        greatest(0, coalesce(s.total_ars,0) - coalesce(s.amount_paid_ars,0)) as debt_ars
+      from sales s
+      left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
+      where s.business_id=$1 and s.sale_type='reservation'
+      group by s.id,s.status,s.payment_due_at,s.total_ars,s.amount_paid_ars
+    ),
+    targets as (
+      select sale_id,
+        case
+          when status='delivered' then $2::uuid
+          when status='cancelled' then $3::uuid
+          when status='paid' and total > 0 and total = packed then $4::uuid
+          when status='paid' then $5::uuid
+          when overdue and debt_ars > 0 then $6::uuid
+          when (total > 0 and total = packed) or status='packed' then $7::uuid
+          else $8::uuid
+        end as column_id
+      from sale_state
+    ),
+    eligible as (
+      select t.sale_id,t.column_id
+      from targets t
+      left join order_board_cards obc on obc.sale_id=t.sale_id and obc.business_id=$1
+      left join order_board_columns occ on occ.id=obc.column_id and occ.business_id=obc.business_id
+      where (obc.sale_id is null or obc.column_id <> t.column_id)
+        and (obc.sale_id is null or lower(occ.name) in (${standardPlaceholders}))
+    ),
+    numbered as (
+      select e.sale_id,e.column_id,
+        coalesce((select max(position)+1 from order_board_cards where business_id=$1 and column_id=e.column_id),0)
+          + row_number() over (partition by e.column_id order by e.sale_id) - 1 as position
+      from eligible e
+    )
+    insert into order_board_cards (sale_id,business_id,column_id,position)
+    select sale_id,$1,column_id,position from numbered
+    on conflict(sale_id) do update set column_id=excluded.column_id,position=excluded.position
+    where order_board_cards.business_id=excluded.business_id
+  `, [businessId, deliveredColumnId, cancelledColumnId, readyColumnId, paidColumnId, overdueColumnId, packedColumnId, pendingColumnId, ...standardNames]);
+}
+
+async function syncSalePackedStatus(db: PGlite, businessId: string, saleId: string) {
+  const packed = await db.query<{total:number;packed:number}>("select count(*)::integer as total,count(packed_at)::integer as packed from sale_items where business_id=$1 and sale_id=$2", [businessId,saleId]);
+  const row = packed.rows[0];
+  const allPacked = Number(row?.total || 0) > 0 && Number(row?.total || 0) === Number(row?.packed || 0);
+  await db.query("update sales set status = case when $3 and status='pending' then 'packed' when not $3 and status='packed' then 'pending' else status end where id=$1 and business_id=$2 and status in ('pending','packed')", [saleId,businessId,allPacked]);
+}
+
+async function readOrderBoards(db: PGlite, businessId: string): Promise<OrderBoardWorkspace> {
+  const boards = await db.query<{id:string;name:string}>(`
+      select id,name from order_boards
+      where business_id=$1
+      order by case
+        when lower(name)=lower($2) then 0
+        when lower(name)=lower($3) then 1
+        else 2
+      end, created_at,id
+    `, [businessId,mainOrderBoardName,completedOrderBoardName]);
+  const columns = await db.query<{id:string;boardId:string;name:string;position:number}>('select id,board_id as "boardId",name,position from order_board_columns where business_id=$1 order by position,id',[businessId]);
+  const cards = await db.query<{saleId:string;columnId:string;position:number}>('select sale_id as "saleId",column_id as "columnId",position from order_board_cards where business_id=$1 order by position,sale_id',[businessId]);
+  return {boards:boards.rows,columns:columns.rows,cards:cards.rows};
+}
+
+export async function getOrderBoards(db: PGlite, businessId: string): Promise<OrderBoardWorkspace> {
+  return inventoryTransaction(db, async tx => {
+    if (getOperationalDatabaseDriver(tx) === "pglite") {
+      await syncOrderBoardRules(tx,businessId);
+    } else {
+      await ensureOrderBoardBasics(tx,businessId);
+      const missing = await tx.query<{missing:string}>(
+        "select s.id as missing from sales s left join order_board_cards c on c.sale_id=s.id and c.business_id=s.business_id where s.business_id=$1 and s.sale_type='reservation' and c.sale_id is null limit 1",
+        [businessId]
+      );
+      if (missing.rows[0]) await syncOrderBoardRules(tx,businessId);
+    }
+    return readOrderBoards(tx,businessId);
+  });
+}
+
+export async function changeOrderBoard(db: PGlite, input: {action:string; name?:string; boardId?:string; columnId?:string; saleId?:string; beforeSaleId?:string}, actor: AuthenticatedUser) {
+  await inventoryTransaction(db, async tx => {
+    const name = String(input.name || "").trim();
+    if (["createBoard","createColumn","renameBoard","renameColumn"].includes(input.action) && (!name || name.length > 80)) throw new Error("El nombre debe tener entre 1 y 80 caracteres.");
+    const businessId = actor.businessId;
+    if (input.action === "createBoard") {
+      await insertOrderBoard(tx,businessId,name);
+    } else if (input.action === "createColumn" || input.action === "renameBoard") {
+      const board = await tx.query("select id from order_boards where id=$1 and business_id=$2",[input.boardId,businessId]);
+      if (!board.rows.length) throw new Error("El tablero ya no existe.");
+      if (input.action === "renameBoard") await tx.query("update order_boards set name=$1 where id=$2 and business_id=$3",[name,input.boardId,businessId]);
+      else await tx.query("insert into order_board_columns(id,business_id,board_id,name,position) select $1,$2,$3,$4,coalesce(max(position),-1)+1 from order_board_columns where board_id=$3 and business_id=$2",[crypto.randomUUID(),businessId,input.boardId,name]);
+    } else if (input.action === "renameColumn" || input.action === "move") {
+      const column = await tx.query("select id from order_board_columns where id=$1 and business_id=$2",[input.columnId,businessId]);
+      if (!column.rows.length) throw new Error("La columna ya no existe.");
+      if (input.action === "renameColumn") await tx.query("update order_board_columns set name=$1 where id=$2 and business_id=$3",[name,input.columnId,businessId]);
+      else {
+        const sale = await tx.query("select id from sales where id=$1 and business_id=$2 and sale_type='reservation'",[input.saleId,businessId]);
+        if (!sale.rows.length) throw new Error("La orden ya no esta disponible.");
+        const rows = await tx.query<{sale_id:string}>("select sale_id from order_board_cards where column_id=$1 and business_id=$2 and sale_id<>$3 order by position,sale_id",[input.columnId,businessId,input.saleId]);
+        const ids = rows.rows.map(row=>row.sale_id);
+        const before = input.beforeSaleId ? ids.indexOf(input.beforeSaleId) : -1;
+        ids.splice(before < 0 ? ids.length : before,0,input.saleId!);
+        await tx.query("insert into order_board_cards (sale_id,business_id,column_id,position) values($1,$2,$3,0) on conflict(sale_id) do update set column_id=excluded.column_id,position=0 where order_board_cards.business_id=excluded.business_id",[input.saleId,businessId,input.columnId]);
+        for (const [position,id] of ids.entries()) await tx.query("update order_board_cards set position=$1 where sale_id=$2 and business_id=$3",[position,id,businessId]);
+      }
+    } else throw new Error("Accion de tablero desconocida.");
+    await writeAudit(tx,actor,"order.board."+input.action,"order_board",input.boardId || input.columnId || actor.businessId,null,input);
+  });
+  return input.action === "move" ? readOrderBoards(db,actor.businessId) : getOrderBoards(db,actor.businessId);
 }

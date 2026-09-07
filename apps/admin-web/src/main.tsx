@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type View = "dashboard" | "inventory" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "admin";
+type View = "dashboard" | "inventory" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "admin";
 type AvailabilityFilter = "all" | "available" | "reserved" | "out";
 type SortMode = "name" | "expansion" | "number" | "price" | "quantity";
 type IssueFilter = "all" | "missingImage" | "missingPriceCharting" | "zeroPrice" | "lowStock" | "duplicates";
@@ -13,9 +13,10 @@ type InventoryBatchPatch = {
   intakeBatch?: string;
   inventoryStatus?: string;
   priceSource?: InventoryPriceSource;
+  tags?: string;
 };
 type CardIndexFilter = "all" | "matched" | "pending_review" | "weak_match" | "conflict" | "pricecharting_only" | "missing_tcg" | "missing_image" | "approved" | "rejected" | "manual";
-type OrderFilter = "all" | "pending" | "packed" | "paid" | "debt" | "message" | "note";
+type OrderFilter = "all" | "pending" | "packed" | "paid" | "debt" | "no_message" | "message" | "note";
 type InventoryFilters = {
   query: string;
   expansion: string;
@@ -24,6 +25,7 @@ type InventoryFilters = {
   location: string;
   intakeBatch: string;
   inventoryStatus: string;
+  tag: string;
   availability: AvailabilityFilter;
   priceSource: InventoryPriceSource;
   sortMode: SortMode;
@@ -44,12 +46,15 @@ type BlueExchangeRate = {
 };
 
 type StockRow = {
+  purchaseCost: number | null;
+  purchaseCurrency: string;
   id: string;
   businessId: string;
   sku: string;
   location: string;
   intakeBatch: string;
   inventoryStatus: string;
+  tags: string;
   quantityOnHand: number;
   quantityReserved: number;
   availableQuantity: number;
@@ -99,6 +104,12 @@ type StockSummary = {
   reservedUnits: number;
   availableUnits: number;
   stockValueArs: number;
+};
+
+type InventoryResetResult = {
+  touchedSkus: number;
+  unitsCleared: number;
+  reservationsCleared: number;
 };
 
 type MovementRow = {
@@ -185,6 +196,84 @@ type ImportBatchState = {
   defaultLocation: string;
   defaultInventoryStatus: string;
   note: string;
+};
+
+type MobileInventoryCandidate = {
+  id: string;
+  matchType: "inventory" | "card_index";
+  inventoryItemId?: string;
+  priceChartingId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  language: string;
+  condition: string;
+  finish: string;
+  gradingCompany: string;
+  grade: string;
+  availableQuantity: number;
+  priceArs: number;
+  priceUsd: number | null;
+  imageUrl: string;
+  helper: string;
+  score: number;
+};
+
+type MobileInventoryEntry = {
+  id: string;
+  businessId: string;
+  status: "pending" | "reviewed" | "rejected";
+  helperName: string;
+  source: string;
+  matchType: "inventory" | "card_index" | "manual";
+  inventoryItemId?: string;
+  priceChartingId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  language: string;
+  condition: string;
+  finish: string;
+  gradingCompany: string;
+  grade: string;
+  location: string;
+  intakeBatch: string;
+  quantityOnHand: number;
+  priceArs: number;
+  priceUsd: number | null;
+  imageUrl: string;
+  notes: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedByName?: string;
+};
+
+type MobileInventoryApplyResult = {
+  requestedEntries: number;
+  appliedEntries: number;
+  appliedGroups: number;
+  unitsApplied: number;
+  createdItems: number;
+  updatedItems: number;
+  skippedEntries: number;
+  errors: Array<{ id: string; name: string; error: string }>;
+};
+
+type MobileIntakeDraft = {
+  name: string;
+  expansion: string;
+  number: string;
+  language: string;
+  condition: string;
+  finish: string;
+  quantityOnHand: string;
+  location: string;
+  intakeBatch: string;
+  priceArs: string;
+  priceUsd: string;
+  notes: string;
 };
 
 type StockQualitySummary = {
@@ -559,6 +648,28 @@ type CardIndexStatus = {
   };
 };
 
+type CardIndexTcgCsvBatchResult = {
+  status: CardIndexStatus;
+  rowsSeen: number;
+  rowsMatched: number;
+  rowsWeak: number;
+  rowsConflict: number;
+  rowsSkipped: number;
+  groupOffset: number;
+  groupLimit: number;
+  groupsProcessed: number;
+  totalGroups: number;
+  nextGroupOffset: number | null;
+  complete: boolean;
+};
+
+type CardIndexPriceChartingBatchResult = {
+  processed: number;
+  nextAfterId: string;
+  complete: boolean;
+  status: CardIndexStatus;
+};
+
 type ImageResolverMode = "auto" | "pokemon-tcg" | "external-index";
 
 type ImageBatchResult = {
@@ -576,11 +687,15 @@ type ImageBatchResult = {
 };
 
 type InventoryFormState = {
+  purchaseCost: number | null;
+  purchaseCurrency: string;
   sku: string;
   name: string;
   expansion: string;
   number: string;
   imageUrl: string;
+  priceChartingId: string;
+  priceChartingUrl: string;
   language: string;
   condition: string;
   finish: string;
@@ -590,6 +705,7 @@ type InventoryFormState = {
   location: string;
   intakeBatch: string;
   inventoryStatus: string;
+  tags: string;
   quantityOnHand: number;
   quantityReserved: number;
   priceArs: number;
@@ -601,6 +717,9 @@ const apiBase = import.meta.env.VITE_API_BASE_URL || "/api";
 const accessKeyStorageKey = "ultimoturno_access_key";
 const accessKeyCookieName = "ultimoturno_access_key";
 const importDraftStorageKey = "ultimoturno_import_stock_draft_v2";
+const mobileHelperStorageKey = "ultimoturno_mobile_helper_name";
+const mobileBatchStorageKey = "ultimoturno_mobile_default_batch";
+const mobileConditionStorageKey = "ultimoturno_mobile_default_condition";
 const fallbackBlueRateSell = 1540;
 const exampleSnapshotCsv = `sku,name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,location,quantityOnHand,quantityReserved,priceArs,priceUsd
 UT-CSV-HORSEA-AQ-EN-NM,Horsea,Aquapolis,85,EN,NM,normal,,,,Caja agua C,2,0,4500,3.6
@@ -618,13 +737,17 @@ function App() {
   const [userName, setUserName] = useState("");
   const [environment, setEnvironment] = useState<AppEnvironment>({ dataProfile: "EJEMPLOS", allowExamples: true });
   const [blueRate, setBlueRate] = useState<BlueExchangeRate>(() => fallbackBlueRate());
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setView] = useState<View>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("mobile") === "1" || window.location.hash === "#mobile" ? "mobile-intake" : "dashboard";
+  });
   const [stock, setStock] = useState<{ summary: StockSummary; items: StockRow[] }>({ summary: emptySummary(), items: [] });
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
+  const [mobileEntries, setMobileEntries] = useState<MobileInventoryEntry[]>([]);
   const [claims, setClaims] = useState<ClaimsWorkspace>(() => emptyClaimsWorkspace());
   const [priceChartingCache, setPriceChartingCache] = useState<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>({ entries: [], status: emptyPriceChartingStatus() });
   const [priceChartingAutoRefresh, setPriceChartingAutoRefresh] = useState<PriceChartingAutoRefreshStatus>(() => emptyPriceChartingAutoRefreshStatus());
@@ -636,6 +759,7 @@ function App() {
   const [cardIndexEntries, setCardIndexEntries] = useState<CardIndexEntry[]>([]);
   const [cardIndexSyncing, setCardIndexSyncing] = useState(false);
   const [cardIndexNextGroupOffset, setCardIndexNextGroupOffset] = useState<number | null>(0);
+  const [cardIndexRebuildAfterId, setCardIndexRebuildAfterId] = useState("");
   const [priceChartingSyncing, setPriceChartingSyncing] = useState(false);
   const [priceChartingImageProcessing, setPriceChartingImageProcessing] = useState(false);
   const [claimImageSearching, setClaimImageSearching] = useState(false);
@@ -648,6 +772,7 @@ function App() {
   const [cartMode, setCartMode] = useState<"sale" | "reservation">("sale");
   const [customerName, setCustomerName] = useState("");
   const [saleChannel, setSaleChannel] = useState("mostrador");
+  const [cartFocusNonce, setCartFocusNonce] = useState(0);
   const [purchaseCart, setPurchaseCart] = useState<PurchaseCartLine[]>([]);
   const [purchaseSeller, setPurchaseSeller] = useState("");
   const [purchaseNote, setPurchaseNote] = useState("");
@@ -661,6 +786,7 @@ function App() {
   const [locationFilter, setLocationFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const [availability, setAvailability] = useState<AvailabilityFilter>("all");
   const [inventoryPriceSource, setInventoryPriceSource] = useState<InventoryPriceSource>("sale");
   const [inventoryDensity, setInventoryDensity] = useState<InventoryDensity>("comfortable");
@@ -694,10 +820,11 @@ function App() {
       api<{ audit: AuditRow[] }>("/audit"),
       api<{ user: { displayName: string }; environment?: AppEnvironment }>("/auth/me")
     ]);
-    const [salesData, purchasesData, importData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, cardIndexData, cardIndexListData, blueRateData] = await Promise.all([
+    const [salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, cardIndexData, cardIndexListData, blueRateData] = await Promise.all([
       api<{ sales: SaleRecord[] }>("/sales").catch(() => ({ sales: [] })),
       api<{ purchases: PurchaseRecord[] }>("/purchases").catch(() => ({ purchases: [] })),
       api<{ imports: ImportRunRow[] }>("/imports").catch(() => ({ imports: [] })),
+      api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000").catch(() => ({ entries: [] })),
       api<ClaimsWorkspace>("/claims"),
       api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30")
         .catch(() => ({ entries: [], status: emptyPriceChartingStatus() })),
@@ -709,14 +836,14 @@ function App() {
       api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate())
     ]);
     const priceChartingImageData = emptyPriceChartingImageStatus();
-    return { stockData, movementData, auditData, salesData, purchasesData, importData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me };
+    return { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me };
   }
 
   async function refresh(seedExamplesIfEmpty = false) {
-    let { stockData, movementData, auditData, salesData, purchasesData, importData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData();
+    let { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData();
     if (seedExamplesIfEmpty && stockData.items.length === 0 && me.environment?.allowExamples !== false) {
       const result = await api<{ created: number; skipped: number }>("/examples/inventory", { method: "POST" });
-      ({ stockData, movementData, auditData, salesData, purchasesData, importData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData());
+      ({ stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData());
       if (result.created > 0) showMessage(`Cargue ${result.created} ejemplos para que puedas revisar el flujo.`);
     }
     setStock(stockData);
@@ -725,6 +852,7 @@ function App() {
     setSales(salesData.sales);
     setPurchases(purchasesData.purchases);
     setImportRuns(importData.imports);
+    setMobileEntries(mobileEntryData.entries);
     setClaims(claimsData);
     setPriceChartingCache(priceChartingData);
     setPriceChartingAutoRefresh(priceChartingAutoRefreshData);
@@ -817,7 +945,8 @@ function App() {
     conditions: unique(stock.items.map((item) => item.variant.condition)),
     locations: unique(stock.items.map((item) => item.location).filter(Boolean)),
     intakeBatches: unique(stock.items.map((item) => item.intakeBatch).filter(Boolean)),
-    inventoryStatuses: unique(stock.items.map((item) => item.inventoryStatus || "available"))
+    inventoryStatuses: unique(stock.items.map((item) => item.inventoryStatus || "available")),
+    tags: unique(stock.items.flatMap((item) => inventoryTags(item.tags)))
   }), [stock.items]);
   const visibleItems = useMemo(() => {
     const parsedSearch = parseUiSearchQuery(query);
@@ -831,6 +960,7 @@ function App() {
           (locationFilter === "all" || item.location === locationFilter) &&
           (batchFilter === "all" || item.intakeBatch === batchFilter) &&
           (inventoryStatusFilter === "all" || (item.inventoryStatus || "available") === inventoryStatusFilter) &&
+          (tagFilter === "all" || inventoryTags(item.tags).includes(tagFilter)) &&
           (issue === "all" || stockItemIssues(item, duplicateKeys).includes(issue)) &&
           (availability === "all" ||
             (availability === "available" && item.availableQuantity > 0) ||
@@ -848,7 +978,7 @@ function App() {
         return leftItem.product.name.localeCompare(rightItem.product.name, "es");
       })
       .map(({ item }) => item);
-  }, [availability, batchFilter, blueRate, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, locationFilter, query, sortMode, stock.items]);
+  }, [availability, batchFilter, blueRate, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, locationFilter, query, sortMode, stock.items, tagFilter]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -861,9 +991,17 @@ function App() {
   }
 
   function startCreate() {
+    setProductReceipt("");
     setEditingId("");
-    setForm(blankForm());
+    setForm({ ...blankForm(), quantityOnHand: 1 });
     setView("inventory");
+    setProductModalOpen(true);
+  }
+
+  function startRestock(item: StockRow) {
+    setEditingId("");
+    setProductReceipt("");
+    setForm({ ...formFromItem(item), quantityOnHand: 1, quantityReserved: 0 });
     setProductModalOpen(true);
   }
 
@@ -876,6 +1014,7 @@ function App() {
   }
 
   function closeProductModal() {
+    if (productRequest.current) return;
     setProductModalOpen(false);
     setEditingId("");
     setProductSaving(false);
@@ -883,12 +1022,15 @@ function App() {
     setForm(blankForm());
   }
 
+  const productRequest = useRef(false);
+  const [productReceipt, setProductReceipt] = useState("");
   async function saveProduct(event: React.FormEvent) {
     event.preventDefault();
-    if (productSaving) return;
+    if (productRequest.current) return;
+    productRequest.current = true;
     setProductSaving(true);
     try {
-      const result = await api<{ item: StockRow }>(editingId ? `/inventory/${editingId}` : "/inventory", {
+      const result = await api<{ item: StockRow }>(editingId ? `/inventory/${editingId}` : "/inventory/intake", {
         method: editingId ? "PUT" : "POST",
         body: form
       });
@@ -900,14 +1042,16 @@ function App() {
         return { summary: summarizeStockRows(items), items };
       });
       setSelectedId(result.item.id);
-      showMessage(editingId ? "Producto actualizado." : "Producto creado.");
-      setForm(blankForm());
-      setEditingId("");
-      setProductModalOpen(false);
+      const receipt = editingId ? "Carta actualizada." : `${result.item.product.name}: +${form.quantityOnHand} unidad(es). Stock actual: ${result.item.quantityOnHand}.`;
+      showMessage(receipt);
+      setProductReceipt(receipt);
+      if (editingId) { setEditingId(""); setProductModalOpen(false); }
+      else { setForm({ ...blankForm(), quantityOnHand: 1 }); setProductModalOpen(true); }
       void refresh().catch(() => undefined);
     } catch (nextError) {
       showError(nextError);
     } finally {
+      productRequest.current = false;
       setProductSaving(false);
     }
   }
@@ -926,6 +1070,7 @@ function App() {
         if (patch.location !== undefined) body.location = patch.location;
         if (patch.intakeBatch !== undefined) body.intakeBatch = patch.intakeBatch;
         if (patch.inventoryStatus !== undefined) body.inventoryStatus = patch.inventoryStatus;
+        if (patch.tags !== undefined) body.tags = inventoryTagsText([...inventoryTags(body.tags), ...inventoryTags(patch.tags)]);
         if (patch.priceSource && patch.priceSource !== "sale") {
           const price = inventoryPriceDisplay(item, patch.priceSource, blueRate);
           if (!price.hasPrice || !price.ars) {
@@ -945,6 +1090,40 @@ function App() {
       });
       showMessage(`Lote actualizado: ${updated} carta(s)${skipped ? `, ${skipped} sin precio de fuente` : ""}.`);
       void refresh().catch(() => undefined);
+    } catch (nextError) {
+      showError(nextError);
+    }
+  }
+
+  async function updateInventoryTags(item: StockRow, tags: string) {
+    try {
+      const result = await api<{ item: StockRow }>(`/inventory/${item.id}/tags`, { method: "PUT", body: { tags } });
+      setStock((current) => {
+        const items = current.items.map((stockItem) => stockItem.id === result.item.id ? result.item : stockItem);
+        return { summary: summarizeStockRows(items), items };
+      });
+      setSelectedId(result.item.id);
+      showMessage(result.item.tags ? `Categorias: ${result.item.tags}` : "Categorias limpiadas.");
+      void refresh().catch(() => undefined);
+    } catch (nextError) {
+      showError(nextError);
+    }
+  }
+
+  async function resetInventoryStockFromAdmin() {
+    const confirmation = window.prompt(`Esto pone en cero TODO el stock disponible y reservado del inventario actual (${stock.summary.totalSkus.toLocaleString("es-AR")} SKUs / ${stock.summary.totalUnits.toLocaleString("es-AR")} unidades).\n\nNo borra cartas, precios, imagenes ni categorias.\n\nEscribi RESET INVENTARIO para confirmar:`);
+    if (confirmation === null) return;
+    if (confirmation !== "RESET INVENTARIO") {
+      showError(new Error("Reset cancelado: confirmacion incorrecta."));
+      return;
+    }
+    try {
+      const { result } = await api<{ result: InventoryResetResult }>("/inventory/reset-stock", {
+        method: "POST",
+        body: { confirmation }
+      });
+      showMessage(`Inventario en cero: ${result.unitsCleared.toLocaleString("es-AR")} unidad(es), ${result.reservationsCleared.toLocaleString("es-AR")} reserva(s), ${result.touchedSkus.toLocaleString("es-AR")} SKU(s).`);
+      await refresh();
     } catch (nextError) {
       showError(nextError);
     }
@@ -1459,6 +1638,7 @@ function App() {
     try {
       const result = await api<{ status: PriceChartingCacheStatus }>("/pricecharting-cache/refresh", { method: "POST" });
       showMessage(`Cache actualizado: ${result.status.totalEntries.toLocaleString("es-AR")} cartas disponibles.`);
+      setCardIndexRebuildAfterId("");
       await searchPriceChartingCache("");
       await searchCardIndex("");
     } catch (nextError) {
@@ -1485,10 +1665,18 @@ function App() {
   async function rebuildCardIndex() {
     setCardIndexSyncing(true);
     try {
-      const result = await api<{ status: CardIndexStatus }>("/card-index/rebuild-pricecharting", { method: "POST" });
+      const result = await api<CardIndexPriceChartingBatchResult>("/card-index/rebuild-pricecharting-batch", {
+        method: "POST",
+        body: { afterId: cardIndexRebuildAfterId, limit: 2000 }
+      });
       setCardIndexStatus(result.status);
+      setCardIndexRebuildAfterId(result.nextAfterId || "");
       await searchCardIndex("");
-      showMessage(`Indice maestro reconstruido: ${result.status.totalEntries.toLocaleString("es-AR")} cartas.`);
+      showMessage(
+        result.complete
+          ? `Indice maestro completo: ${result.status.totalEntries.toLocaleString("es-AR")} cartas.`
+          : `Indice maestro: ${result.processed.toLocaleString("es-AR")} procesadas en esta tanda.`
+      );
     } catch (nextError) {
       showError(nextError);
     } finally {
@@ -1499,12 +1687,17 @@ function App() {
   async function syncCardIndexTcgCsv() {
     setCardIndexSyncing(true);
     try {
-      const result = await api<{ started: boolean; alreadyRunning?: boolean; pid?: number; progress?: unknown; progressPath: string }>("/card-index/sync-tcgcsv", {
+      const result = await api<CardIndexTcgCsvBatchResult>("/card-index/sync-tcgcsv", {
         method: "POST",
-        body: { groupOffset: cardIndexNextGroupOffset || 0, groupLimit: 5, loop: true }
+        body: { groupOffset: cardIndexNextGroupOffset || 0, groupLimit: 5 }
       });
-      showMessage(result.alreadyRunning ? "El worker TCGCSV ya esta corriendo." : `Worker TCGCSV iniciado${result.pid ? ` (PID ${result.pid})` : ""}.`);
-      setCardIndexNextGroupOffset(null);
+      setCardIndexStatus(result.status);
+      setCardIndexNextGroupOffset(result.nextGroupOffset);
+      showMessage(
+        result.complete
+          ? `TCGCSV completo: ${result.rowsMatched.toLocaleString("es-AR")} fuertes, ${result.rowsWeak.toLocaleString("es-AR")} debiles, ${result.rowsConflict.toLocaleString("es-AR")} conflictos.`
+          : `TCGCSV tanda ${result.groupOffset + 1}-${result.groupOffset + result.groupsProcessed}/${result.totalGroups}: ${result.rowsMatched.toLocaleString("es-AR")} fuertes, ${result.rowsWeak.toLocaleString("es-AR")} debiles.`
+      );
       await searchCardIndex("");
     } catch (nextError) {
       showError(nextError);
@@ -1566,7 +1759,25 @@ function App() {
     }
   }
 
+  async function reindexLocalPriceChartingImages() {
+    setPriceChartingImageProcessing(true);
+    try {
+      const result = await api<{ indexed: number; skipped: number; scanned: number; status: PriceChartingImageCacheStatus }>("/pricecharting-images/reindex-local", {
+        method: "POST",
+        body: { limit: 1000 }
+      });
+      setPriceChartingImages(result.status);
+      await searchCardIndex("");
+      showMessage(`Imagenes locales: ${result.indexed.toLocaleString("es-AR")} reindexadas, ${result.skipped.toLocaleString("es-AR")} ya estaban listas.`);
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setPriceChartingImageProcessing(false);
+    }
+  }
+
   async function previewSnapshot(nextCsvText = csvText) {
+    if (importRequest.current) return;
     try {
       const result = await api<{ rows: SnapshotPreviewRow[] }>("/imports/snapshot/preview", {
         method: "POST",
@@ -1581,9 +1792,19 @@ function App() {
     }
   }
 
+  const importRequest = useRef(false);
+  const [importApplying, setImportApplying] = useState(false);
+  const [importFeedback, setImportFeedback] = useState("");
+  const mobileRequest = useRef(false);
+  const [mobileApplying, setMobileApplying] = useState(false);
+  const [mobileFeedback, setMobileFeedback] = useState("");
   async function applySnapshot() {
+    if (importRequest.current) return;
+    importRequest.current = true;
+    setImportApplying(true);
+    setImportFeedback("Procesando el lote. Espera la confirmacion.");
     try {
-      await api("/imports/snapshot/apply", {
+      const result = await api<{ applied: number; skipped: number; alreadyApplied?: boolean }>("/imports/snapshot/apply", {
         method: "POST",
         body: {
           csvText,
@@ -1600,11 +1821,95 @@ function App() {
       setImportResolutions({});
       setImportBatch(defaultImportBatch());
       window.localStorage.removeItem(importDraftStorageKey);
-      showMessage("Importacion aplicada.");
-      await refresh();
+      const receipt = `${result.alreadyApplied ? "Este lote ya estaba cargado" : "Lote cargado"}: ${result.applied} fila(s), ${result.skipped} omitida(s).`;
+      setImportFeedback(receipt);
+      showMessage(receipt);
+      await refresh().catch(() => undefined);
     } catch (nextError) {
+      setImportFeedback(errorMessage(nextError));
       showError(nextError);
+    } finally { importRequest.current = false; setImportApplying(false); }
+  }
+
+  async function searchMobileInventory(query: string) {
+    return api<{ candidates: MobileInventoryCandidate[] }>(`/mobile-intake/search?q=${encodeURIComponent(query)}&limit=12`);
+  }
+
+  async function saveMobileInventoryEntry(input: Partial<MobileInventoryEntry>) {
+    const result = await api<{ entry: MobileInventoryEntry }>("/mobile-intake/entries", {
+      method: "POST",
+      body: input
+    });
+    setMobileEntries((current) => [result.entry, ...current]);
+    showMessage(`Pre-base: ${result.entry.name} guardada por ${result.entry.helperName || "ayudante"}.`);
+    return result.entry;
+  }
+
+  async function setMobileInventoryEntryStatus(id: string, status: MobileInventoryEntry["status"]) {
+    const result = await api<{ entry: MobileInventoryEntry }>(`/mobile-intake/entries/${id}/status`, {
+      method: "PUT",
+      body: { status }
+    });
+    setMobileEntries((current) => current.map((entry) => entry.id === id ? result.entry : entry));
+    showMessage(status === "pending" ? "Entrada devuelta a pendientes." : status === "reviewed" ? "Entrada marcada como revisada." : "Entrada rechazada.");
+  }
+
+  async function applyMobileInventoryEntries(ids?: string[]) {
+    if (mobileRequest.current) return;
+    const idSet = new Set(ids || []);
+    const selectedPending = mobileEntries.filter((entry) => entry.status === "pending" && (!idSet.size || idSet.has(entry.id)));
+    if (!selectedPending.length) {
+      showError(new Error("No hay capturas pendientes para cargar."));
+      return;
     }
+    mobileRequest.current = true;
+    setMobileApplying(true);
+    setMobileFeedback("Cargando al inventario...");
+    try {
+      const response = await api<{ result: MobileInventoryApplyResult }>("/mobile-intake/apply", {
+        method: "POST",
+        body: { ids: selectedPending.map((entry) => entry.id) }
+      });
+      const { result } = response;
+      const failedIds = new Set(result.errors.map((entry) => entry.id));
+      const completedIds = new Set(selectedPending.filter((entry) => !failedIds.has(entry.id)).map((entry) => entry.id));
+      setMobileEntries((current) => current.map((entry) => completedIds.has(entry.id) ? { ...entry, status: "reviewed" } : entry));
+      setMobileFeedback(result.appliedEntries ? `Cargado: ${result.unitsApplied} unidad(es), ${result.appliedEntries} captura(s).` : "Las capturas seleccionadas ya no estan pendientes. Se actualizo la lista.");
+      if (result.errors.length) {
+        showError(new Error(`Se cargaron ${result.appliedEntries} captura(s), pero ${result.errors.length} quedaron pendientes por error.`));
+      } else {
+        showMessage(`Inventario cargado: ${result.unitsApplied} unidad(es) en ${result.appliedGroups} carta(s).`);
+      }
+      await refresh().catch(() => undefined);
+    } catch (nextError) {
+      setMobileFeedback(errorMessage(nextError));
+      showError(nextError);
+    } finally { mobileRequest.current = false; setMobileApplying(false); }
+  }
+
+  async function deleteMobileInventoryEntry(id: string) {
+    const result = await api<{ deleted: boolean }>(`/mobile-intake/entries/${id}`, { method: "DELETE" });
+    if (!result.deleted) throw new Error("No se pudo borrar la entrada movil.");
+    setMobileEntries((current) => current.filter((entry) => entry.id !== id));
+    showMessage("Ultima captura borrada de la pre-base.");
+  }
+
+  async function loadMobileStagingIntoImport() {
+    const pending = mobileEntries.filter((entry) => entry.status === "pending");
+    if (!pending.length) {
+      showError(new Error("No hay capturas moviles pendientes para revisar."));
+      return;
+    }
+    const csv = mobileEntriesToSnapshotCsv(pending);
+    const batch = {
+      ...importBatch,
+      name: importBatch.name || `Pre-base movil ${new Date().toLocaleDateString("es-AR")}`,
+      note: importBatch.note || `Capturas moviles: ${pending.length} fila(s)`
+    };
+    setImportBatch(batch);
+    setCsvText(csv);
+    setView("import");
+    await previewSnapshot(csv);
   }
 
   async function loadExamples() {
@@ -1621,6 +1926,37 @@ function App() {
     }
   }
 
+  const activeReservations = sales.filter((sale) => sale.saleType === "reservation" && sale.status !== "cancelled" && sale.status !== "delivered");
+  const paidSales = sales.filter((sale) => sale.status === "paid" || sale.status === "delivered");
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const pendingDebtArs = activeReservations.reduce((sum, sale) => sum + Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), 0);
+  const overdueDebtCount = activeReservations.filter((sale) => sale.paymentDueAt && new Date(sale.paymentDueAt) < todayStart && (sale.amountPaidArs || 0) < sale.totalArs).length;
+  const ordersWithoutMessage = activeReservations.filter((sale) => !sale.messageSentAt).length;
+  const ordersToDeliver = activeReservations.filter((sale) => sale.status === "paid").length;
+  const collectedTodayArs = paidSales
+    .filter((sale) => new Date(sale.completedAt || sale.createdAt).getTime() >= todayStart.getTime())
+    .reduce((sum, sale) => sum + (sale.amountPaidArs || sale.totalArs), 0);
+  const openPurchaseArs = purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.totalArs, 0);
+  const startQuickOrder = (mode: "sale" | "reservation") => {
+    setCartMode(mode);
+    setSaleChannel("mostrador");
+    setQuery("");
+    setExpansion("all");
+    setLanguage("all");
+    setCondition("all");
+    setLocationFilter("all");
+    setBatchFilter("all");
+    setInventoryStatusFilter("all");
+    setAvailability("available");
+    setInventoryPriceSource("sale");
+    setSortMode("name");
+    setIssue("all");
+    setView("inventory");
+    setCartFocusNonce((value) => value + 1);
+    showMessage(mode === "reservation" ? "Orden suelta lista: agrega cartas y crea la reserva." : "Venta directa lista: agrega cartas y confirma el cobro.");
+  };
+
   if (accessRequired) {
     return (
       <AccessGate
@@ -1634,7 +1970,7 @@ function App() {
   }
 
   return (
-    <main className="shell">
+    <main className={`shell ${view === "mobile-intake" ? "mobile-mode" : ""}`}>
       <header className="app-header">
         <div className="brand-lockup">
           <img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" />
@@ -1654,17 +1990,38 @@ function App() {
 
       <nav className="nav" aria-label="Navegacion principal">
         <NavButton icon="home" active={view === "dashboard"} onClick={() => setView("dashboard")}>Inicio</NavButton>
-        <NavButton icon="inventory" active={view === "inventory"} onClick={() => setView("inventory")}>Inventario / Venta</NavButton>
-        <NavButton icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
-        <NavButton icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
-        <NavButton icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
+        <NavButton icon="inventory" active={view === "inventory"} onClick={() => setView("inventory")}>Inventario</NavButton>
         <NavButton icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
         <NavButton icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
-        <NavButton icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
-        <NavButton icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
-        <NavButton icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
-        <NavButton icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
+        <NavButton icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
+        <details className="more-nav">
+          <summary>Mas</summary>
+          <div>
+            <NavButton icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
+            <NavButton icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
+            <NavButton icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
+            <NavButton icon="cart" active={view === "mobile-intake"} onClick={() => setView("mobile-intake")}>Carga movil</NavButton>
+            <NavButton icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
+            <NavButton icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
+            <NavButton icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
+          </div>
+        </details>
       </nav>
+
+      <OperationsDock
+        collectedTodayArs={collectedTodayArs}
+        pendingDebtArs={pendingDebtArs}
+        overdueDebtCount={overdueDebtCount}
+        ordersWithoutMessage={ordersWithoutMessage}
+        ordersToDeliver={ordersToDeliver}
+        openPurchaseArs={openPurchaseArs}
+        activeOrderCount={activeReservations.length}
+        cartCount={cart.length}
+        onNewSale={() => startQuickOrder("sale")}
+        onNewOrder={() => startQuickOrder("reservation")}
+        onGoOrders={() => setView("orders")}
+        onGoCash={() => setView("sales")}
+      />
 
       <div className="toast-stack" aria-live="polite">
         {message ? <div className="feedback ok"><span>{message}</span><button aria-label="Cerrar mensaje" onClick={() => setMessage("")}><Icon name="close" /></button></div> : null}
@@ -1683,6 +2040,7 @@ function App() {
           onCreate={startCreate}
           onImport={() => setView("import")}
           onLoadExamples={environment.allowExamples ? loadExamples : undefined}
+          onQuickOrder={() => startQuickOrder("reservation")}
           onGoInventory={() => setView("inventory")}
           onGoOrders={() => setView("orders")}
           onGoSales={() => setView("sales")}
@@ -1715,7 +2073,7 @@ function App() {
           selected={selected}
           selectedMovements={selectedMovements}
           options={options}
-          filters={{ query, expansion, language, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
+          filters={{ query, expansion, language, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
           density={inventoryDensity}
           quality={quality}
           adjustment={adjustment}
@@ -1723,6 +2081,7 @@ function App() {
           cartMode={cartMode}
           customerName={customerName}
           saleChannel={saleChannel}
+          cartFocusNonce={cartFocusNonce}
           onFilterChange={(patch) => {
             if (patch.query !== undefined) setQuery(patch.query);
             if (patch.expansion !== undefined) setExpansion(patch.expansion);
@@ -1731,6 +2090,7 @@ function App() {
             if (patch.location !== undefined) setLocationFilter(patch.location);
             if (patch.intakeBatch !== undefined) setBatchFilter(patch.intakeBatch);
             if (patch.inventoryStatus !== undefined) setInventoryStatusFilter(patch.inventoryStatus);
+            if (patch.tag !== undefined) setTagFilter(patch.tag);
             if (patch.availability !== undefined) setAvailability(patch.availability);
             if (patch.priceSource !== undefined) setInventoryPriceSource(patch.priceSource);
             if (patch.sortMode !== undefined) setSortMode(patch.sortMode);
@@ -1744,6 +2104,7 @@ function App() {
             setLocationFilter("all");
             setBatchFilter("all");
             setInventoryStatusFilter("all");
+            setTagFilter("all");
             setAvailability("all");
             setInventoryPriceSource("sale");
             setSortMode("name");
@@ -1752,11 +2113,16 @@ function App() {
           onDensityChange={setInventoryDensity}
           onBatchUpdate={(items, patch) => void updateInventoryBatch(items, patch)}
           onSelect={(item) => setSelectedId(item.id)}
+          onStockSaved={(saved) => {
+            setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; });
+          }}
+          onRestock={startRestock}
           onEdit={startEdit}
           onCreate={startCreate}
           onAdjustmentChange={setAdjustment}
           onAdjustmentSubmit={saveAdjustment}
           onAvailableQuantitySet={setAvailableQuantity}
+          onTagsChange={(item, tags) => void updateInventoryTags(item, tags)}
           onAddToCart={addToCart}
           onCartChange={setCart}
           onCartModeChange={setCartMode}
@@ -1769,7 +2135,7 @@ function App() {
 
       {view === "claims" ? <ClaimsView workspace={claims} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search) => void searchPriceChartingCache(search)} onAddCards={(ids, sectionId) => void addClaimCards(ids, sectionId)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
-      {view === "orders" ? <OrdersView sales={sales} claims={claims} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={(id, note) => void updateOrderNote(id, note)} onMessageSent={updateOrderMessageSent} onLinePacked={(id, packed) => void updateOrderLinePacked(id, packed)} /> : null}
+      {view === "orders" ? <OrdersView sales={sales} claims={claims} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} /> : null}
       {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
       {view === "purchases" ? (
         <PurchasesView
@@ -1799,6 +2165,8 @@ function App() {
           priceChartingImageBackfillRunning={priceChartingImageBackfillRunning}
           priceChartingImageResumeAt={priceChartingImageResumeAt}
           priceChartingImageLastBatch={priceChartingImageLastBatch}
+          cardIndexRebuildAfterId={cardIndexRebuildAfterId}
+          cardIndexNextGroupOffset={cardIndexNextGroupOffset}
           blueRate={blueRate}
           onPriceChartingSearch={(search) => void searchPriceChartingCache(search)}
           onCardIndexSearch={(search, filter) => void searchCardIndex(search, filter)}
@@ -1807,6 +2175,7 @@ function App() {
           onPriceChartingSync={() => void syncPriceChartingCache()}
           onCardIndexRebuild={() => void rebuildCardIndex()}
           onCardIndexTcgCsvSync={() => void syncCardIndexTcgCsv()}
+          onPriceChartingImageReindexLocal={() => void reindexLocalPriceChartingImages()}
           onPriceChartingImageBatch={(includeAll, mode) => void processPriceChartingImages(includeAll, mode)}
           onPriceChartingBackfillChange={(running) => { setPriceChartingImageBackfillRunning(running); if (!running) setPriceChartingImageResumeAt(""); }}
           showImageReview={showStockImageReview}
@@ -1821,6 +2190,23 @@ function App() {
           onImageCatalogFilterChange={setImageCatalogFilter}
           imageCatalogSearch={imageCatalogSearch}
           onImageCatalogSearchChange={setImageCatalogSearch}
+        />
+      ) : null}
+      {view === "mobile-intake" ? (
+        <MobileIntakeView
+          applying={mobileApplying}
+          feedback={mobileFeedback}
+          entries={mobileEntries}
+          blueRate={blueRate}
+          onSearch={(search) => searchMobileInventory(search)}
+          onSave={(input) => saveMobileInventoryEntry(input)}
+          onStatus={(id, status) => void setMobileInventoryEntryStatus(id, status)}
+          onApplyEntry={(id) => void applyMobileInventoryEntries([id])}
+          onApplyPending={() => void applyMobileInventoryEntries()}
+          onDelete={(id) => void deleteMobileInventoryEntry(id)}
+          onRefresh={() => void refresh()}
+          onLoadToImport={() => void loadMobileStagingIntoImport()}
+          onExit={() => setView("dashboard")}
         />
       ) : null}
       {view === "admin" ? (
@@ -1851,17 +2237,19 @@ function App() {
           onCardIndexTcgCsvSync={() => void syncCardIndexTcgCsv()}
           onPriceChartingImageBatch={(includeAll, mode) => void processPriceChartingImages(includeAll, mode)}
           onPriceChartingBackfillChange={setPriceChartingImageBackfillRunning}
+          onResetInventoryStock={() => void resetInventoryStockFromAdmin()}
         />
       ) : null}
       {view === "movements" ? <MovementsView movements={movements} audit={audit} /> : null}
       {view === "import" ? (
-        <ImportView csvText={csvText} rows={previewRows} resolutions={importResolutions} importBatch={importBatch} importRuns={importRuns} blueRate={blueRate} onTextChange={setCsvText} onBatchChange={setImportBatch} onPreview={() => void previewSnapshot()} onPreviewText={(text) => void previewSnapshot(text)} onApply={applySnapshot} onLoadExampleCsv={environment.allowExamples ? () => setCsvText(exampleSnapshotCsv) : undefined} onResolve={(rowNumber, resolution) => setImportResolutions((current) => ({ ...current, [rowNumber]: resolution }))} onResolveMany={(nextResolutions) => setImportResolutions((current) => ({ ...current, ...nextResolutions }))} />
+        <ImportView applying={importApplying} feedback={importFeedback} csvText={csvText} rows={previewRows} resolutions={importResolutions} importBatch={importBatch} importRuns={importRuns} blueRate={blueRate} onTextChange={(text) => { if (importRequest.current) return; setCsvText(text); setPreviewRows([]); setImportFeedback(""); }} onBatchChange={setImportBatch} onPreview={() => void previewSnapshot()} onPreviewText={(text) => void previewSnapshot(text)} onApply={applySnapshot} onLoadExampleCsv={environment.allowExamples ? () => setCsvText(exampleSnapshotCsv) : undefined} onResolve={(rowNumber, resolution) => setImportResolutions((current) => ({ ...current, [rowNumber]: resolution }))} onResolveMany={(nextResolutions) => setImportResolutions((current) => ({ ...current, ...nextResolutions }))} />
       ) : null}
       {productModalOpen ? (
         <ProductModal
           form={form}
           editing={Boolean(editingId)}
           onChange={setForm}
+          receipt={productReceipt}
           onSubmit={saveProduct}
           onClose={closeProductModal}
           blueRate={blueRate}
@@ -1869,6 +2257,8 @@ function App() {
           imageForcing={productImageForcing}
           onForceImage={() => void forceProductImage()}
           onForceManualImage={forceProductImageManual}
+          priceChartingCache={priceChartingCache}
+          onSearchPriceCharting={(search) => void searchPriceChartingCache(search)}
         />
       ) : null}
     </main>
@@ -1886,6 +2276,7 @@ function Dashboard({
   onCreate,
   onImport,
   onLoadExamples,
+  onQuickOrder,
   onGoInventory,
   onGoOrders,
   onGoSales,
@@ -1903,6 +2294,7 @@ function Dashboard({
   onCreate: () => void;
   onImport: () => void;
   onLoadExamples?: () => void;
+  onQuickOrder: () => void;
   onGoInventory: () => void;
   onGoOrders: () => void;
   onGoSales: () => void;
@@ -1962,6 +2354,7 @@ function Dashboard({
             <p>Atajos para cargar stock, cobrar, entregar y corregir datos que frenan ventas.</p>
           </div>
           <div className="dashboard-actions">
+            <button className="primary-action" onClick={onQuickOrder}><Icon name="orders" />Nueva orden</button>
             <button className="primary-action" onClick={onCreate}><Icon name="plus" />Crear producto</button>
             {onLoadExamples ? <button className="secondary-action" onClick={onLoadExamples}>Cargar ejemplos</button> : null}
             <button className="secondary-action" onClick={onImport}><Icon name="import" />Importar stock</button>
@@ -2029,6 +2422,60 @@ function Dashboard({
   );
 }
 
+function OperationsDock({
+  collectedTodayArs,
+  pendingDebtArs,
+  overdueDebtCount,
+  ordersWithoutMessage,
+  ordersToDeliver,
+  openPurchaseArs,
+  activeOrderCount,
+  cartCount,
+  onNewSale,
+  onNewOrder,
+  onGoOrders,
+  onGoCash
+}: {
+  collectedTodayArs: number;
+  pendingDebtArs: number;
+  overdueDebtCount: number;
+  ordersWithoutMessage: number;
+  ordersToDeliver: number;
+  openPurchaseArs: number;
+  activeOrderCount: number;
+  cartCount: number;
+  onNewSale: () => void;
+  onNewOrder: () => void;
+  onGoOrders: () => void;
+  onGoCash: () => void;
+}) {
+  return (
+    <section className="operations-dock" aria-label="Acciones operativas">
+      <button className="operation-action primary" type="button" onClick={onNewSale}>
+        <Icon name="sales" />
+        <span>Venta directa</span>
+        <strong>{cartCount ? `${cartCount} en carrito` : "Cobrar ahora"}</strong>
+      </button>
+      <button className="operation-action primary" type="button" onClick={onNewOrder}>
+        <Icon name="orders" />
+        <span>Nueva orden</span>
+        <strong>Sin claim</strong>
+      </button>
+      <button className="operation-action alert" type="button" onClick={onGoOrders}>
+        <Icon name="claims" />
+        <span>Ordenes pendientes</span>
+        <strong>{activeOrderCount} activas / {ordersWithoutMessage} sin mensaje / {ordersToDeliver} para entregar</strong>
+      </button>
+      <button className="operation-action cash" type="button" onClick={onGoCash}>
+        <Icon name="sales" />
+        <span>Caja y deudas</span>
+        <strong>{formatArs(collectedTodayArs)} hoy / {formatArs(pendingDebtArs)} a cobrar / {formatArs(openPurchaseArs)} compras</strong>
+        {overdueDebtCount ? <em>{overdueDebtCount} vencida(s)</em> : null}
+      </button>
+    </section>
+  );
+}
+
 function InventoryBar({ summary }: { summary: StockSummary }) {
   const total = Math.max(1, summary.totalUnits);
   const available = Math.round((summary.availableUnits / total) * 100);
@@ -2080,12 +2527,67 @@ function StockQualityPanel({ quality, onIssue }: { quality: StockQualitySummary;
   );
 }
 
+function InventorySearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const changeRef = useRef(onChange);
+  changeRef.current = onChange;
+  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => {
+    if (draft === value) return;
+    const timer = window.setTimeout(() => { React.startTransition(() => changeRef.current(draft)); }, 120);
+    return () => window.clearTimeout(timer);
+  }, [draft, value]);
+  return <label className="inventory-search"><span className="visually-hidden">Buscar en el inventario</span><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Buscar carta, expansion, numero..." /></label>;
+}
+
+function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSaved: (item: StockRow) => void; onClose: () => void }) {
+  const [quantity, setQuantity] = useState("1");
+  const [currency, setCurrency] = useState("ARS");
+  const [priceArs, setPriceArs] = useState(String(item.priceArs || ""));
+  const [priceUsd, setPriceUsd] = useState(item.priceUsd == null ? "" : String(item.priceUsd));
+  const [costOpen, setCostOpen] = useState(false);
+  const [cost, setCost] = useState("");
+  const [costCurrency, setCostCurrency] = useState(item.purchaseCurrency || "ARS");
+  const [saving, setSaving] = useState(false);
+  const request = useRef(false);
+  const [feedback, setFeedback] = useState("");
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (request.current) return;
+    request.current = true;
+    setSaving(true);
+    setFeedback("");
+    try {
+      const response = await api<{ item: StockRow }>("/inventory/intake", { method: "POST", body: {
+        ...formFromItem(item), quantityOnHand: Number(quantity), quantityReserved: 0,
+        priceArs: priceArs === "" ? item.priceArs : Number(priceArs), priceUsd: priceUsd === "" ? item.priceUsd : Number(priceUsd),
+        purchaseCost: cost === "" ? undefined : Number(cost), purchaseCurrency: costCurrency
+      }});
+      onSaved(response.item);
+      setFeedback(`Agregadas ${quantity}. Stock actual: ${response.item.quantityOnHand}.`);
+      setQuantity("1");
+    } catch (error) { setFeedback(errorMessage(error)); }
+    finally { request.current = false; setSaving(false); }
+  }
+  return <form className="inventory-inline-intake" aria-label={`Agregar stock de ${item.product.name}`} onSubmit={save}>
+    <div className="inline-intake-fields">
+      <label>Cantidad<input autoFocus required type="number" min="1" step="1" disabled={saving} value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
+      <label>Precio de venta<input type="number" min="0" step="0.01" disabled={saving} value={currency === "ARS" ? priceArs : priceUsd} onChange={(event) => currency === "ARS" ? setPriceArs(event.target.value) : setPriceUsd(event.target.value)} placeholder="Sin cambiar" /></label>
+      <label>Moneda<select disabled={saving} value={currency} onChange={(event) => setCurrency(event.target.value)}><option>ARS</option><option>USD</option></select></label>
+    </div>
+    <button className="inline-cost-toggle" type="button" disabled={saving} onClick={() => setCostOpen(!costOpen)}>Costo de compra (opcional)</button>
+    {costOpen ? <div className="inline-cost-fields"><label>Costo por unidad<input type="number" min="0" step="0.01" value={cost} disabled={saving} onChange={(event) => setCost(event.target.value)} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={costCurrency} disabled={saving} onChange={(event) => setCostCurrency(event.target.value)}><option>ARS</option><option>USD</option></select></label></div> : null}
+    {feedback ? <p role="status" className="inline-intake-feedback">{feedback}</p> : null}
+    <div className="inline-intake-actions"><button className="secondary-action" type="button" disabled={saving} onClick={onClose}>Cerrar</button><button className="primary-action" disabled={saving}>{saving ? "Guardando..." : "Guardar stock"}</button></div>
+  </form>;
+}
+
 function InventoryView(props: {
   items: StockRow[];
   allItems: StockRow[];
   selected?: StockRow;
   selectedMovements: MovementRow[];
-  options: { expansions: string[]; languages: string[]; conditions: string[]; locations: string[]; intakeBatches: string[]; inventoryStatuses: string[] };
+  options: { expansions: string[]; languages: string[]; conditions: string[]; locations: string[]; intakeBatches: string[]; inventoryStatuses: string[]; tags: string[] };
   filters: InventoryFilters;
   density: InventoryDensity;
   quality: StockQualitySummary;
@@ -2094,6 +2596,7 @@ function InventoryView(props: {
   cartMode: "sale" | "reservation";
   customerName: string;
   saleChannel: string;
+  cartFocusNonce: number;
   onFilterChange: (patch: Partial<InventoryFilters>) => void;
   onClearFilters: () => void;
   onDensityChange: (density: InventoryDensity) => void;
@@ -2101,9 +2604,12 @@ function InventoryView(props: {
   onSelect: (item: StockRow) => void;
   onEdit: (item: StockRow) => void;
   onCreate: () => void;
+  onRestock: (item: StockRow) => void;
+  onStockSaved: (item: StockRow) => void;
   onAdjustmentChange: (adjustment: { quantityDelta: number; note: string }) => void;
   onAdjustmentSubmit: (event: React.FormEvent) => void;
   onAvailableQuantitySet: (item: StockRow, targetAvailable: number) => Promise<void>;
+  onTagsChange: (item: StockRow, tags: string) => void;
   onAddToCart: (item: StockRow) => void;
   onCartChange: (cart: CartLine[]) => void;
   onCartModeChange: (mode: "sale" | "reservation") => void;
@@ -2114,29 +2620,49 @@ function InventoryView(props: {
 }) {
   const { items, allItems, selected, selectedMovements, options, filters } = props;
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<"detail" | "cart">("detail");
+  const [sideTab, setSideTab] = useState<"detail" | "cart" | null>(null);
+  const [intakeId, setIntakeId] = useState("");
+  const [renderLimit, setRenderLimit] = useState(48);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const filterKey = JSON.stringify(filters);
+  useEffect(() => { setRenderLimit(48); }, [filterKey]);
+  useEffect(() => {
+    if (!loadMoreRef.current || renderLimit >= items.length) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setRenderLimit((limit) => Math.min(items.length, limit + 48));
+    }, { rootMargin: "300px" });
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [items.length, renderLimit]);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setSideTab(null); setIntakeId(""); } };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
   const [quickStockOpen, setQuickStockOpen] = useState(false);
   const [quickStockDraft, setQuickStockDraft] = useState("");
   const [quickStockSaving, setQuickStockSaving] = useState(false);
+  const [newTagDraft, setNewTagDraft] = useState("");
   const [batchSelection, setBatchSelection] = useState<string[]>([]);
   const [batchLocation, setBatchLocation] = useState("");
   const [batchIntakeBatch, setBatchIntakeBatch] = useState("");
   const [batchInventoryStatus, setBatchInventoryStatus] = useState("");
+  const [batchTags, setBatchTags] = useState("");
   const [batchPriceSource, setBatchPriceSource] = useState<"none" | InventoryPriceSource>("none");
-  const activeFilters = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.availability, filters.issue].filter((value) => value !== "all").length
+  const activeFilters = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.availability, filters.issue].filter((value) => value !== "all").length
     + (filters.priceSource !== "sale" ? 1 : 0);
-  const availabilityCounts = {
+  const availabilityCounts = useMemo(() => ({
     all: allItems.length,
     available: allItems.filter((item) => item.availableQuantity > 0).length,
     reserved: allItems.filter((item) => item.quantityReserved > 0).length,
     out: allItems.filter((item) => item.availableQuantity === 0).length
-  };
-  const priceSourceCounts = {
+  }), [allItems]);
+  const priceSourceCounts = useMemo(() => ({
     sale: allItems.filter((item) => inventoryPriceDisplay(item, "sale", props.blueRate).hasPrice).length,
     pricecharting: allItems.filter((item) => inventoryPriceDisplay(item, "pricecharting", props.blueRate).hasPrice).length,
     tcgplayer: allItems.filter((item) => inventoryPriceDisplay(item, "tcgplayer", props.blueRate).hasPrice).length,
     coolstuff: allItems.filter((item) => inventoryPriceDisplay(item, "coolstuff", props.blueRate).hasPrice).length
-  };
+  }), [allItems, props.blueRate]);
   const selectedBatchItems = items.filter((item) => batchSelection.includes(item.id));
   const allVisibleSelected = items.length > 0 && selectedBatchItems.length === items.length;
   const handleSelect = (item: StockRow) => {
@@ -2147,6 +2673,20 @@ function InventoryView(props: {
     props.onAddToCart(item);
     setSideTab("cart");
   };
+  const selectedTags = selected ? inventoryTags(selected.tags) : [];
+  const suggestedTags = unique([...inventoryTagSuggestions, ...options.tags]);
+  const saveSelectedTags = (tags: string) => {
+    if (!selected) return;
+    props.onTagsChange(selected, tags);
+  };
+  const addSelectedTag = () => {
+    if (!selected || !newTagDraft.trim()) return;
+    saveSelectedTags(inventoryTagsText([...selectedTags, ...inventoryTags(newTagDraft)]));
+    setNewTagDraft("");
+  };
+  useEffect(() => {
+    if (props.cartFocusNonce > 0) setSideTab("cart");
+  }, [props.cartFocusNonce]);
   useEffect(() => {
     setQuickStockOpen(false);
     setQuickStockDraft(selected ? String(selected.availableQuantity) : "");
@@ -2172,6 +2712,7 @@ function InventoryView(props: {
     if (batchLocation.trim()) patch.location = batchLocation.trim();
     if (batchIntakeBatch.trim()) patch.intakeBatch = batchIntakeBatch.trim();
     if (batchInventoryStatus) patch.inventoryStatus = batchInventoryStatus;
+    if (batchTags.trim()) patch.tags = batchTags.trim();
     if (batchPriceSource !== "none") patch.priceSource = batchPriceSource;
     if (!Object.keys(patch).length) {
       window.alert("Elegí al menos una accion para aplicar al lote.");
@@ -2179,30 +2720,30 @@ function InventoryView(props: {
     }
     props.onBatchUpdate(selectedBatchItems, patch);
     setBatchSelection([]);
+    setBatchTags("");
   };
   return (
     <section className="view stock-layout">
-      <div className="panel inventory-toolbar">
-        <div className="section-heading">
-          <div>
-            <h2>Inventario</h2>
-            <p>Consulta stock, arma ventas y administra productos desde un solo lugar.</p>
-          </div>
-          <div className="toolbar-actions">
+      <datalist id="inventory-tag-suggestions">
+        {inventoryTagSuggestions.map((tag) => <option value={tag} key={tag} />)}
+      </datalist>
+      <div className="panel inventory-toolbar compact-inventory-toolbar">
+        <div className="inventory-command-row">
+          <InventorySearchField value={filters.query} onChange={(query) => props.onFilterChange({ query })} />
+          <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
+          <label className="sort-control">Ordenar<select value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
+          <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Filtros{activeFilters ? ` (${activeFilters})` : ""}</button>
+          <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
+        </div>
+        {filtersOpen ? <div id="inventory-filter-options" className="inventory-filter-options">
+          <div className="inventory-display-options">
             <div className="density-toggle" aria-label="Densidad de inventario">
               <button className={props.density === "comfortable" ? "active" : ""} type="button" onClick={() => props.onDensityChange("comfortable")}>Grande</button>
               <button className={props.density === "compact" ? "active" : ""} type="button" onClick={() => props.onDensityChange("compact")}>Compacta</button>
             </div>
-            <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Filtros{activeFilters ? ` (${activeFilters})` : ""}</button>
+
             <button className="secondary-action" disabled={!items.length} onClick={() => exportInventoryCsv(items)}><Icon name="download" />Exportar vista</button>
-            <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Nuevo producto</button>
           </div>
-        </div>
-        <div className="inventory-search-row">
-          <label className="inventory-search">Buscar en el inventario<input value={filters.query} onChange={(event) => props.onFilterChange({ query: event.target.value })} placeholder="Nombre, SKU, expansion o numero..." /></label>
-          <div className="result-count"><strong>{items.length}</strong><span>de {allItems.length} productos</span></div>
-          <label className="sort-control">Ordenar<select value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
-        </div>
         <div className="issue-filter-row">
           {([
             ["all", "Todo", allItems.length],
@@ -2243,15 +2784,17 @@ function InventoryView(props: {
           <label>Lote<select value={filters.intakeBatch} onChange={(event) => props.onFilterChange({ intakeBatch: event.target.value })}><option value="all">Todos</option>{options.intakeBatches.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Ubicacion<select value={filters.location} onChange={(event) => props.onFilterChange({ location: event.target.value })}><option value="all">Todas</option>{options.locations.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Estado<select value={filters.inventoryStatus} onChange={(event) => props.onFilterChange({ inventoryStatus: event.target.value })}><option value="all">Todos</option>{options.inventoryStatuses.map((value) => <option value={value} key={value}>{inventoryStatusLabel(value)}</option>)}</select></label>
+          <label>Categoria<select value={filters.tag} onChange={(event) => props.onFilterChange({ tag: event.target.value })}><option value="all">Todas</option>{options.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
           <label>Disponibilidad<select value={filters.availability} onChange={(event) => props.onFilterChange({ availability: event.target.value as AvailabilityFilter })}><option value="all">Todas</option><option value="available">Con disponible</option><option value="reserved">Con reserva</option><option value="out">Sin disponible</option></select></label>
           <button className="clear-action" onClick={props.onClearFilters}>Limpiar filtros</button>
         </div> : null}
+        </div> : null}
       </div>
 
-      <div className="stock-content inventory-workspace">
+      <div className="stock-content inventory-workspace inventory-browse-workspace">
         <section className="panel product-list-panel">
           <div className="section-heading">
-            <div><h3>Productos</h3><p>Selecciona una carta para ver detalles o agregala directamente.</p></div>
+            <div><h3>Cartas</h3></div><button className="secondary-action" onClick={() => setSideTab("cart")}><Icon name="cart" />Carrito ({props.cart.length})</button>
             <div className="inventory-selection-tools">
               <button className="secondary-action" disabled={!items.length} onClick={() => setBatchSelection(allVisibleSelected ? [] : items.map((item) => item.id))}>
                 <Icon name={allVisibleSelected ? "close" : "check"} />{allVisibleSelected ? "Limpiar seleccion" : "Seleccionar vista"}
@@ -2267,6 +2810,7 @@ function InventoryView(props: {
                 <option value="">Estado: sin cambio</option>
                 {inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
               </select>
+              <input value={batchTags} onChange={(event) => setBatchTags(event.target.value)} placeholder="Categoria a sumar" list="inventory-tag-suggestions" />
               <select value={batchPriceSource} onChange={(event) => setBatchPriceSource(event.target.value as "none" | InventoryPriceSource)}>
                 <option value="none">Precio: sin cambio</option>
                 <option value="pricecharting">Usar PriceCharting</option>
@@ -2278,14 +2822,11 @@ function InventoryView(props: {
           ) : null}
           {items.length ? (
             <div className={`inventory-card-grid ${props.density === "compact" ? "compact" : ""}`}>
-              {items.map((item) => {
+              {items.slice(0, renderLimit).map((item) => {
                 const displayPrice = inventoryPriceDisplay(item, filters.priceSource, props.blueRate);
                 return (
                   <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""}`} key={item.id}>
-                    <label className="inventory-card-checkbox" onClick={(event) => event.stopPropagation()}>
-                      <input type="checkbox" checked={batchSelection.includes(item.id)} onChange={() => toggleBatchItem(item.id)} />
-                    </label>
-                    <button className="inventory-card-main" onClick={() => handleSelect(item)}>
+                    <button className="inventory-card-main" onClick={() => setIntakeId(item.id)}>
                       <div className="inventory-card-image-wrap">
                         <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="inventory-card-image" fallbackClassName="inventory-card-image placeholder" />
                         <span className={`inventory-stock-badge ${item.availableQuantity > 0 ? "" : "out-of-stock"}`}>{item.availableQuantity} disp.</span>
@@ -2294,6 +2835,7 @@ function InventoryView(props: {
                         <strong>{item.product.name}</strong>
                         <span>{item.product.expansion} #{item.product.number || "-"}</span>
                         <small>{inventoryVariantLabel(item)}</small>
+                        {inventoryTags(item.tags).length ? <div className="inventory-tag-list compact">{inventoryTags(item.tags).slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
                         <div className={`inventory-big-price ${displayPrice.hasPrice ? "" : "missing"}`}>
                           <span>{displayPrice.label}</span>
                           <strong>{displayPrice.hasPrice ? formatArs(displayPrice.ars || 0) : "Sin precio"}</strong>
@@ -2301,15 +2843,22 @@ function InventoryView(props: {
                         </div>
                       </div>
                     </button>
-                    <button className="cart-chip inventory-card-add" disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" />Agregar</button>
+                    <div className="inventory-card-actions">
+                      <button className="primary-action" onClick={() => setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name="plus" />Stock</button>
+                      <button className="secondary-action" onClick={() => handleSelect(item)}>Detalles</button>
+                      <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
+                    </div>
+                    {intakeId === item.id ? <InventoryQuickIntake key={item.id} item={item} onSaved={props.onStockSaved} onClose={() => setIntakeId("")} /> : null}
                   </article>
                 );
               })}
             </div>
-          ) : <EmptyState title="Sin productos" body="Crea un producto o importa un snapshot para empezar." />}
+          ) : <EmptyState title="Sin coincidencias" body="Proba otro nombre, expansion o numero, o revisa los filtros." />}
+          {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + 48)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
         </section>
 
-        <aside className="workspace-side">
+        {sideTab ? <aside className="workspace-side inventory-detail-drawer" role="dialog" aria-label={sideTab === "detail" ? "Detalles de la carta" : "Carrito"}>
+          <button className="secondary-action drawer-close" onClick={() => setSideTab(null)}><Icon name="close" />Cerrar</button>
           <div className="side-tabs" role="tablist" aria-label="Panel de inventario">
             <button className={sideTab === "detail" ? "active" : ""} onClick={() => setSideTab("detail")}>Detalle</button>
             <button className={sideTab === "cart" ? "active" : ""} onClick={() => setSideTab("cart")}>Carrito <span>{props.cart.length}</span></button>
@@ -2328,6 +2877,22 @@ function InventoryView(props: {
                   </div>
                 )}
                 <div className="detail-title"><h3>{selected.product.name}</h3><span>{selected.sku}</span></div>
+                <section className="inventory-tags-panel">
+                  <div className="inventory-tags-head">
+                    <strong>Categorias</strong>
+                    {selectedTags.length ? <button type="button" className="mini-icon-action" aria-label="Limpiar categorias" title="Limpiar categorias" onClick={() => saveSelectedTags("")}><Icon name="close" /></button> : null}
+                  </div>
+                  <div className="inventory-tag-list">
+                    {suggestedTags.map((tag) => {
+                      const active = selectedTags.includes(tag);
+                      return <button type="button" className={active ? "active" : ""} key={tag} onClick={() => saveSelectedTags(toggleInventoryTag(selected.tags, tag))}>{tag}</button>;
+                    })}
+                  </div>
+                  <div className="inventory-tag-adder">
+                    <input value={newTagDraft} onChange={(event) => setNewTagDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addSelectedTag(); } }} placeholder="Nueva categoria..." list="inventory-tag-suggestions" />
+                    <button type="button" className="secondary-action" onClick={addSelectedTag}><Icon name="plus" />Agregar</button>
+                  </div>
+                </section>
                 <dl className="detail-grid">
                   <div><dt>Expansion</dt><dd>{selected.product.expansion}</dd></div>
                   <div><dt>Numero</dt><dd>{selected.product.number || "-"}</dd></div>
@@ -2355,6 +2920,7 @@ function InventoryView(props: {
                     ) : null}
                   </div>
                   <div><dt>Precio venta</dt><dd><MoneyStack ars={selected.priceArs} usd={selected.priceUsd} blueRate={props.blueRate} /></dd></div>
+                  <div><dt>Costo registrado por unidad</dt><dd>{selected.purchaseCost != null ? (selected.purchaseCurrency === "USD" ? formatUsd(selected.purchaseCost) : formatArs(selected.purchaseCost)) : "Sin registrar"}</dd></div>
                   <div><dt>Ultima compra</dt><dd>{selected.lastPurchaseArs ? <><MoneyStack ars={selected.lastPurchaseArs} blueRate={props.blueRate} compact />{selected.lastPurchaseAt ? <span className="muted inline-date">{formatShortDate(selected.lastPurchaseAt)}</span> : null}</> : "Sin compras"}</dd></div>
                 </dl>
                 <div className="price-reference-grid">
@@ -2379,7 +2945,7 @@ function InventoryView(props: {
                   {!selected.product.imageUrl ? <div className="quality-warning"><span>Sin imagen</span><strong>Prioridad de cache</strong></div> : null}
                   {!selected.priceArs ? <div className="quality-warning"><span>Precio cero</span><strong>Revisar antes de vender</strong></div> : null}
                 </div>
-                <div className="detail-actions"><button className="secondary-action" onClick={() => props.onEdit(selected)}><Icon name="edit" />Editar</button><button className="primary-action" disabled={selected.availableQuantity <= 0} onClick={() => handleAdd(selected)}><Icon name="cart" />Agregar al carrito</button></div>
+                <div className="detail-actions"><button className="secondary-action" onClick={() => props.onRestock(selected)}><Icon name="plus" />Agregar existencias</button><button className="secondary-action" onClick={() => props.onEdit(selected)}><Icon name="edit" />Editar</button><button className="primary-action" disabled={selected.availableQuantity <= 0} onClick={() => handleAdd(selected)}><Icon name="cart" />Agregar al carrito</button></div>
               </>
             ) : <EmptyState title="Sin seleccion" body="Selecciona un producto para ver el detalle." />}
           </section>
@@ -2409,7 +2975,7 @@ function InventoryView(props: {
             onSubmit={props.onSubmitCart}
             blueRate={props.blueRate}
           />}
-        </aside>
+        </aside> : null}
       </div>
     </section>
   );
@@ -2472,7 +3038,8 @@ function CartPanel(props: {
   );
 }
 
-function ProductModal({ form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage }: {
+function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage, priceChartingCache, onSearchPriceCharting }: {
+  receipt: string;
   form: InventoryFormState;
   editing: boolean;
   onChange: (form: InventoryFormState) => void;
@@ -2483,6 +3050,8 @@ function ProductModal({ form, editing, onChange, onSubmit, onClose, blueRate, sa
   imageForcing: "" | "auto" | "manual";
   onForceImage: () => void;
   onForceManualImage: () => void;
+  priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
+  onSearchPriceCharting: (search: string) => void;
 }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -2500,16 +3069,17 @@ function ProductModal({ form, editing, onChange, onSubmit, onClose, blueRate, sa
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
         <header className="modal-header">
-          <div><span className="eyebrow">Inventario</span><h2 id="product-modal-title">{editing ? "Editar producto" : "Nuevo producto"}</h2><p>{editing ? "Actualiza la informacion y guarda los cambios." : "Carga la carta y su stock inicial."}</p></div>
+          <div><span className="eyebrow">Inventario</span><h2 id="product-modal-title">{editing ? "Editar carta" : "Agregar stock"}</h2><p>{editing ? "Actualiza la informacion y guarda los cambios." : "Busca la carta, indica la cantidad y guarda. Podes completar el costo despues."}</p></div>
           <button className="modal-close" aria-label="Cerrar formulario" title="Cerrar" onClick={onClose}><Icon name="close" /></button>
         </header>
-        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Crear producto"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} />
+        {receipt ? <p className="intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
+        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Agregar stock y seguir"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} priceChartingCache={priceChartingCache} onSearchPriceCharting={onSearchPriceCharting} />
       </section>
     </div>
   );
 }
 
-function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, imageForcing, onForceImage, onForceManualImage }: {
+function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, imageForcing, onForceImage, onForceManualImage, priceChartingCache, onSearchPriceCharting }: {
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -2521,7 +3091,35 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   imageForcing: "" | "auto" | "manual";
   onForceImage: () => void;
   onForceManualImage: () => void;
+  priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
+  onSearchPriceCharting: (search: string) => void;
 }) {
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [pickerEntries, setPickerEntries] = useState<PriceChartingCacheEntry[]>([]);
+  const [pickerSearching, setPickerSearching] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const pickerSequence = useRef(0);
+  async function searchPicker(search: string) {
+    const sequence = ++pickerSequence.current;
+    setPickerSearching(true);
+    setPickerError("");
+    try {
+      const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&limit=60`);
+      if (sequence === pickerSequence.current) setPickerEntries(result.entries);
+    } catch (error) {
+      if (sequence === pickerSequence.current) { setPickerEntries([]); setPickerError(errorMessage(error)); }
+    } finally { if (sequence === pickerSequence.current) setPickerSearching(false); }
+  }
+  useEffect(() => {
+    ++pickerSequence.current;
+    if (!catalogSearch.trim()) { setPickerEntries([]); setPickerSearching(false); return; }
+    setPickerSearching(true);
+    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 300);
+    return () => { window.clearTimeout(timer); ++pickerSequence.current; };
+  }, [catalogSearch]);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
+  const [showDetails, setShowDetails] = useState(editing);
+  useEffect(() => { if (!editing && !form.name) setCatalogPickerOpen(true); }, [editing, form.name]);
   const set = (patch: Partial<InventoryFormState>) => onChange({ ...form, ...patch });
   const isGraded = Boolean(form.gradingCompany || form.grade || form.condition === "GRADED");
   const available = Math.max(0, form.quantityOnHand - form.quantityReserved);
@@ -2530,9 +3128,25 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     if (presentation === "GRADED") set({ condition: "GRADED", gradingCompany: form.gradingCompany || "PSA", grade: form.grade || "10" });
     else set({ condition: form.condition === "GRADED" ? "NM" : form.condition, gradingCompany: "", grade: "", gradingCert: "" });
   };
+  const selectCatalogCard = (entry: PriceChartingCacheEntry) => {
+    const priceUsd = entry.loosePriceUsd ?? null;
+    set({
+      sku: "",
+      name: entry.productName,
+      expansion: entry.expansionName,
+      number: entry.cardNumber,
+      imageUrl: entry.imageUrl,
+      priceChartingId: entry.priceChartingId,
+      priceChartingUrl: entry.canonicalUrl,
+      priceUsd,
+      priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : form.priceArs
+    });
+    setCatalogPickerOpen(false);
+  };
+  const choosingCatalogCard = !editing && catalogPickerOpen;
   return (
     <form className="modal-form-shell" onSubmit={onSubmit}>
-      <div className="inventory-edit-layout">
+      <div className={`inventory-edit-layout ${choosingCatalogCard ? "catalog-choosing" : ""}`}>
         <aside className="inventory-edit-preview">
           <CardArt src={form.imageUrl} alt={form.name || "Carta"} label={form.name || "Sin nombre"} className="inventory-edit-art" fallbackClassName="inventory-edit-art image-placeholder" />
           <div className="inventory-edit-preview-copy">
@@ -2542,7 +3156,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             <div className="inventory-edit-badges">
               <span>{form.language || "EN"}</span>
               <span>{isGraded ? [form.gradingCompany, form.grade].filter(Boolean).join(" ") || "Graded" : form.condition || "NM"}</span>
-              <span>{available} disp.</span>
+              <span>{editing ? `${available} disp.` : `+${form.quantityOnHand} a agregar`}</span>
             </div>
             <MoneyStack ars={form.priceArs || convertedArs || null} usd={form.priceUsd} blueRate={blueRate} compact />
             {editing ? (
@@ -2560,6 +3174,40 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
         </aside>
 
         <div className="inventory-edit-sections">
+          {choosingCatalogCard ? <section className="edit-section catalog-picker">
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{priceChartingCache.status.totalEntries.toLocaleString("es-AR")} cartas</strong></div>
+            <div className="catalog-picker-search">
+              <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
+              <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)}><Icon name="search" />Buscar</button>
+            </div>
+            {!pickerSearching && pickerEntries.length ? <div className="catalog-picker-results">
+              {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
+                {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
+                <div className="catalog-picker-card-copy"><strong>{entry.productName}</strong><span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span></div>
+                <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />
+              </button>)}
+            </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
+          </section> : null}
+          {!editing && !catalogPickerOpen ? <section className="selected-catalog-card">
+            <div><span className="eyebrow">Carta elegida</span><strong>{form.name}</strong><span>{form.expansion}{form.number ? ` #${form.number}` : ""}</span></div>
+            <button className="secondary-action" type="button" onClick={() => setCatalogPickerOpen(true)}><Icon name="search" />Cambiar carta</button>
+          </section> : null}
+          {!choosingCatalogCard ? <>
+          {!editing ? <section className="edit-section quick-stock-fields">
+            <div className="edit-section-heading"><h3>Agregar existencias</h3><span>El costo es opcional</span></div>
+            <div className="edit-field-grid">
+              <label>Cantidad a agregar<input autoFocus required type="number" min={1} step={1} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
+              <label>Precio de venta ARS<input type="number" min={0} step={0.01} value={form.priceArs || ""} onChange={(event) => set({ priceArs: Number(event.target.value) })} placeholder="Opcional" /></label>
+              <label>Precio de venta USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => set({ priceUsd: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Opcional" /></label>
+              <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
+              <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
+              <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
+              <label>Condicion<input required value={form.condition} onChange={(event) => set({ condition: event.target.value.toUpperCase() })} /></label>
+              <label>Acabado<input required value={form.finish} onChange={(event) => set({ finish: event.target.value })} /></label>
+            </div>
+            <button type="button" className="secondary-action" onClick={() => setShowDetails(!showDetails)}>{showDetails ? "Ocultar detalles" : "Mas datos: ubicacion, graded, notas"}</button>
+          </section> : null}
+          {showDetails ? <>
           <section className="edit-section">
             <div className="edit-section-heading"><h3>Identidad</h3><span>Que carta es</span></div>
             <div className="edit-field-grid">
@@ -2592,7 +3240,9 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <label>Reservadas<input type="number" min={0} value={form.quantityReserved} onChange={(event) => set({ quantityReserved: Number(event.target.value) })} /></label>
               <label>Ubicacion<input value={form.location} onChange={(event) => set({ location: event.target.value })} /></label>
               <label>Lote<input value={form.intakeBatch} onChange={(event) => set({ intakeBatch: event.target.value })} placeholder="Caja 1, Binder EX..." /></label>
+              <label>Categoria(s)<input value={form.tags} onChange={(event) => set({ tags: event.target.value })} placeholder="jugables, old, full art..." list="inventory-tag-suggestions" /></label>
               <label>Estado<select value={form.inventoryStatus} onChange={(event) => set({ inventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
+              {editing ? <><label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label></> : null}
               <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => set({ priceUsd: event.target.value ? Number(event.target.value) : null })} /></label>
               <label>Precio ARS<input type="number" min={0} value={form.priceArs} onChange={(event) => set({ priceArs: Number(event.target.value) })} /></label>
               <div className="price-helper"><span>Blue actual</span><strong>{formatArs(blueRate.sell)}</strong>{convertedArs ? <button type="button" className="secondary-action" onClick={() => set({ priceArs: convertedArs })}>Usar {formatArs(convertedArs)}</button> : null}</div>
@@ -2607,9 +3257,11 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <label className="span-2">Notas<input value={form.notes} onChange={(event) => set({ notes: event.target.value })} /></label>
             </div>
           </details>
+          </> : null}
+          </> : null}
         </div>
       </div>
-      <div className="modal-footer"><button type="button" className="secondary-action" disabled={saving} onClick={onCancel}><Icon name="close" />Cancelar</button><button className="primary-action" disabled={saving}><Icon name="check" />{saving ? "Guardando..." : submitLabel}</button></div>
+      <div className="modal-footer"><button type="button" className="secondary-action" disabled={saving} onClick={onCancel}><Icon name="close" />Cancelar</button><button className="primary-action" disabled={saving || choosingCatalogCard}><Icon name="check" />{saving ? "Guardando..." : choosingCatalogCard ? "Elegí una carta" : submitLabel}</button></div>
     </form>
   );
 }
@@ -2654,7 +3306,136 @@ function MovementList({ movements }: { movements: MovementRow[] }) {
   ) : <EmptyState title="Sin movimientos" body="Los ajustes de inventario apareceran aca." />;
 }
 
-function OrdersView({ sales, claims, blueRate, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked }: { sales: SaleRecord[]; claims: ClaimsWorkspace; blueRate: BlueExchangeRate; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => void; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => void }) {
+type OrderWorkspace = {
+  boards: Array<{id:string;name:string}>;
+  columns: Array<{id:string;boardId:string;name:string;position:number}>;
+  cards: Array<{saleId:string;columnId:string;position:number}>;
+};
+
+function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
+  const [workspace,setWorkspace] = useState<OrderWorkspace | null>(null);
+  const [boardId,setBoardId] = useState("");
+  const [query,setQuery] = useState("");
+  const [history,setHistory] = useState(false);
+  const [list,setList] = useState(false);
+  const [error,setError] = useState("");
+  const [notice,setNotice] = useState("");
+  const [busy,setBusy] = useState(false);
+  const saving = useRef(false);
+  const moveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const [editor,setEditor] = useState<{action:string;id?:string;name:string} | null>(null);
+  const [openId,setOpenId] = useState("");
+  const [dragId,setDragId] = useState("");
+  const [over,setOver] = useState("");
+  const [destination,setDestination] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
+  const load = () => { setError(""); void api<OrderWorkspace>("/order-boards").then(setWorkspace).catch(e=>setError(String(e.message || e))); };
+  useEffect(load,[]);
+  useEffect(()=>{
+    if (openId && !dialog.current?.open) dialog.current?.showModal();
+    if (!openId) dialog.current?.close();
+  },[openId]);
+  const mainBoard = workspace?.boards.find(b=>normalize(b.name)===normalize("Embalaje"));
+  const selectedBoard = workspace?.boards.find(b=>b.id===boardId) || mainBoard || workspace?.boards[0];
+  const columns = workspace?.columns.filter(c=>c.boardId===selectedBoard?.id) || [];
+  const defaultColumn = workspace?.columns.find(c=>c.boardId===(mainBoard || workspace?.boards[0])?.id)?.id;
+  const cardMap = new Map(workspace?.cards.map(c=>[c.saleId,c]));
+  const columnOf = (id:string) => cardMap.get(id)?.columnId || defaultColumn;
+  const isCompletedBoard = (board?: {name:string}) => normalize(board?.name || "") === normalize("Completas");
+  const boardShowsSale = (board: {name:string} | undefined, sale: SaleRecord) => isCompletedBoard(board) ? ["delivered","cancelled"].includes(sale.status) : sale.status!=="cancelled" && (history || sale.status!=="delivered");
+  const allOrders = props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(selectedBoard,s));
+  const orders = allOrders.filter(s=>normalize([s.customerName,s.internalNote,...s.lines.map(l=>l.name+" "+l.sku)].join(" ")).includes(normalize(query)));
+  const openOrder = props.sales.find(s=>s.id===openId);
+  const refreshBoards = () => window.setTimeout(load, 120);
+  function moveCardLocally(current: OrderWorkspace, saleId: string, columnId: string, beforeSaleId?: string): OrderWorkspace {
+    const targetIds = current.cards
+      .filter(card => card.columnId === columnId && card.saleId !== saleId)
+      .sort((a,b) => a.position - b.position || a.saleId.localeCompare(b.saleId))
+      .map(card => card.saleId);
+    const before = beforeSaleId ? targetIds.indexOf(beforeSaleId) : -1;
+    targetIds.splice(before < 0 ? targetIds.length : before, 0, saleId);
+    return {
+      ...current,
+      cards: [
+        ...current.cards.filter(card => card.saleId !== saleId && card.columnId !== columnId),
+        ...targetIds.map((id, position) => ({ saleId: id, columnId, position }))
+      ]
+    };
+  }
+  async function change(body: Record<string,string>) {
+    if (body.action === "move" && body.saleId && body.columnId) {
+      const { saleId, columnId, beforeSaleId } = body;
+      setError("");
+      setNotice("Movida.");
+      setWorkspace(current => current ? moveCardLocally(current, saleId, columnId, beforeSaleId) : current);
+      moveQueue.current = moveQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          await api<OrderWorkspace>("/order-boards",{method:"POST",body});
+          setNotice("Guardada.");
+        })
+        .catch(e => {
+          setError(e instanceof Error ? e.message : String(e));
+          load();
+        });
+      return true;
+    }
+    if (saving.current) return false;
+    saving.current=true;setBusy(true);setError("");setNotice("");
+    try {
+      const next=await api<OrderWorkspace>("/order-boards",{method:"POST",body});
+      setWorkspace(next);
+      if(body.action==="createBoard") setBoardId(next.boards.find(b=>!workspace?.boards.some(old=>old.id===b.id))?.id || "");
+      setNotice(body.action==="move" ? "Tarjeta movida y guardada." : "Tablero guardado.");
+      return true;
+    } catch(e) {setError(e instanceof Error ? e.message : String(e));return false;}
+    finally {saving.current=false;setBusy(false);}
+  }
+  function drop(event: React.DragEvent, columnId:string, beforeSaleId?:string) {
+    event.preventDefault();event.stopPropagation();setOver("");
+    const saleId=event.dataTransfer.getData("text/ultimoturno-order") || dragId;
+    setDragId("");
+    if(!saleId || saleId===beforeSaleId || !allOrders.some(s=>s.id===saleId))return;
+    void change({action:"move",saleId,columnId,...(beforeSaleId?{beforeSaleId}:{})});
+  }
+  const open = (id:string) => {setDestination(columnOf(id) || "");setOpenId(id);};
+  if(list) return <><button className="secondary-action" onClick={()=>setList(false)}>Volver a tableros</button><OrdersListView {...props}/></>;
+  return <section className="view trello-orders">
+    <header className="panel trello-toolbar">
+      <div className="trello-heading"><h2>Ordenes</h2><input aria-label="Buscar ordenes" placeholder="Buscar comprador, carta o nota" value={query} onChange={e=>setQuery(e.target.value)}/><label className="trello-history"><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Entregadas</label><button className="secondary-action" onClick={()=>setList(true)}>Vista de lista</button></div>
+      <nav className="trello-tabs" aria-label="Tableros de ordenes">{workspace?.boards.map(board=>{
+        const first=workspace.columns.find(c=>c.boardId===board.id);
+        const count=props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(board,s) && workspace.columns.some(c=>c.boardId===board.id && c.id===columnOf(s.id))).length;
+        return <button key={board.id} className={selectedBoard?.id===board.id?"active":""} onClick={()=>setBoardId(board.id)} onDragEnter={e=>{e.preventDefault();}} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";}} onDrop={e=>{if(first){drop(e,first.id);setBoardId(board.id);}}}>{board.name}<span>{count}</span></button>;
+      })}<button onClick={()=>setEditor({action:"createBoard",name:""})}>+ Crear tablero</button></nav>
+      <div className="trello-board-tools"><span>Arrastra una tarjeta a una columna o a otro tablero.</span>{selectedBoard && <><button className="secondary-action" onClick={()=>setEditor({action:"renameBoard",id:selectedBoard.id,name:selectedBoard.name})}>Renombrar tablero</button><button className="secondary-action" onClick={()=>setEditor({action:"createColumn",id:selectedBoard.id,name:""})}>+ Columna</button></>}</div>
+      {editor && <form className="trello-name-form" onSubmit={async e=>{e.preventDefault();if(await change({action:editor.action,name:editor.name,...(editor.action==="renameColumn"?{columnId:editor.id!}:editor.id?{boardId:editor.id}:{})}))setEditor(null);}}><label>{editor.action==="createBoard"?"Nombre del nuevo tablero":editor.action==="createColumn"?"Nombre de la nueva columna":"Nuevo nombre"}<input autoFocus required maxLength={80} value={editor.name} onChange={e=>setEditor({...editor,name:e.target.value})}/></label><button className="primary-action" disabled={busy || !editor.name.trim()}>Guardar</button><button type="button" className="secondary-action" onClick={()=>setEditor(null)}>Cancelar</button></form>}
+      {error && <div role="alert">{error}<button className="secondary-action" onClick={load}>Reintentar carga</button></div>}
+      <span className="trello-save-status" role="status">{busy?"Guardando...":notice}</span>
+    </header>
+    {!workspace && !error && <p>Cargando tableros...</p>}
+    <div className="trello-board" aria-label={selectedBoard?.name}>{columns.map(column=>{
+      const cards=orders.filter(s=>columnOf(s.id)===column.id).sort((a,b)=>(cardMap.get(a.id)?.position ?? -1)-(cardMap.get(b.id)?.position ?? -1) || a.createdAt.localeCompare(b.createdAt));
+      return <section key={column.id} className={`trello-column ${over===column.id?"drag-over":""}`} aria-label={column.name} onDragOver={e=>{if(!busy){e.preventDefault();setOver(column.id);}}} onDrop={e=>{if(!busy)drop(e,column.id);}}>
+        <header><h3>{column.name} <span>{cards.length}</span></h3><button aria-label={`Renombrar columna ${column.name}`} onClick={()=>setEditor({action:"renameColumn",id:column.id,name:column.name})}>···</button></header>
+        <div className="trello-cards">{cards.map(order=>{
+          const total=order.lines.reduce((n,l)=>n+l.quantity,0),packed=order.lines.reduce((n,l)=>n+(l.packed?l.quantity:0),0);
+          const debt=order.status==="paid" || order.status==="delivered" ? 0 : Math.max(0,order.totalArs-(order.amountPaidArs || 0));
+          const overdue=debt>0 && order.paymentDueAt && new Date(order.paymentDueAt).getTime()<Date.now();
+          return <button key={order.id} className={`trello-card ${dragId===order.id?"dragging":""}`} draggable={!busy} onDragStart={e=>{e.dataTransfer.setData("text/ultimoturno-order",order.id);e.dataTransfer.effectAllowed="move";setDragId(order.id);}} onDragEnd={()=>{setDragId("");setOver("");}} onDrop={e=>{if(!busy)drop(e,column.id,order.id);}} onClick={()=>open(order.id)}>
+            <strong>{order.customerName || "Sin nombre"}</strong><span className="trello-card-total">{order.totalArs > 0 || !order.totalUsd ? formatArs(order.totalArs) : ""}{order.totalArs > 0 && order.totalUsd > 0 ? " + " : ""}{order.totalUsd > 0 ? `${formatUsd(order.totalUsd)} USD` : ""}</span><span className="trello-card-meta"><span>{packed}/{total} embaladas</span><span>{order.status === "paid" || order.status === "delivered" ? "Pagada" : debt > 0 ? `Resta ${formatArs(debt)}` : order.totalUsd > 0 ? "Pago pendiente" : "Sin saldo en pesos"}</span></span>{overdue && <span className="trello-overdue">Vencida · {formatShortDate(order.paymentDueAt!)}</span>}{order.internalNote && <span className="trello-note">Nota: {order.internalNote}</span>}
+          </button>;
+        })}{!cards.length && <p className="trello-empty">{query?"Sin coincidencias":"Arrastra ordenes aqui"}</p>}</div>
+      </section>;
+    })}</div>
+    <dialog aria-label="Detalle de orden" className="trello-order-dialog" ref={dialog} onCancel={()=>setOpenId("")} onClose={()=>setOpenId("")}>
+      {openOrder && <><header className="trello-dialog-heading"><h2>{openOrder.customerName}</h2><button autoFocus className="secondary-action" onClick={()=>setOpenId("")}>Cerrar</button></header><div className="trello-move"><label>Mover a<select value={destination} onChange={e=>setDestination(e.target.value)}>{workspace?.boards.map(b=><optgroup key={b.id} label={b.name}>{workspace.columns.filter(c=>c.boardId===b.id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button className="secondary-action" disabled={busy || !destination || destination===columnOf(openId)} onClick={()=>void change({action:"move",saleId:openId,columnId:destination})}>Mover tarjeta</button><span role="status">{busy?"Guardando...":notice}</span>{error && <span role="alert">{error}</span>}</div>
+        <OrderCard key={openId} order={openOrder} boardLabel={workspace?.columns.find(c=>c.id===columnOf(openId))?.name || "Orden"} blueRate={props.blueRate} open focused={false} selected={false} copied={false} onToggle={()=>{}} onSelectedChange={()=>{}} onComplete={async id=>{await props.onComplete(id);refreshBoards();}} onCancel={async id=>{await props.onCancel(id);refreshBoards();}} onPacked={async id=>{await props.onPacked(id);refreshBoards();}} onDelivered={async id=>{await props.onDelivered(id);refreshBoards();}} onPayment={async (id,amount,due)=>{await props.onPayment(id,amount,due);refreshBoards();}} onNote={async (id,note)=>{await props.onNote(id,note);}} onMessageSent={sent=>props.onMessageSent(openId,sent)} onLinePacked={async (id,packed)=>{await props.onLinePacked(id,packed);refreshBoards();}} onCopy={()=>void copyToClipboard(buildClaimOrderMessage(openOrder))}/></>}
+    </dialog>
+  </section>;
+}
+
+function OrdersListView({ sales, claims, blueRate, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked }: { sales: SaleRecord[]; claims: ClaimsWorkspace; blueRate: BlueExchangeRate; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void> }) {
   const reservations = sales.filter((sale) => sale.saleType === "reservation");
   const activeOrders = reservations.filter((sale) => sale.status !== "delivered" && sale.status !== "cancelled");
   const deliveredOrders = reservations.filter((sale) => sale.status === "delivered");
@@ -2705,7 +3486,8 @@ function OrdersView({ sales, claims, blueRate, onComplete, onCancel, onPacked, o
     { value: "packed", label: "Embaladas" },
     { value: "paid", label: "Pagadas" },
     { value: "debt", label: "Con deuda" },
-    { value: "message", label: "Mensaje" },
+    { value: "no_message", label: "Sin mensaje" },
+    { value: "message", label: "Mensaje enviado" },
     { value: "note", label: "Nota" }
   ];
   const matchesOrderSearch = (order: SaleRecord) => !orderSearchText || normalize([
@@ -2727,11 +3509,17 @@ function OrdersView({ sales, claims, blueRate, onComplete, onCancel, onPacked, o
     if (filter === "packed") return order.status === "packed" || (order.status !== "paid" && allPacked);
     if (filter === "paid") return order.status === "paid" || order.status === "delivered";
     if (filter === "debt") return order.status !== "cancelled" && (order.amountPaidArs || 0) < order.totalArs;
+    if (filter === "no_message") return !order.messageSentAt;
     if (filter === "message") return Boolean(order.messageSentAt);
     if (filter === "note") return Boolean(order.internalNote);
     return true;
   };
-  const visibleOrders = orders.filter((order) => matchesBoard(order) && matchesOrderSearch(order) && matchesOrderFilter(order, orderFilter));
+  const boardOrders = orders.filter((order) => matchesBoard(order) && matchesOrderSearch(order));
+  const visibleOrders = boardOrders.filter((order) => matchesOrderFilter(order, orderFilter));
+  const visibleDebtArs = boardOrders.reduce((sum, order) => sum + Math.max(0, order.totalArs - (order.amountPaidArs || 0)), 0);
+  const visibleMessagePending = boardOrders.filter((order) => !order.messageSentAt).length;
+  const visiblePaidReady = boardOrders.filter((order) => order.status === "paid").length;
+  const visiblePacked = boardOrders.filter((order) => order.status === "packed").length;
   const batchableVisibleOrders = visibleOrders.filter((order) => order.status !== "delivered" && order.status !== "cancelled");
   const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
   const visibleSelectedIds = selectedOrderIds.filter((id) => visibleOrderIds.has(id));
@@ -2767,13 +3555,19 @@ function OrdersView({ sales, claims, blueRate, onComplete, onCancel, onPacked, o
   return (
     <section className="view orders-layout">
       <div className="panel orders-header-panel">
-        <div className="orders-title"><h2>Ordenes</h2><p className="muted">Trabaja por tablero: claims cerrados o pedidos sueltos.</p></div>
+        <div className="orders-title"><h2>Ordenes</h2><p className="muted">Ejecucion diaria: contactar, cobrar, embalar y entregar sin saltar de pantalla.</p></div>
         <div className="orders-tools">
           <label className="orders-search"><Icon name="search" /><input value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Buscar comprador o carta" /></label>
           <div className="order-board-tabs">{orderBoards.map((board) => <button className={selectedBoard === board.id ? "active" : ""} key={board.id} onClick={() => setSelectedBoard(board.id)}>{board.label}<span>{board.count}</span></button>)}</div>
           <div className="orders-filters">{orderFilterOptions.map((option) => <button className={`secondary-action filter-toggle ${orderFilter === option.value ? "active" : ""}`} key={option.value} onClick={() => setOrderFilter(option.value)}>{option.label} <span>{filterCounts.get(option.value) || 0}</span></button>)}</div>
         </div>
         <div className="orders-side-info"><strong>{visibleOrders.length}/{orders.length} {showingDelivered ? "entregas" : "ordenes"}</strong><div className="orders-color-guide"><span><i className="guide-dot pending"></i>Pendiente</span><span><i className="guide-dot message"></i>Mensaje</span><span><i className="guide-dot packed"></i>Embalada</span><span><i className="guide-dot paid"></i>Pagada</span><span><i className="guide-dot delivered"></i>Entregada</span></div></div>
+      </div>
+      <div className="order-work-summary">
+        <button type="button" onClick={() => setOrderFilter("no_message")} className={orderFilter === "no_message" ? "active" : ""}><span>Contactar</span><strong>{visibleMessagePending}</strong><small>sin mensaje</small></button>
+        <button type="button" onClick={() => setOrderFilter("debt")} className={orderFilter === "debt" ? "active" : ""}><span>Cobrar</span><strong>{formatArs(visibleDebtArs)}</strong><small>saldo pendiente</small></button>
+        <button type="button" onClick={() => setOrderFilter("packed")} className={orderFilter === "packed" ? "active" : ""}><span>Embaladas</span><strong>{visiblePacked}</strong><small>listas para pago/retiro</small></button>
+        <button type="button" onClick={() => setOrderFilter("paid")} className={orderFilter === "paid" ? "active" : ""}><span>Entregar</span><strong>{visiblePaidReady}</strong><small>pagadas</small></button>
       </div>
       {selectedOrders.length ? (
         <section className="panel order-batch-bar">
@@ -2795,7 +3589,7 @@ function OrdersView({ sales, claims, blueRate, onComplete, onCancel, onPacked, o
   );
 }
 
-function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copied, onToggle, onSelectedChange, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onCopy }: { order: SaleRecord; boardLabel: string; blueRate: BlueExchangeRate; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => void; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => void; onCopy: () => void }) {
+function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copied, onToggle, onSelectedChange, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onCopy }: { order: SaleRecord; boardLabel: string; blueRate: BlueExchangeRate; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => Promise<void>; onCopy: () => void }) {
   const [paymentDraft, setPaymentDraft] = useState("");
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
   const [quickPaymentMode, setQuickPaymentMode] = useState<"full" | "partial">("full");
@@ -2809,6 +3603,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
   const allPacked = units > 0 && packedUnits === units;
   const isDelivered = order.status === "delivered";
   const canBatchSelect = order.status !== "cancelled" && !isDelivered;
+  const canPack = order.status !== "cancelled" && !isDelivered;
   const canEdit = order.status !== "cancelled" && order.status !== "paid" && order.status !== "delivered";
   const paymentToAdd = Math.max(0, Number(paymentDraft) || 0);
   const nextPaid = Math.min(order.totalArs, (order.amountPaidArs || 0) + paymentToAdd);
@@ -2880,7 +3675,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
             <div className="order-detail-strip-actions">
               <label className={`order-message-check ${messageSent ? "checked" : ""}`}><input type="checkbox" disabled={order.status === "cancelled" || isDelivered} checked={messageSent} onChange={(event) => onMessageSent(event.target.checked)} /><span>Mensaje enviado</span></label>
               {canEdit ? <button className="secondary-action" onClick={onCopy}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Copiar mensaje"}</button> : null}
-              {canEdit ? <button className="secondary-action" onClick={() => onPacked(order.id)}><Icon name="check" />Marcar embalada</button> : null}
+              {canPack ? <button className="secondary-action" onClick={() => onPacked(order.id)}><Icon name="check" />Marcar embalada</button> : null}
             </div>
           </div>
           <div className="order-work-grid">
@@ -2903,7 +3698,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
           </div>
           <section className="order-work-panel order-items-panel">
             <div className="order-panel-heading"><h4>Cartas</h4><span>{packedUnits}/{units} embaladas</span></div>
-            <div className="order-lines">{order.lines.map((line) => <label className={`order-line ${line.packed ? "packed" : ""}`} key={line.saleItemId || `${order.id}-${line.inventoryItemId}-${line.name}`}><input type="checkbox" disabled={!canEdit || !line.saleItemId} checked={line.packed} onChange={(event) => onLinePacked(line.saleItemId, event.target.checked)} /><CardArt src={line.imageUrl} alt={line.name} label={line.name} className="order-line-image" fallbackClassName="order-line-image order-line-image-placeholder" /><span>{line.quantity} x {line.name}</span><MoneyStack ars={line.lineTotalArs || null} usd={line.lineTotalUsd || null} blueRate={blueRate} compact /></label>)}</div>
+            <div className="order-lines">{order.lines.map((line) => <label className={`order-line ${line.packed ? "packed" : ""}`} key={line.saleItemId || `${order.id}-${line.inventoryItemId}-${line.name}`}><input type="checkbox" disabled={!canPack || !line.saleItemId} checked={line.packed} onChange={(event) => onLinePacked(line.saleItemId, event.target.checked)} /><CardArt src={line.imageUrl} alt={line.name} label={line.name} className="order-line-image" fallbackClassName="order-line-image order-line-image-placeholder" /><span>{line.quantity} x {line.name}</span><MoneyStack ars={line.lineTotalArs || null} usd={line.lineTotalUsd || null} blueRate={blueRate} compact /></label>)}</div>
           </section>
           <div className="order-actions">{canEdit ? <><button className="secondary-action danger-action" onClick={requestDeleteOrder}><Icon name="close" />Eliminar orden</button><button className="primary-action" onClick={() => onComplete(order.id)}><Icon name="check" />Marcar pagada</button></> : null}{order.status === "paid" ? <button className="primary-action delivered-action" onClick={() => onDelivered(order.id)}><Icon name="check" />Entregado</button> : null}</div>
         </div>
@@ -2921,6 +3716,7 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
   todayStart.setHours(0, 0, 0, 0);
   const overdueReceivables = receivables.filter((sale) => sale.paymentDueAt && new Date(sale.paymentDueAt) < todayStart);
   const purchaseTotal = purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.totalArs, 0);
+  const estimatedCash = totalCollected - purchaseTotal;
   const stockSaleValue = items.reduce((sum, item) => sum + (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(0, item.availableQuantity), 0);
   const reservedSaleValue = items.reduce((sum, item) => sum + (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(0, item.quantityReserved), 0);
   const stockCostValue = items.reduce((sum, item) => sum + (item.lastPurchaseArs || 0) * Math.max(0, item.quantityOnHand), 0);
@@ -2940,14 +3736,15 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
         <div>
           <p className="eyebrow">Caja</p>
           <h2>Resumen financiero operativo</h2>
-          <p>Stock valorizado, cobros pendientes, compras y ventas cobradas en un solo lugar.</p>
+          <p>Cobros, deuda de clientes, compras registradas y stock valorizado sin mezclar conceptos.</p>
         </div>
-        <div className="cash-hero-total"><span>Capital visible</span><strong>{formatArs(stockSaleValue + totalReceivable)}</strong><small>stock disponible + deuda a cobrar</small></div>
+        <div className="cash-hero-total"><span>Caja estimada</span><strong>{formatArs(estimatedCash)}</strong><small>cobrado - compras registradas</small></div>
       </section>
       <div className="cash-metrics">
+        <Metric label="Balance operativo" value={formatArs(estimatedCash)} helper="cobros menos compras" />
         <Metric label="Cobrado total" value={formatArs(totalCollected)} helper={`${paid.length} venta(s) cobradas`} />
         <Metric label="A cobrar" value={formatArs(totalReceivable)} helper={`${receivables.length} orden(es), ${overdueReceivables.length} vencida(s)`} />
-        <Metric label="A pagar estimado" value={formatArs(purchaseTotal)} helper="compras registradas" />
+        <Metric label="Compras registradas" value={formatArs(purchaseTotal)} helper="salida/compromiso cargado" />
         <Metric label="Stock disponible" value={formatArs(stockSaleValue)} helper={`${stockUnits.toLocaleString("es-AR")} unidad(es) fisicas`} />
         <Metric label="Reservado" value={formatArs(reservedSaleValue)} helper="valor de cartas separadas" />
         <Metric label="Costo registrado" value={formatArs(stockCostValue)} helper="segun ultima compra cargada" />
@@ -3472,6 +4269,7 @@ function AdminView(props: {
   onCardIndexTcgCsvSync: () => void;
   onPriceChartingImageBatch: (includeAll: boolean, mode?: ImageResolverMode) => void;
   onPriceChartingBackfillChange: (running: boolean) => void;
+  onResetInventoryStock: () => void;
 }) {
   const totalIssues = props.quality.missingImage + props.quality.missingPriceCharting + props.quality.zeroPrice + props.quality.lowStock + props.quality.duplicates;
   const imageReady = Math.max(props.priceChartingImages.urlEntries, props.priceChartingImages.downloadedEntries);
@@ -3628,6 +4426,13 @@ function AdminView(props: {
           <div className="admin-stat-row"><span>Sin PriceCharting</span><strong>{props.quality.missingPriceCharting.toLocaleString("es-AR")}</strong></div>
           <div className="admin-stat-row"><span>Sin imagen</span><strong>{props.quality.missingImage.toLocaleString("es-AR")}</strong></div>
           <button className="primary-action" onClick={props.onGoImport}><Icon name="import" />Ir a Importar</button>
+          <div className="admin-danger-zone">
+            <div>
+              <strong>Reset de inventario</strong>
+              <span>Pone unidades y reservas en cero. Conserva cartas, precios, imagenes y categorias.</span>
+            </div>
+            <button className="secondary-action danger-action" disabled={props.stockSummary.totalUnits === 0 && props.stockSummary.reservedUnits === 0} onClick={props.onResetInventoryStock}><Icon name="close" />Resetear stock</button>
+          </div>
         </section>
 
         <section className="panel admin-card">
@@ -3658,6 +4463,8 @@ function CatalogView(props: {
   priceChartingImageBackfillRunning: boolean;
   priceChartingImageResumeAt: string;
   priceChartingImageLastBatch: ImageBatchResult | null;
+  cardIndexRebuildAfterId: string;
+  cardIndexNextGroupOffset: number | null;
   blueRate: BlueExchangeRate;
   onPriceChartingSearch: (search: string) => void;
   onCardIndexSearch: (search: string, filter?: CardIndexFilter) => void;
@@ -3666,6 +4473,7 @@ function CatalogView(props: {
   onPriceChartingSync: () => void;
   onCardIndexRebuild: () => void;
   onCardIndexTcgCsvSync: () => void;
+  onPriceChartingImageReindexLocal: () => void;
   onPriceChartingImageBatch: (includeAll: boolean, mode?: ImageResolverMode) => void;
   onPriceChartingBackfillChange: (running: boolean) => void;
   showImageReview: boolean;
@@ -3689,6 +4497,19 @@ function CatalogView(props: {
   const imageFoundEntries = Math.max(props.priceChartingImages.downloadedEntries, props.priceChartingImages.urlEntries);
   const imageProgressTotal = Math.max(1, props.priceChartingImages.totalEntries);
   const imageProgress = Math.round((imageFoundEntries / imageProgressTotal) * 100);
+  const catalogTotal = Math.max(1, props.cardIndexStatus.totalEntries);
+  const pricedCoverage = percent(props.priceChartingCache.status.pricedEntries, Math.max(1, props.priceChartingCache.status.totalEntries));
+  const indexCoverage = percent(props.cardIndexStatus.priceChartingEntries, Math.max(1, props.priceChartingCache.status.totalEntries));
+  const tcgCoverage = percent(props.cardIndexStatus.tcgplayerLinkedEntries, catalogTotal);
+  const imageCoverage = percent(props.cardIndexStatus.imageLinkedEntries, catalogTotal);
+  const missingTcgEntries = Math.max(0, props.cardIndexStatus.totalEntries - props.cardIndexStatus.tcgplayerLinkedEntries);
+  const missingImageEntries = Math.max(0, props.cardIndexStatus.totalEntries - props.cardIndexStatus.imageLinkedEntries);
+  const doctorMetrics = [
+    { label: "PriceCharting", value: props.priceChartingCache.status.totalEntries, percent: pricedCoverage, helper: "con precio USD", tone: pricedCoverage >= 85 ? "ok" : "warn" },
+    { label: "Indice maestro", value: props.cardIndexStatus.totalEntries, percent: indexCoverage, helper: "cubierto desde PC", tone: indexCoverage >= 99 ? "ok" : "warn" },
+    { label: "TCGPlayer", value: props.cardIndexStatus.tcgplayerLinkedEntries, percent: tcgCoverage, helper: `${missingTcgEntries.toLocaleString("es-AR")} sin link`, tone: tcgCoverage >= 70 ? "ok" : "warn" },
+    { label: "Imagenes", value: props.cardIndexStatus.imageLinkedEntries, percent: imageCoverage, helper: `${missingImageEntries.toLocaleString("es-AR")} sin imagen`, tone: imageCoverage >= 70 ? "ok" : "danger" }
+  ];
   const auditCounts = props.cardIndexEntries.reduce(
     (counts, entry) => {
       if (entry.matchStatus === "matched") counts.ok += 1;
@@ -3722,6 +4543,51 @@ function CatalogView(props: {
   ];
   return (
     <section className="view catalog-view">
+      <section className="panel catalog-doctor-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Columna vertebral</p>
+            <h2>Cobertura del catalogo</h2>
+            <p>Estado real de PriceCharting, TCGPlayer e imagenes. Estas acciones trabajan por lotes para evitar procesos pisandose.</p>
+          </div>
+          <div className="catalog-doctor-state">
+            <span>{props.cardIndexSyncing || props.priceChartingSyncing || props.priceChartingImageProcessing ? "Procesando" : "Listo"}</span>
+            <strong>{imageCoverage}% imagenes</strong>
+          </div>
+        </div>
+        <div className="catalog-doctor-grid">
+          {doctorMetrics.map((metric) => (
+            <article className={`catalog-doctor-card ${metric.tone}`} key={metric.label}>
+              <span>{metric.label}</span>
+              <strong>{metric.value.toLocaleString("es-AR")}</strong>
+              <div className="catalog-doctor-progress" aria-label={`${metric.label} ${metric.percent}%`}>
+                <i style={{ width: `${Math.min(100, Math.max(0, metric.percent))}%` }} />
+              </div>
+              <small>{metric.percent}% {metric.helper}</small>
+            </article>
+          ))}
+        </div>
+        <div className="catalog-doctor-actions">
+          <button className="secondary-action" disabled={props.priceChartingSyncing} onClick={props.onPriceChartingSync}>
+            <Icon name="refresh" />{props.priceChartingSyncing ? "Actualizando..." : "Actualizar PriceCharting"}
+          </button>
+          <button className="secondary-action" disabled={props.cardIndexSyncing} onClick={props.onCardIndexRebuild}>
+            <Icon name="palette" />{props.cardIndexRebuildAfterId ? "Continuar indice PC" : "Reconstruir indice PC"}
+          </button>
+          <button className="secondary-action" disabled={props.cardIndexSyncing} onClick={props.onCardIndexTcgCsvSync}>
+            <Icon name="external" />{props.cardIndexNextGroupOffset === null ? "TCG completo" : `TCG desde grupo ${props.cardIndexNextGroupOffset}`}
+          </button>
+          <button className="secondary-action" disabled={props.priceChartingImageProcessing} onClick={props.onPriceChartingImageReindexLocal}>
+            <Icon name="image" />Reindexar imagenes locales
+          </button>
+          <button className="primary-action" disabled={props.priceChartingImageProcessing} onClick={() => props.onPriceChartingImageBatch(true, "external-index")}>
+            <Icon name="search" />Buscar URLs faltantes
+          </button>
+        </div>
+        <p className="catalog-doctor-note">
+          Pendiente critico: {missingImageEntries.toLocaleString("es-AR")} cartas sin imagen, {missingTcgEntries.toLocaleString("es-AR")} sin TCGPlayer y {props.cardIndexStatus.conflictEntries.toLocaleString("es-AR")} conflictos para revisar.
+        </p>
+      </section>
       <section className="panel catalog-command-panel">
         <div className="section-heading">
           <div>
@@ -4264,7 +5130,280 @@ function PurchasesView(props: {
   );
 }
 
-function ImportView({ csvText, rows, resolutions, importBatch, importRuns, blueRate, onTextChange, onBatchChange, onPreview, onPreviewText, onApply, onLoadExampleCsv, onResolve, onResolveMany }: {
+function MobileIntakeView(props: {
+  applying: boolean;
+  feedback: string;
+  entries: MobileInventoryEntry[];
+  blueRate: BlueExchangeRate;
+  onSearch: (query: string) => Promise<{ candidates: MobileInventoryCandidate[] }>;
+  onSave: (input: Partial<MobileInventoryEntry>) => Promise<MobileInventoryEntry>;
+  onStatus: (id: string, status: MobileInventoryEntry["status"]) => void;
+  onApplyEntry: (id: string) => void;
+  onApplyPending: () => void;
+  onDelete: (id: string) => void;
+  onRefresh: () => void;
+  onLoadToImport: () => void;
+  onExit: () => void;
+}) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [helperName, setHelperName] = useState(() => window.localStorage.getItem(mobileHelperStorageKey) || "");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [candidates, setCandidates] = useState<MobileInventoryCandidate[]>([]);
+  const [selected, setSelected] = useState<MobileInventoryCandidate | null>(null);
+  const [lastSaved, setLastSaved] = useState<MobileInventoryEntry | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [draft, setDraft] = useState<MobileIntakeDraft>({
+    name: "",
+    expansion: "",
+    number: "",
+    language: "EN",
+    condition: window.localStorage.getItem(mobileConditionStorageKey) || "NM",
+    finish: "normal",
+    quantityOnHand: "1",
+    location: "",
+    intakeBatch: window.localStorage.getItem(mobileBatchStorageKey) || "",
+    priceArs: "0",
+    priceUsd: "0",
+    notes: ""
+  });
+  const pending = props.entries.filter((entry) => entry.status === "pending");
+  const reviewed = props.entries.filter((entry) => entry.status === "reviewed");
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEntries = props.entries.filter((entry) => new Date(entry.createdAt).getTime() >= todayStart.getTime()).length;
+  useEffect(() => {
+    window.localStorage.setItem(mobileHelperStorageKey, helperName);
+  }, [helperName]);
+  useEffect(() => {
+    window.localStorage.setItem(mobileBatchStorageKey, draft.intakeBatch);
+    window.localStorage.setItem(mobileConditionStorageKey, draft.condition);
+  }, [draft.intakeBatch, draft.condition]);
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      setCandidates([]);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void runSearch(clean);
+    }, 260);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+  async function runSearch(nextQuery = query.trim()) {
+    if (nextQuery.length < 2) return;
+    setSearching(true);
+    setSearchError("");
+    try {
+      const result = await props.onSearch(nextQuery);
+      setCandidates(result.candidates);
+    } catch (nextError) {
+      setSearchError(errorMessage(nextError));
+    } finally {
+      setSearching(false);
+    }
+  }
+  function chooseCandidate(candidate: MobileInventoryCandidate) {
+    setSelected(candidate);
+    setManualOpen(false);
+    setDraft((current) => ({
+      ...current,
+      name: candidate.name,
+      expansion: candidate.expansion,
+      number: candidate.number,
+      language: candidate.language || current.language,
+      condition: window.localStorage.getItem(mobileConditionStorageKey) || candidate.condition || current.condition,
+      finish: candidate.finish || current.finish,
+      priceArs: candidate.priceArs ? String(candidate.priceArs) : current.priceArs,
+      priceUsd: candidate.priceUsd ? String(candidate.priceUsd) : current.priceUsd
+    }));
+  }
+  function openManual() {
+    setSelected(null);
+    setManualOpen(true);
+    setDraft((current) => ({ ...current, name: current.name || query.trim() }));
+  }
+  function changeQuantity(delta: number) {
+    setDraft((current) => {
+      const next = Math.max(1, Number(current.quantityOnHand || 0) + delta);
+      return { ...current, quantityOnHand: String(next) };
+    });
+  }
+  const selectedCaptureKey = selected?.inventoryItemId
+    ? `stock:${selected.inventoryItemId}`
+    : selected?.priceChartingId
+      ? `pc:${selected.priceChartingId}`
+      : normalize([draft.name, draft.expansion, draft.number].join(" "));
+  const matchingPending = selected || manualOpen
+    ? pending.filter((entry) => {
+      const entryKey = entry.inventoryItemId
+        ? `stock:${entry.inventoryItemId}`
+        : entry.priceChartingId
+          ? `pc:${entry.priceChartingId}`
+          : normalize([entry.name, entry.expansion, entry.number].join(" "));
+      return entryKey && entryKey === selectedCaptureKey;
+    })
+    : [];
+  const matchingPendingUnits = matchingPending.reduce((sum, entry) => sum + entry.quantityOnHand, 0);
+  async function saveDraft() {
+    const cleanName = draft.name.trim();
+    const safeQuantity = Math.max(1, Math.floor(Number(draft.quantityOnHand || 1)));
+    const safePriceArs = Math.max(0, Number(draft.priceArs || 0));
+    const safePriceUsd = draft.priceUsd === "" ? null : Math.max(0, Number(draft.priceUsd || 0));
+    if (!helperName.trim()) {
+      setSearchError("Pone tu nombre antes de guardar.");
+      return;
+    }
+    if (!cleanName) {
+      setSearchError("Busca una carta o carga el nombre manualmente.");
+      return;
+    }
+    setSaving(true);
+    setSearchError("");
+    try {
+      const saved = await props.onSave({
+        helperName,
+        matchType: selected?.matchType || "manual",
+        inventoryItemId: selected?.inventoryItemId,
+        priceChartingId: selected?.priceChartingId || "",
+        sku: selected?.sku || "",
+        name: cleanName,
+        expansion: draft.expansion,
+        number: draft.number,
+        language: draft.language,
+        condition: draft.condition,
+        finish: draft.finish,
+        gradingCompany: selected?.gradingCompany || "",
+        grade: selected?.grade || "",
+        location: "",
+        intakeBatch: draft.intakeBatch,
+        quantityOnHand: safeQuantity,
+        priceArs: safePriceArs,
+        priceUsd: safePriceUsd,
+        imageUrl: selected?.imageUrl || "",
+        notes: draft.notes
+      });
+      setLastSaved(saved);
+      setSelected(null);
+      setManualOpen(false);
+      setQuery("");
+      setCandidates([]);
+      setDraft((current) => ({
+        ...current,
+        name: "",
+        expansion: "",
+        number: "",
+        quantityOnHand: "1",
+        priceArs: "0",
+        priceUsd: "0",
+        notes: ""
+      }));
+      window.setTimeout(() => searchInputRef.current?.focus(), 80);
+    } catch (nextError) {
+      setSearchError(errorMessage(nextError));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <section className="view mobile-intake-view">
+      <section className="mobile-intake-hero">
+        <div>
+          <p className="eyebrow">Pre-base movil</p>
+          <h2>Cargar stock</h2>
+        </div>
+        <div className="mobile-intake-stats">
+          <div><span>Pendientes</span><strong>{pending.length}</strong></div>
+          <div><span>Hoy</span><strong>{todayEntries}</strong></div>
+          <div><span>Cargadas</span><strong>{reviewed.length}</strong></div>
+        </div>
+        <button className="secondary-action mobile-exit-action" onClick={props.onExit}><Icon name="home" />Panel</button>
+      </section>
+
+      <section className="panel mobile-intake-capture">
+        <label>Tu nombre<input value={helperName} onChange={(event) => setHelperName(event.target.value)} placeholder="Ej.: Nico, Agus, Mesa 1" /></label>
+        <form className="mobile-search-form" onSubmit={(event) => { event.preventDefault(); void runSearch(); }}>
+          <label>Buscar carta<input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, expansion, numero o SKU" inputMode="search" /></label>
+          <button className="primary-action" type="submit" disabled={searching || query.trim().length < 2}><Icon name="search" />{searching ? "Buscando..." : "Buscar"}</button>
+        </form>
+        <div className="mobile-candidate-list">
+          {candidates.map((candidate) => (
+            <button className={`mobile-candidate ${selected?.id === candidate.id ? "selected" : ""}`} key={`${candidate.matchType}-${candidate.id}`} onClick={() => chooseCandidate(candidate)}>
+              <CardArt src={candidate.imageUrl} alt={candidate.name} label={candidate.name} className="mobile-candidate-image" fallbackClassName="mobile-candidate-image image-placeholder" />
+              <span><strong>{candidate.name}</strong><small>{candidate.expansion} {candidate.number ? `#${candidate.number}` : ""}</small><em>{candidate.matchType === "inventory" ? "Stock existente" : "Indice maestro"} - {candidate.helper}</em></span>
+              <b>{candidate.priceArs ? formatArs(candidate.priceArs) : candidate.priceUsd ? formatUsd(candidate.priceUsd) : "Sin precio"}</b>
+            </button>
+          ))}
+        </div>
+        {query.trim().length >= 2 && !searching && !candidates.length ? <button className="secondary-action mobile-manual-open" onClick={openManual}><Icon name="plus" />No aparece, cargar manual</button> : null}
+        {manualOpen || selected ? (
+          <section className={`mobile-count-card ${selected ? "matched" : "manual"}`}>
+            <div className="mobile-selected-card">
+              <CardArt src={selected?.imageUrl} alt={draft.name} label={draft.name || "Carta"} className="mobile-selected-image" fallbackClassName="mobile-selected-image image-placeholder" />
+              <div><strong>{draft.name || "Carga manual"}</strong><span>{draft.expansion || "Sin expansion"} {draft.number ? `#${draft.number}` : ""}</span><small>{selected ? selected.helper : "Entrada manual para revisar"}</small></div>
+            </div>
+            <div className="mobile-field-grid">
+              <label>Nombre<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+              <label>Expansion<input value={draft.expansion} onChange={(event) => setDraft((current) => ({ ...current, expansion: event.target.value }))} /></label>
+              <label>Numero<input value={draft.number} onChange={(event) => setDraft((current) => ({ ...current, number: event.target.value }))} /></label>
+              <label className="mobile-quantity-field">Cantidad<div className="mobile-stepper"><button type="button" onClick={() => changeQuantity(-1)}>-</button><input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.quantityOnHand} onChange={(event) => {
+                const value = event.target.value.replace(/\D+/g, "");
+                setDraft((current) => ({ ...current, quantityOnHand: value }));
+              }} /><button type="button" onClick={() => changeQuantity(1)}><Icon name="plus" /></button></div></label>
+              <label>Lote<input value={draft.intakeBatch} onChange={(event) => setDraft((current) => ({ ...current, intakeBatch: event.target.value }))} placeholder="Viernes caja 1" /></label>
+              <label>Condicion<input value={draft.condition} onChange={(event) => setDraft((current) => ({ ...current, condition: event.target.value.toUpperCase() }))} /></label>
+              <label>Precio ARS<input type="text" inputMode="decimal" value={draft.priceArs} onChange={(event) => {
+                const value = event.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
+                setDraft((current) => ({ ...current, priceArs: value }));
+              }} /></label>
+            </div>
+            {matchingPending.length ? <div className="mobile-dupe-note"><strong>Ya pendiente</strong><span>{matchingPendingUnits} unidad(es) en {matchingPending.length} captura(s)</span></div> : null}
+            {searchError ? <p className="mobile-error">{searchError}</p> : null}
+            <button className="primary-action mobile-save-action" disabled={saving} onClick={() => void saveDraft()}><Icon name="check" />{saving ? "Guardando..." : "Guardar en pre-base"}</button>
+            <label>Notas<textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Idioma raro, holo, revisar estado, falta funda..." /></label>
+          </section>
+        ) : null}
+      </section>
+
+      <section className="panel mobile-staging-panel">
+        <div className="section-heading">
+          <div><h3>Pre-base capturada</h3><p>{pending.length} pendiente(s), listas para cargar al inventario.</p></div>
+          <div className="hero-actions">
+            {lastSaved ? <button className="secondary-action" onClick={() => { props.onDelete(lastSaved.id); setLastSaved(null); }}><Icon name="close" />Deshacer ultimo</button> : null}
+            <button className="secondary-action" onClick={props.onRefresh}><Icon name="refresh" />Actualizar</button>
+            <button className="secondary-action" disabled={!pending.length} onClick={props.onLoadToImport}><Icon name="import" />Preview</button>
+            <button className="primary-action" disabled={props.applying || !pending.length} onClick={props.onApplyPending}><Icon name="check" />{props.applying ? "Cargando..." : "Cargar pendientes"}</button>
+          </div>
+        </div>
+        {props.feedback ? <p className="intake-feedback" role="status">{props.feedback}</p> : null}
+        <div className="mobile-entry-list">
+          {props.entries.slice(0, 80).map((entry) => (
+            <article className={`mobile-entry ${entry.status}`} key={entry.id}>
+              <CardArt src={entry.imageUrl} alt={entry.name} label={entry.name} className="mobile-entry-image" fallbackClassName="mobile-entry-image image-placeholder" />
+              <div>
+                <strong>{entry.name}</strong>
+                <span>{entry.expansion || "Sin expansion"} {entry.number ? `#${entry.number}` : ""}</span>
+                <small>{[`${entry.quantityOnHand} u.`, entry.location, entry.helperName || "Sin ayudante", formatShortDate(entry.createdAt)].filter(Boolean).join(" - ")}</small>
+              </div>
+              <MoneyStack ars={entry.priceArs || null} usd={entry.priceUsd} blueRate={props.blueRate} compact />
+              <div className="mobile-entry-actions">
+                <button className="secondary-action" disabled={props.applying || entry.status !== "pending"} onClick={() => props.onApplyEntry(entry.id)}><Icon name="check" />{entry.status === "reviewed" ? "Cargada" : "Cargar"}</button>
+                <button className="secondary-action" disabled={props.applying || entry.status !== "pending"} onClick={() => props.onStatus(entry.id, "rejected")}><Icon name="close" />Rechazar</button>
+              </div>
+            </article>
+          ))}
+        </div>
+        {!props.entries.length ? <EmptyState title="Pre-base vacia" body="Cuando los ayudantes guarden cartas desde el celular, van a aparecer aca." /> : null}
+      </section>
+    </section>
+  );
+}
+
+function ImportView({ applying, feedback, csvText, rows, resolutions, importBatch, importRuns, blueRate, onTextChange, onBatchChange, onPreview, onPreviewText, onApply, onLoadExampleCsv, onResolve, onResolveMany }: {
+  applying: boolean;
+  feedback: string;
   csvText: string;
   rows: SnapshotPreviewRow[];
   resolutions: Record<number, ImportResolution>;
@@ -4366,6 +5505,32 @@ function ImportView({ csvText, rows, resolutions, importBatch, importRuns, blueR
   const localCreatable = visible.filter((row) => row.action === "review" && !row.candidates.length && !resolutions[row.rowNumber]).length;
   const ignoredRows = Object.values(resolutions).filter((resolution) => resolution.resolution === "ignore").length;
   const canApply = rows.length > 0 && invalid === 0 && unresolved === 0;
+  const csvDraftLines = csvText.split(/\r?\n/).filter((line) => {
+    const clean = line.trim();
+    return clean && !clean.startsWith("#");
+  }).length;
+  const lastRun = importRuns[0];
+  const priceCoverage = rows.length ? Math.round((importTotals.linked / rows.length) * 100) : 0;
+  const preflightChecks = [
+    { label: "Lote", detail: importBatch.name.trim() || "Nombra la caja o tanda fisica", status: importBatch.name.trim() ? "ok" : "block" },
+    { label: "Ubicacion", detail: importBatch.defaultLocation.trim() || "Opcional: se puede completar despues", status: importBatch.defaultLocation.trim() ? "ok" : "warn" },
+    { label: "CSV", detail: csvText.trim() ? `${csvDraftLines.toLocaleString("es-AR")} linea(s) listas` : "Pega o carga el archivo", status: csvText.trim() ? "ok" : "block" },
+    { label: "Preview", detail: rows.length ? `${rows.length.toLocaleString("es-AR")} fila(s) analizadas` : "Genera vista previa antes de aplicar", status: rows.length ? "ok" : "block" },
+    { label: "Errores", detail: invalid ? `${invalid} bloquean la importacion` : rows.length ? "Sin errores bloqueantes" : "Pendiente de preview", status: invalid ? "block" : rows.length ? "ok" : "warn" },
+    { label: "Revisiones", detail: unresolved ? `${unresolved} sin decision` : rows.length ? "Coincidencias resueltas" : "Pendiente de preview", status: unresolved ? "block" : rows.length ? "ok" : "warn" },
+    { label: "Precios", detail: rows.length ? `${importTotals.missingPrice} sin precio declarado` : "Se valida en preview", status: rows.length && importTotals.missingPrice > 0 ? "warn" : rows.length ? "ok" : "warn" },
+    { label: "PriceCharting", detail: rows.length ? `${priceCoverage}% vinculado` : "Ayuda a imagenes y precios", status: rows.length && priceCoverage < 65 ? "warn" : rows.length ? "ok" : "warn" }
+  ];
+  const blockingChecks = preflightChecks.filter((check) => check.status === "block");
+  const readinessStatus = !csvText.trim()
+    ? "Esperando CSV"
+    : !rows.length
+      ? "Falta vista previa"
+      : blockingChecks.length
+        ? "No importar todavia"
+        : "Listo para importar";
+  const readinessTone = blockingChecks.length ? "blocked" : rows.length ? "ready" : "waiting";
+  const issueCount = invalid + review;
   return (
     <section className="view imports-main">
       <section className="panel import-guide-panel">
@@ -4384,7 +5549,7 @@ function ImportView({ csvText, rows, resolutions, importBatch, importRuns, blueR
             <small>{importBatch.defaultLocation || "Sin ubicacion por defecto"} / {inventoryStatusLabel(importBatch.defaultInventoryStatus)}</small>
           </div>
           <label>Nombre del lote<input value={importBatch.name} onChange={(event) => patchBatch({ name: event.target.value })} placeholder="Caja 1 - RAW barato" /></label>
-          <label>Ubicacion por defecto<input value={importBatch.defaultLocation} onChange={(event) => patchBatch({ defaultLocation: event.target.value })} placeholder="Caja A, Binder 1, PSA..." /></label>
+          <label>Ubicacion por defecto (opcional)<input value={importBatch.defaultLocation} onChange={(event) => patchBatch({ defaultLocation: event.target.value })} placeholder="Caja A, Binder 1, PSA..." /></label>
           <label>Estado inicial<select value={importBatch.defaultInventoryStatus} onChange={(event) => patchBatch({ defaultInventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
           <label className="span-2">Nota del lote<input value={importBatch.note} onChange={(event) => patchBatch({ note: event.target.value })} placeholder="Ej.: cargado desde caja fisica, falta revisar holos" /></label>
         </section>
@@ -4394,6 +5559,35 @@ function ImportView({ csvText, rows, resolutions, importBatch, importRuns, blueR
           <div className={unresolved || invalid ? "active" : rows.length ? "done" : ""}><span>3</span><strong>Resolver</strong><small>Conflictos y errores</small></div>
           <div className={canApply ? "active" : ""}><span>4</span><strong>Importar</strong><small>Guarda stock</small></div>
         </div>
+        <section className={`import-readiness-panel ${readinessTone}`}>
+          <div className="import-readiness-head">
+            <div>
+              <p className="eyebrow">Preflight viernes 04/09</p>
+              <h3>{readinessStatus}</h3>
+              <span>{rows.length ? `${rows.length.toLocaleString("es-AR")} filas / ${importTotals.units.toLocaleString("es-AR")} unidades / ${formatArs(importTotals.value)}` : `${csvDraftLines.toLocaleString("es-AR")} linea(s) detectadas en borrador`}</span>
+            </div>
+            <strong>{blockingChecks.length ? `${blockingChecks.length} bloqueo(s)` : "Sin bloqueos"}</strong>
+          </div>
+          <div className="preflight-grid">
+            {preflightChecks.map((check) => (
+              <article className={`preflight-check ${check.status}`} key={check.label}>
+                <span>{check.label}</span>
+                <strong>{check.status === "ok" ? "OK" : check.status === "block" ? "Bloquea" : "Revisar"}</strong>
+                <small>{check.detail}</small>
+              </article>
+            ))}
+          </div>
+          <div className="preflight-footer">
+            <div>
+              <strong>Ultima carga</strong>
+              <span>{lastRun ? `${lastRun.fileName || "Carga stock"} - ${formatDate(lastRun.createdAt)} - ${lastRun.appliedRows}/${lastRun.totalRows} filas` : "Sin cargas registradas todavia"}</span>
+            </div>
+            <div>
+              <button className="secondary-action" onClick={downloadImportTemplate}><Icon name="download" />Plantilla viernes</button>
+              <button className="secondary-action" disabled={!rows.length || issueCount === 0} onClick={() => exportImportIssuesCsv(rows)}><Icon name="download" />Pendientes CSV</button>
+            </div>
+          </div>
+        </section>
         <section className="quick-import-panel">
           <div className="quick-import-head">
             <div><strong>Carga rapida</strong><span>Una carta por linea, sin armar columnas eternas.</span></div>
@@ -4448,14 +5642,15 @@ function ImportView({ csvText, rows, resolutions, importBatch, importRuns, blueR
           <textarea className="csv-input" value={csvText} onChange={(event) => onTextChange(event.target.value)} placeholder="name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,quantityOnHand,priceArs&#10;Abra,Scarlet & Violet 151,63,EN,NM,normal,,,,1,1500&#10;Team Rocket's Mewtwo Ex,Ascended Heroes,281,EN,GRADED,normal,PSA,10,12345678,1,850000" />
         </label>
         <div className="hero-actions import-main-actions">
-          <button className="secondary-action" disabled={!csvText.trim()} onClick={onPreview}><Icon name="search" />Generar vista previa</button>
+          <button className="secondary-action" disabled={applying || !csvText.trim()} onClick={onPreview}><Icon name="search" />Generar vista previa</button>
           {rows.length ? <button className="secondary-action" disabled={!autoResolvable.length} onClick={acceptAutomaticMatches}><Icon name="check" />Resolver seguras ({autoResolvable.length})</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!localCreatable} onClick={createVisibleLocal}><Icon name="plus" />Crear locales visibles ({localCreatable})</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!visible.some((row) => row.action === "review" && !resolutions[row.rowNumber])} onClick={ignoreVisibleRows}><Icon name="close" />Ignorar dudas visibles</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!invalid && !review} onClick={() => exportImportIssuesCsv(rows)}><Icon name="download" />Exportar problemas</button> : null}
-          <button className="primary-action" disabled={!canApply} onClick={onApply}><Icon name="check" />Confirmar e importar</button>
+          <button className="primary-action" disabled={applying || !canApply} onClick={onApply}><Icon name="check" />{applying ? "Procesando..." : "Confirmar e importar"}</button>
         </div>
       </section>
+      {feedback ? <p className="intake-feedback" role="status">{feedback}</p> : null}
       {rows.length ? <>
         <section className="review-summary"><Metric label="Nuevas" value={rows.filter((row) => row.action === "create").length} helper="se crearan" /><Metric label="Actualizaciones" value={rows.filter((row) => row.action === "update").length} helper="SKU existente" /><Metric label="A revisar" value={review} helper={`${unresolved} sin resolver`} /><Metric label="Errores" value={invalid} helper="bloquean la importacion" /></section>
         <section className="import-total-strip">
@@ -4747,11 +5942,15 @@ async function api<T>(path: string, options: { token?: string; method?: string; 
 
 function blankForm(): InventoryFormState {
   return {
+    purchaseCost: null,
+    purchaseCurrency: "ARS",
     sku: "",
     name: "",
     expansion: "",
     number: "",
     imageUrl: "",
+    priceChartingId: "",
+    priceChartingUrl: "",
     language: "EN",
     condition: "NM",
     finish: "normal",
@@ -4761,6 +5960,7 @@ function blankForm(): InventoryFormState {
     location: "",
     intakeBatch: "",
     inventoryStatus: "available",
+    tags: "",
     quantityOnHand: 0,
     quantityReserved: 0,
     priceArs: 0,
@@ -4824,12 +6024,17 @@ function readImportDraft(): { csvText: string; batch: ImportBatchState } {
 }
 
 function formFromItem(item: StockRow): InventoryFormState {
+  const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
   return {
+    purchaseCost: item.purchaseCost ?? null,
+    purchaseCurrency: item.purchaseCurrency || "ARS",
     sku: item.sku,
     name: item.product.name,
     expansion: item.product.expansion,
     number: item.product.number || "",
     imageUrl: item.product.imageUrl || "",
+    priceChartingId: priceCharting?.externalId || "",
+    priceChartingUrl: priceCharting?.url || "",
     language: item.variant.language,
     condition: item.variant.condition,
     finish: item.variant.finish,
@@ -4839,6 +6044,7 @@ function formFromItem(item: StockRow): InventoryFormState {
     location: item.location,
     intakeBatch: item.intakeBatch || "",
     inventoryStatus: item.inventoryStatus || "available",
+    tags: item.tags || "",
     quantityOnHand: item.quantityOnHand,
     quantityReserved: item.quantityReserved,
     priceArs: item.priceArs,
@@ -5166,6 +6372,32 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, "es"));
 }
 
+const inventoryTagSuggestions = ["jugables", "old", "full art", "promo", "sellado", "staple", "bulk", "vitrina"];
+
+function inventoryTags(value: string): string[] {
+  const seen = new Set<string>();
+  return String(value || "")
+    .split(/[,;|]/)
+    .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .filter((tag) => {
+      if (seen.has(tag)) return false;
+      seen.add(tag);
+      return true;
+    });
+}
+
+function inventoryTagsText(tags: string[]): string {
+  return unique(tags.map((tag) => tag.trim().toLowerCase().replace(/\s+/g, " "))).join(", ");
+}
+
+function toggleInventoryTag(tagsText: string, tag: string): string {
+  const tagList = inventoryTags(tagsText);
+  const normalized = inventoryTags(tag)[0];
+  if (!normalized) return inventoryTagsText(tagList);
+  return inventoryTagsText(tagList.includes(normalized) ? tagList.filter((current) => current !== normalized) : [...tagList, normalized]);
+}
+
 function normalize(value: string) {
   return value
     .normalize("NFD")
@@ -5208,6 +6440,7 @@ function scoreStockSearch(item: StockRow, query: ReturnType<typeof parseUiSearch
     item.variant.grade,
     item.variant.gradingCert,
     item.location,
+    item.tags,
     item.product.identifiers.map((identifier) => `${identifier.source} ${identifier.externalId} ${identifier.url || ""}`).join(" ")
   ].join(" "));
   const haystack = `${name} ${expansionText} ${skuText} ${miscText}`;
@@ -5233,8 +6466,10 @@ function scoreStockSearch(item: StockRow, query: ReturnType<typeof parseUiSearch
   return score;
 }
 
+const arsFormatter = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+const usdFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 function formatArs(value: number) {
-  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value);
+  return arsFormatter.format(value);
 }
 
 function fallbackBlueRate(): BlueExchangeRate {
@@ -5267,13 +6502,18 @@ function formatShortDate(value: string) {
 
 function formatUsd(value: number | null) {
   if (value === null) return "Sin precio";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
+  return usdFormatter.format(value);
 }
 
 function formatBytes(value: number) {
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
   if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
   return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.round((value / total) * 100);
 }
 
 function imageModeLabel(mode: ImageResolverMode) {
@@ -5332,7 +6572,7 @@ function canvasAssetUrl(value: string) {
 
 function exportInventoryCsv(items: StockRow[]) {
   downloadCsv("ultimoturno-inventario-vista.csv", [
-    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "quantityReserved", "availableQuantity", "priceArs", "priceUsd", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "priceChartingId", "priceChartingUrl", "imageUrl"],
+    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "quantityReserved", "availableQuantity", "priceArs", "priceUsd", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "tags", "priceChartingId", "priceChartingUrl", "imageUrl"],
     ...items.map((item) => {
       const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
       return [
@@ -5356,6 +6596,7 @@ function exportInventoryCsv(items: StockRow[]) {
         item.location,
         item.intakeBatch || "",
         item.inventoryStatus || "available",
+        item.tags || "",
         priceCharting?.externalId || "",
         priceCharting?.url || "",
         item.product.imageUrl || ""
@@ -5613,6 +6854,33 @@ function exportImportIssuesCsv(rows: SnapshotPreviewRow[]) {
   ]);
 }
 
+function mobileEntriesToSnapshotCsv(entries: MobileInventoryEntry[]) {
+  return toCsvText([
+    ["mobileEntryId", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "location", "intakeBatch", "inventoryStatus", "quantityOnHand", "priceArs", "priceUsd", "sku", "priceChartingId", "imageUrl", "notes"],
+    ...entries.map((entry) => [
+      entry.id,
+      entry.name,
+      entry.expansion,
+      entry.number,
+      entry.language,
+      entry.condition,
+      entry.finish,
+      entry.gradingCompany,
+      entry.grade,
+      entry.location,
+      entry.intakeBatch,
+      "available",
+      entry.quantityOnHand,
+      entry.priceArs,
+      entry.priceUsd ?? "",
+      entry.sku,
+      entry.priceChartingId,
+      entry.imageUrl,
+      [entry.notes, entry.helperName ? `Cargado por ${entry.helperName}` : "", `Pre-base movil ${formatShortDate(entry.createdAt)}`].filter(Boolean).join(" | ")
+    ])
+  ]);
+}
+
 function safeFilePart(value: string) {
   return String(value || "claim").trim().toLowerCase().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "claim";
 }
@@ -5635,10 +6903,7 @@ function downloadBlob(fileName: string, blob: Blob) {
 }
 
 function downloadCsv(fileName: string, rows: Array<Array<string | number>>) {
-  const csv = rows.map((row) => row.map((cell) => {
-    const value = String(cell ?? "");
-    return /[",\n;]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-  }).join(",")).join("\n");
+  const csv = toCsvText(rows);
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -5648,6 +6913,13 @@ function downloadCsv(fileName: string, rows: Array<Array<string | number>>) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function toCsvText(rows: Array<Array<string | number | null | undefined>>) {
+  return rows.map((row) => row.map((cell) => {
+    const value = String(cell ?? "");
+    return /[",\n;]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  }).join(",")).join("\n");
 }
 
 function formatDelta(value: number) {

@@ -6,7 +6,7 @@ export async function callHubApi(config, action, body = {}) {
   if (!token) throw new Error("Falta token.");
 
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutMs = Math.max(3000, Number(config.requestTimeoutMs) || 12000);
+  const timeoutMs = Math.max(3000, Number(config.requestTimeoutMs) || 60000);
   const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   let response;
   try {
@@ -67,7 +67,7 @@ function isUnrecognizedActionError(err) {
 }
 
 export function searchStock(config, query, limit = 30) {
-  return callHubApi(config, "searchStock", { q: query, limit });
+  return callHubApi({ ...config, requestTimeoutMs: 60000 }, "searchStock", { q: query, limit });
 }
 
 export function authenticateUser(config, payload) {
@@ -75,11 +75,11 @@ export function authenticateUser(config, payload) {
 }
 
 export function listStock(config, options = {}) {
-  return callHubApi(config, "listStock", options);
+  return callHubApi({ ...config, requestTimeoutMs: 90000 }, "listStock", options);
 }
 
 export function getStockCatalog(config) {
-  return callHubApi({ ...config, requestTimeoutMs: 30000 }, "getStockCatalog");
+  return callHubApi({ ...config, requestTimeoutMs: 120000 }, "getStockCatalog");
 }
 
 export function updateStock(config, payload) {
@@ -95,11 +95,11 @@ export function closeSale(config, payload) {
 }
 
 export function getDashboard(config, limit = 6) {
-  return callHubApi(config, "getDashboard", { limit });
+  return callHubApi({ ...config, requestTimeoutMs: 90000 }, "getDashboard", { limit });
 }
 
 export function listOrders(config, options = {}) {
-  return callHubApi(config, "listOrders", options);
+  return callHubApi({ ...config, requestTimeoutMs: 90000 }, "listOrders", options);
 }
 
 export function updateOrder(config, payload) {
@@ -112,6 +112,14 @@ export function recordOrderPayment(config, payload) {
 
 export function completeOrder(config, payload) {
   return callHubApi(config, "completeOrder", { payload });
+}
+
+export function generateOrderBuyerMessage(config, payload) {
+  return callHubApi({ ...config, requestTimeoutMs: 60000 }, "generateOrderBuyerMessage", { payload });
+}
+
+export function generatePendingOrderLabels(config, payload = {}) {
+  return callHubApi({ ...config, requestTimeoutMs: 90000 }, "generatePendingOrderLabels", { payload });
 }
 
 export function updatePackingLine(config, payload) {

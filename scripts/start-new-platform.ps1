@@ -68,6 +68,10 @@ function Stop-UltimoTurnoListener {
       throw "El puerto $Port esta ocupado por otro programa. No se cerro ningun proceso."
     }
 
+    if ($Port -eq 4000) {
+      throw "La API de UltimoTurno ya esta usando el puerto 4000. Cerra esa ventana de API de forma normal antes de iniciar otra instancia."
+    }
+
     if ($PSCmdlet.ShouldProcess("PID $($listener.OwningProcess) en puerto $Port", "Cerrar servidor anterior de UltimoTurno")) {
       Stop-Process -Id $listener.OwningProcess -Force
     }
@@ -109,6 +113,12 @@ Import-UltimoTurnoUserEnvironment
 $env:ULTIMOTURNO_DATA_PROFILE = $DataProfile
 $examplesEnabled = @("1", "true", "yes", "si", "sí") -contains $AllowExamples.ToLowerInvariant()
 $env:ULTIMOTURNO_ALLOW_EXAMPLES = if ($examplesEnabled) { "true" } else { "false" }
+if (-not $env:PRICECHARTING_AUTO_REFRESH_ENABLED) {
+  $env:PRICECHARTING_AUTO_REFRESH_ENABLED = "false"
+}
+if (-not $env:TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED) {
+  $env:TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED = "false"
+}
 if ($DataDir) {
   $resolvedDataDir = if ([System.IO.Path]::IsPathRooted($DataDir)) { $DataDir } else { Join-Path $projectRoot $DataDir }
   $env:PGLITE_DATA_DIR = $resolvedDataDir
@@ -137,6 +147,8 @@ if ($WhatIfPreference) {
   if ($ImageDir) {
     Write-Host "- Imagenes: $env:PRICECHARTING_IMAGE_DIR"
   }
+  Write-Host "- Auto refresh PriceCharting: $env:PRICECHARTING_AUTO_REFRESH_ENABLED"
+  Write-Host "- Auto refresh TCGPlayer: $env:TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED"
   Write-Host "- API local: http://localhost:4000"
   Write-Host "- Web admin: http://localhost:5173"
 }

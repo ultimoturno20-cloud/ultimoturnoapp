@@ -18,6 +18,7 @@ import {
   View
 } from "react-native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
+import * as Clipboard from "expo-clipboard";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as DocumentPicker from "expo-document-picker";
 import * as Haptics from "expo-haptics";
@@ -30,6 +31,8 @@ import {
   closeSale,
   completeOrder,
   createPurchase,
+  generateOrderBuyerMessage,
+  generatePendingOrderLabels,
   getCardDetails,
   getDashboard,
   getStockCatalog,
@@ -44,7 +47,6 @@ import {
   resetRemoteUserPassword,
   receivePurchase,
   searchStock,
-  updatePackingLine,
   updateClaimCard,
   updateStock,
   updateOrder
@@ -118,10 +120,11 @@ const USERS = [
 const BRAND_LOGO = require("./assets/ultimo-turno-logo.jpeg");
 const APP_VERSION = "2.2.0 Beta";
 const IS_BETA = APP_VERSION.includes("Beta");
-const PASSWORDS_PAUSED = false;
+const PASSWORDS_PAUSED = true;
 const DEFAULT_API_CONFIG = {
-  apiUrl: "",
-  apiToken: ""
+  apiUrl: "https://script.google.com/macros/s/AKfycbwAJKCcbBwwMqdO0khsiY6yyHkQOcdW6BaECIb1u6GfxOSmB9DCVFGlBWLnbiSstSch/exec",
+  apiToken: "d23e6a2d96ee47809d52484566e7b76e",
+  requestTimeoutMs: 60000
 };
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const startupErrorStyles = StyleSheet.create({
@@ -224,8 +227,10 @@ function App() {
   const [importLoading, setImportLoading] = useState(false);
   const [orderQuery, setOrderQuery] = useState("");
   const [updatingOrders, setUpdatingOrders] = useState({});
+  const [orderLabelsLoading, setOrderLabelsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [paymentOrder, setPaymentOrder] = useState(null);
+  const [buyerMessage, setBuyerMessage] = useState(null);
   const [stockItems, setStockItems] = useState([]);
   const [stockCatalog, setStockCatalog] = useState({ updatedAt: "", items: [] });
   const [stockQuery, setStockQuery] = useState("");
@@ -295,14 +300,15 @@ function App() {
       const savedProfile = savedUser && findUserProfile(savedUser.id);
       const nextConfig = {
         ...savedConfig,
-        apiUrl: String(savedConfig.apiUrl || "").trim() || DEFAULT_API_CONFIG.apiUrl,
-        apiToken: String(savedConfig.apiToken || "").trim() || DEFAULT_API_CONFIG.apiToken
+        apiUrl: DEFAULT_API_CONFIG.apiUrl,
+        apiToken: DEFAULT_API_CONFIG.apiToken,
+        requestTimeoutMs: DEFAULT_API_CONFIG.requestTimeoutMs
       };
       setConfig(nextConfig);
       setDeviceId(savedDeviceId);
       setCart(savedCart);
       setPendingSales(savedPendingSales);
-      setPendingActions(savedPendingActions);
+      setPendingActions((savedPendingActions || []).filter((action) => action.type !== "updatePackingLine"));
       setRecentSearches(savedRecentSearches);
       setFavorites(savedFavorites);
       setStockCatalog(savedStockCatalog);
@@ -355,7 +361,7 @@ function App() {
   }, [booted, hasApi, view, currentUser && currentUser.id, config.sessionToken]);
 
   useEffect(() => {
-    if (!booted || !hasApi || !currentUser || !config.sessionToken) return;
+    if (!booted || !hasApi || !currentUser || (!PASSWORDS_PAUSED && !config.sessionToken)) return;
     syncStockCatalog(false);
   }, [booted, hasApi, currentUser && currentUser.id, config.sessionToken]);
 
@@ -634,7 +640,6 @@ function App() {
     if (action.type === "updateOrder") return updateOrder(config, action.payload);
     if (action.type === "recordOrderPayment") return recordOrderPayment(config, action.payload);
     if (action.type === "completeOrder") return completeOrder(config, action.payload);
-    if (action.type === "updatePackingLine") return updatePackingLine(config, action.payload);
     if (action.type === "updateClaimCard") return updateClaimCard(config, action.payload);
     if (action.type === "updateStock") return updateStock(config, action.payload);
     if (action.type === "cancelSale") return cancelSale(config, action.payload);
@@ -675,8 +680,9 @@ function App() {
   async function saveSettings() {
     const next = {
       ...config,
-      apiUrl: config.apiUrl.trim(),
-      apiToken: config.apiToken.trim(),
+      apiUrl: DEFAULT_API_CONFIG.apiUrl,
+      apiToken: DEFAULT_API_CONFIG.apiToken,
+      requestTimeoutMs: DEFAULT_API_CONFIG.requestTimeoutMs,
       deviceId
     };
     await saveConfig(next);
@@ -1190,24 +1196,57 @@ function App() {
     }
   }
 
-  async function togglePackingLine(order, line, checked) {
-    const payload = withActionMeta({
-      orderId: order.orderId,
-      lineId: line.lineId || orderLineKey(line, 0, line.type || "venta"),
-      type: line.type || "venta",
-      name: line.name,
-      checked
-    }, "embalaje", currentUser);
+  async function generateBuyerMessageForOrder(order) {
+    if (!order || !order.orderId || updatingOrders[order.orderId]) return;
+    const payload = withActionMeta({ orderId: order.orderId }, "mensaje-comprador", currentUser);
+    setUpdatingOrders((current) => ({ ...current, [order.orderId]: true }));
     try {
-      const result = await updatePackingLine(config, payload);
+      const result = await generateOrderBuyerMessage(config, payload);
+      const message = String(result && result.message ? result.message : "").trim();
+      if (!message) throw new Error("El HUB no devolvio ningun mensaje.");
+      const copied = await copyTextToClipboard(message);
+      setBuyerMessage({ orderId: order.orderId, buyer: order.buyer || result.buyer || "", message });
       setApiOnline(true);
-      if (result.packed) applyLocalOrderUpdate(order.orderId, { packed: true });
+      setStatus(copied ? "Mensaje copiado" : "Mensaje generado");
+      if (!copied) Alert.alert("Mensaje generado", "Te lo dejo abierto para copiarlo manualmente.");
       selectionFeedback();
     } catch (err) {
       setApiOnline(false);
-      if (isRetryableSaleError(err)) enqueuePendingAction("updatePackingLine", payload, `Embalaje ${order.orderId}`);
-      else Alert.alert("No pude guardar el checklist", errorText(err));
+      Alert.alert("No pude generar el mensaje", errorText(err));
+      setStatus(errorText(err));
+    } finally {
+      setUpdatingOrders((current) => {
+        const next = { ...current };
+        delete next[order.orderId];
+        return next;
+      });
     }
+  }
+
+  async function generateLabelsForPendingOrders() {
+    if (orderLabelsLoading) return;
+    const payload = withActionMeta({}, "etiquetas-pendientes", currentUser);
+    setOrderLabelsLoading(true);
+    try {
+      const result = await generatePendingOrderLabels(config, payload);
+      setApiOnline(true);
+      setStatus(`${result.labels || 0} etiquetas listas`);
+      Alert.alert(
+        "Etiquetas listas",
+        `${result.labels || 0} etiquetas generadas en la hoja ${result.sheetName || "Etiquetas A4"}.\n\nAbrila desde la planilla para imprimir en A4.`
+      );
+      notificationSuccess();
+    } catch (err) {
+      setApiOnline(false);
+      Alert.alert("No pude generar etiquetas", errorText(err));
+      setStatus(errorText(err));
+    } finally {
+      setOrderLabelsLoading(false);
+    }
+  }
+
+  function togglePackingLine() {
+    selectionFeedback();
   }
 
   async function saveStockItem(item, patch) {
@@ -1390,23 +1429,9 @@ function App() {
       {showSettings && permissions.canConfig ? (
         <View style={styles.settings}>
           <Text style={styles.label}>URL Web App</Text>
-          <TextInput
-            value={config.apiUrl}
-            onChangeText={(apiUrl) => setConfig((current) => ({ ...current, apiUrl }))}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="https://script.google.com/macros/s/..."
-            style={styles.input}
-          />
+          <Text style={styles.lockedConfigValue} numberOfLines={3}>{DEFAULT_API_CONFIG.apiUrl}</Text>
           <Text style={styles.label}>Token</Text>
-          <TextInput
-            value={config.apiToken}
-            onChangeText={(apiToken) => setConfig((current) => ({ ...current, apiToken }))}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="Token app mobile"
-            style={styles.input}
-          />
+          <Text style={styles.lockedConfigValue}>Fijado en la app</Text>
           <View style={styles.inlineActions}>
             {hasApi ? (
               <TapPressable style={[styles.orderButton, styles.flexButton]} onPress={() => setShowSettings(false)} scaleTo={0.97}>
@@ -1621,6 +1646,7 @@ function App() {
             onToggleLine={togglePackingLine}
             onPayment={setPaymentOrder}
             onComplete={confirmCompleteOrder}
+            onMessage={generateBuyerMessageForOrder}
           />
         ) : (
           <OrdersScreen
@@ -1636,8 +1662,24 @@ function App() {
             openPacking={setSelectedOrder}
             openPayment={setPaymentOrder}
             completeOrder={confirmCompleteOrder}
+            onMessage={generateBuyerMessageForOrder}
+            generatePendingLabels={generateLabelsForPendingOrders}
+            labelsLoading={orderLabelsLoading}
           />
         )
+      ) : null}
+
+      {buyerMessage ? (
+        <BuyerMessagePanel
+          data={buyerMessage}
+          onClose={() => setBuyerMessage(null)}
+          onCopy={async () => {
+            const copied = await copyTextToClipboard(buyerMessage.message);
+            setStatus(copied ? "Mensaje copiado" : "No pude copiar automaticamente");
+            Alert.alert(copied ? "Copiado" : "Copialo manualmente", copied ? "Mensaje listo para pegar." : "Selecciona el texto y copialo desde el navegador.");
+          }}
+          onShare={() => Share.share({ message: buyerMessage.message }).catch((err) => Alert.alert("No pude compartir", errorText(err)))}
+        />
       ) : null}
 
       <BottomNavigation
@@ -3038,7 +3080,7 @@ function StockEditScreen({ item, loading, onBack, onSave }) {
   );
 }
 
-function OrdersScreen({ orders, visibleOrders, loading, updatingOrders, orderQuery, setOrderQuery, orderStatus, setOrderStatus, loadOrders, openPacking, openPayment, completeOrder }) {
+function OrdersScreen({ orders, visibleOrders, loading, updatingOrders, orderQuery, setOrderQuery, orderStatus, setOrderStatus, loadOrders, openPacking, openPayment, completeOrder, onMessage, generatePendingLabels, labelsLoading }) {
   return (
     <View style={styles.ordersWrap}>
       <View style={styles.searchBox}>
@@ -3053,6 +3095,13 @@ function OrdersScreen({ orders, visibleOrders, loading, updatingOrders, orderQue
         />
         <TapPressable style={styles.goButton} onPress={() => loadOrders(orderQuery)} scaleTo={0.93}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.goText}>Go</Text>}
+        </TapPressable>
+      </View>
+
+      <View style={styles.orderBulkActions}>
+        <TapPressable style={[styles.orderButtonPrimary, (loading || labelsLoading) && styles.disabledButton]} onPress={generatePendingLabels} disabled={loading || labelsLoading} scaleTo={0.96}>
+          {labelsLoading ? <ActivityIndicator color="#fff" /> : <Ionicons name="pricetags-outline" size={18} color="#fff" />}
+          <Text style={styles.orderButtonPrimaryText}>{labelsLoading ? "Generando..." : "Etiquetas pendientes"}</Text>
         </TapPressable>
       </View>
 
@@ -3073,6 +3122,10 @@ function OrdersScreen({ orders, visibleOrders, loading, updatingOrders, orderQue
           return (
           <OrderCard key={order.orderId} order={order}>
             <View style={styles.orderActions}>
+              <TapPressable style={[styles.orderButton, (isUpdating || loading) && styles.disabledButton]} onPress={() => onMessage(order)} disabled={isUpdating || loading} scaleTo={0.96}>
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#f8fafc" />
+                <Text style={styles.orderButtonText}>Mensaje</Text>
+              </TapPressable>
               <TapPressable style={styles.orderButton} onPress={() => openPacking(order)} scaleTo={0.96}>
                 <Ionicons name="cube-outline" size={18} color="#f8fafc" />
                 <Text style={styles.orderButtonText}>Embalaje</Text>
@@ -3113,6 +3166,41 @@ function OrdersScreen({ orders, visibleOrders, loading, updatingOrders, orderQue
   );
 }
 
+function BuyerMessagePanel({ data, onClose, onCopy, onShare }) {
+  return (
+    <View style={styles.messagePanelOverlay}>
+      <View style={styles.messagePanel}>
+        <View style={styles.messagePanelHeader}>
+          <View style={styles.cardBody}>
+            <Text style={styles.messagePanelTitle}>Mensaje para {data.buyer || data.orderId}</Text>
+            <Text style={styles.messagePanelSub}>Copialo para enviar al comprador.</Text>
+          </View>
+          <TapPressable style={styles.iconButton} onPress={onClose} scaleTo={0.94}>
+            <Ionicons name="close" size={22} color="#f8fafc" />
+          </TapPressable>
+        </View>
+        <TextInput
+          value={data.message}
+          multiline
+          onChangeText={() => {}}
+          selectTextOnFocus
+          style={styles.messageTextArea}
+        />
+        <View style={styles.orderActions}>
+          <TapPressable style={styles.orderButton} onPress={onShare} scaleTo={0.96}>
+            <Ionicons name="share-social-outline" size={18} color="#f8fafc" />
+            <Text style={styles.orderButtonText}>Compartir</Text>
+          </TapPressable>
+          <TapPressable style={styles.orderButtonPrimary} onPress={onCopy} scaleTo={0.96}>
+            <Ionicons name="copy-outline" size={18} color="#fff" />
+            <Text style={styles.orderButtonPrimaryText}>Copiar</Text>
+          </TapPressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function OrderCard({ order, children, compact }) {
   return (
     <View style={styles.orderCard}>
@@ -3140,7 +3228,7 @@ function OrderCard({ order, children, compact }) {
   );
 }
 
-function OrderDetailScreen({ order, updatingOrders, loading, onBack, markOrder, onToggleLine, onPayment, onComplete }) {
+function OrderDetailScreen({ order, updatingOrders, loading, onBack, markOrder, onToggleLine, onPayment, onComplete, onMessage }) {
   const items = order.items || [];
   const frees = order.frees || [];
   const allLines = [
@@ -3228,6 +3316,10 @@ function OrderDetailScreen({ order, updatingOrders, loading, onBack, markOrder, 
             <Text style={styles.orderButtonText}>Finalizar embalaje</Text>
           </TapPressable>
         ) : null}
+        <TapPressable style={[styles.orderButton, (isUpdating || loading) && styles.disabledButton]} onPress={() => onMessage(order)} disabled={isUpdating || loading} scaleTo={0.96}>
+          <Ionicons name="chatbubble-ellipses-outline" size={18} color="#f8fafc" />
+          <Text style={styles.orderButtonText}>Mensaje</Text>
+        </TapPressable>
         <TapPressable style={[styles.orderButton, (isUpdating || loading || order.paid) && styles.disabledButton]} onPress={() => onPayment(order)} disabled={isUpdating || loading || order.paid} scaleTo={0.96}>
           <Ionicons name="cash-outline" size={18} color="#f8fafc" /><Text style={styles.orderButtonText}>{order.paid ? "Pagado" : "Pago"}</Text>
         </TapPressable>
@@ -3814,7 +3906,7 @@ function getUserPermissions(user) {
       canManageStock: true,
       canCancelSales: true,
       canConfig: true,
-      canResetPasswords: true
+      canResetPasswords: !PASSWORDS_PAUSED
     };
   }
   if (user.role === "staff") {
@@ -3875,6 +3967,43 @@ function uniqueValues(values) {
       seen[key] = true;
       return true;
     });
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return false;
+  if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (err) {
+      // Some browsers block async clipboard when the page is opened by LAN IP.
+    }
+  }
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return !!copied;
+    } catch (err) {
+      return false;
+    }
+  }
+  try {
+    await Clipboard.setStringAsync(value);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function formatArs(value) {
@@ -4362,6 +4491,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: "#111113",
     color: "#f8fafc"
+  },
+  lockedConfigValue: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#27272a",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: "#0f0f11",
+    color: "#d4d4d8",
+    fontSize: 12,
+    lineHeight: 18
   },
   screen: {
     flex: 1
@@ -5397,6 +5538,11 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8
   },
+  orderBulkActions: {
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 8
+  },
   orderUpdating: {
     minWidth: 112,
     minHeight: 38,
@@ -5444,6 +5590,54 @@ const styles = StyleSheet.create({
   orderButtonPrimaryText: {
     color: "#fff",
     fontWeight: "900"
+  },
+  messagePanelOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.78)"
+  },
+  messagePanel: {
+    width: "100%",
+    maxWidth: 720,
+    maxHeight: "86%",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#3f3f46",
+    padding: 12,
+    backgroundColor: "#111113",
+    gap: 10
+  },
+  messagePanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  messagePanelTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  messagePanelSub: {
+    marginTop: 2,
+    color: "#a1a1aa",
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  messageTextArea: {
+    minHeight: 300,
+    maxHeight: 460,
+    borderWidth: 1,
+    borderColor: "#3f3f46",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#050506",
+    color: "#f8fafc",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: "top"
   },
   orderDetailShell: {
     flex: 1,

@@ -1,25 +1,30 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  getOrderBoards,
+  changeOrderBoard,
   adjustInventoryQuantity,
   addClaimFree,
   addPriceChartingCardsToClaim,
   approveCardIndexEntriesByConfidence,
   archiveActiveClaim,
   applyInventorySnapshot,
+  addInventoryStock,
+  inventoryTransaction,
   cancelReservationSale,
   claimPriceChartingImageQueue,
   closeActiveClaim,
   completeReservationSale,
+  createMobileInventoryEntry,
   createClaimSession,
   createClaimSection,
   createPurchase,
   createSale,
   createOperationalDatabase,
+  deleteMobileInventoryEntry,
   deleteClaimCard,
   deleteClaimSection,
   deferPriceChartingImageQueueEntry,
@@ -41,6 +46,7 @@ import {
   listPurchases,
   listClaimsWorkspace,
   listCardIndex,
+  listMobileInventoryEntries,
   listActiveClaimMissingPriceChartingImages,
   listPriceChartingCache,
   listSales,
@@ -60,9 +66,13 @@ import {
   recordTcgplayerPriceCacheSkipped,
   replacePriceChartingCache,
   replaceTcgplayerPriceCache,
+  refreshCardIndexFromPriceChartingBatch,
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
+  resetInventoryStock,
   reviewCardIndexEntry,
+  updateMobileInventoryEntryStatus,
+  updateInventoryItemTags,
   updateClaimCard,
   updateClaimSection,
   updateActiveClaimSettings,
@@ -72,7 +82,11 @@ import {
   updateSalePayment,
   upsertInventoryItem,
   type AuthenticatedUser,
-  type TcgplayerPriceCacheInput
+  type DbStockRow,
+  type MobileInventoryEntry,
+  type MobileInventoryInput,
+  type TcgplayerPriceCacheInput,
+  type UpsertInventoryInput
 } from "@ultimoturno/db";
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 
@@ -80,8 +94,17 @@ const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..", "..", "..");
 const dataDir = process.env.PGLITE_DATA_DIR || path.resolve(process.cwd(), ".data", "ultimoturno-pilot-real");
+const runtimeEnv = String(process.env.ULTIMOTURNO_ENV || "local").trim().toLowerCase() || "local";
+const productionMode = runtimeEnv === "production" || runtimeEnv === "prod";
+const dbDriver = String(process.env.ULTIMOTURNO_DB_DRIVER || "pglite").trim().toLowerCase() === "postgres" ? "postgres" : "pglite";
+const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+const databaseSsl = String(process.env.ULTIMOTURNO_DATABASE_SSL || (productionMode && dbDriver === "postgres" ? "true" : "false")).toLowerCase();
 const dbPromise = createOperationalDatabase({
-  dataDir
+  driver: dbDriver,
+  dataDir,
+  databaseUrl,
+  ssl: ["1", "true", "yes", "require"].includes(databaseSsl),
+  poolMax: Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || 10)
 });
 const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "pokemon-cards").trim() || "pokemon-cards";
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
@@ -90,17 +113,24 @@ const priceChartingImageDir = process.env.PRICECHARTING_IMAGE_DIR
   : path.resolve(dataDir, "..", "pricecharting-images");
 const priceChartingImageReadDirs = [...new Set([
   priceChartingImageDir,
+  // Compatibility with the shared cache used by the Windows launchers.
+  path.resolve(projectRoot, "..", "pricecharting-images"),
+  path.resolve(dataDir, "..", "pricecharting-images"),
   path.resolve(dataDir, "pricecharting-images"),
   path.resolve(dataDir, "..", "ultimoturno-pglite", "pricecharting-images")
 ])];
 const externalImageIndexPath = path.resolve(dataDir, "..", "external-image-index.json");
+const allowedOrigins = String(process.env.ULTIMOTURNO_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 const dataProfile = String(process.env.ULTIMOTURNO_DATA_PROFILE || "PILOTO REAL").trim() || "PILOTO REAL";
 const allowExamples = String(process.env.ULTIMOTURNO_ALLOW_EXAMPLES || "false").toLowerCase() !== "false";
-const priceChartingAutoRefreshEnabled = String(process.env.PRICECHARTING_AUTO_REFRESH_ENABLED || "true").toLowerCase() !== "false";
+const priceChartingAutoRefreshEnabled = String(process.env.PRICECHARTING_AUTO_REFRESH_ENABLED || "false").toLowerCase() !== "false";
 const priceChartingAutoRefreshTime = normalizeDailyTime(process.env.PRICECHARTING_AUTO_REFRESH_TIME || "06:00");
 const tcgCsvBaseUrl = String(process.env.TCGCSV_BASE_URL || "https://tcgcsv.com").replace(/\/+$/, "");
 const tcgplayerPriceCategoryId = String(process.env.TCGPLAYER_PRICE_CATEGORY_ID || "3").trim() || "3";
-const tcgplayerPriceAutoRefreshEnabled = String(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED || "true").toLowerCase() !== "false";
+const tcgplayerPriceAutoRefreshEnabled = String(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED || "false").toLowerCase() !== "false";
 const tcgplayerPriceAutoRefreshTime = normalizeDailyTime(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_TIME || "18:30");
 const configuredBlueRateSell = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1540);
 const useLiveBlueRate = String(process.env.ULTIMOTURNO_BLUE_RATE_MODE || "manual").toLowerCase() === "auto";
@@ -142,6 +172,7 @@ type BlueExchangeRate = {
 type TcgCsvGroup = {
   groupId: number | string;
   name: string;
+  abbreviation?: string;
 };
 
 type TcgCsvPrice = {
@@ -152,6 +183,16 @@ type TcgCsvPrice = {
   marketPrice?: number | null;
   directLowPrice?: number | null;
   subTypeName?: string;
+};
+
+type TcgCsvProduct = {
+  productId: number | string;
+  name: string;
+  cleanName?: string;
+  imageUrl?: string;
+  url?: string;
+  groupId: number | string;
+  extendedData?: Array<{ name?: string; displayName?: string; value?: string }>;
 };
 
 type TcgplayerPriceAutoRefreshStatus = {
@@ -376,6 +417,233 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function tcgCsvExtendedValue(product: TcgCsvProduct, ...names: string[]): string {
+  const wanted = new Set(names.map(normalizeTcgText));
+  for (const item of product.extendedData || []) {
+    const keys = [item.name, item.displayName].map((value) => normalizeTcgText(String(value || "")));
+    if (keys.some((key) => wanted.has(key))) return String(item.value || "").trim();
+  }
+  return "";
+}
+
+function normalizeTcgText(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTcgNumber(value: string): string {
+  return normalizeTgPrimaryNumber(value).replace(/^0+([0-9])/, "$1");
+}
+
+function normalizeTgPrimaryNumber(value: string): string {
+  return normalizeTcgText(String(value || "").split("/")[0] || "").replace(/\s+/g, "");
+}
+
+function normalizeTcgName(value: string): string {
+  return normalizeTcgText(value)
+    .replace(/\b(reverse holo|reverse|holofoil|holo|foil|normal|unlimited|1st edition|first edition|cosmos|master ball|poke ball|pokeball|masterball)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTcgExpansion(value: string): string {
+  return normalizeTcgText(value)
+    .replace(/^pokemon\s+/, "")
+    .replace(/^[a-z]{1,5}\d{0,4}\s*:\s*/, "")
+    .replace(/^[a-z]{1,5}\d{0,4}\s+/, "")
+    .replace(/\b(scarlet violet|sword shield|sun moon|xy|black white)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tcgTokenOverlap(left: string, right: string): number {
+  const leftTokens = new Set(left.split(" ").filter(Boolean));
+  const rightTokens = new Set(right.split(" ").filter(Boolean));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let shared = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) shared++;
+  }
+  return shared / Math.max(leftTokens.size, rightTokens.size);
+}
+
+function upgradeTcgplayerImageUrl(value: string): string {
+  return value.replace(/_200w(?=\.(?:jpg|jpeg|png|webp)(?:$|\?))/i, "_in_1000x1000");
+}
+
+function scoreTcgCandidate(entry: Record<string, unknown>, product: TcgCsvProduct, group: TcgCsvGroup, number: string) {
+  let score = 0;
+  const reasons: string[] = [];
+  if (normalizeTcgNumber(String(entry.card_number || "")) === normalizeTcgNumber(number)) {
+    score += 38;
+    reasons.push("numero");
+  }
+  const entryName = normalizeTcgName(String(entry.canonical_name || ""));
+  const productName = normalizeTcgName(String(product.cleanName || product.name || ""));
+  if (entryName && productName) {
+    if (entryName === productName) {
+      score += 34;
+      reasons.push("nombre exacto");
+    } else if (entryName.includes(productName) || productName.includes(entryName)) {
+      score += 24;
+      reasons.push("nombre contenido");
+    } else if (tcgTokenOverlap(entryName, productName) >= 0.72) {
+      score += 18;
+      reasons.push("nombre similar");
+    } else {
+      score -= 20;
+    }
+  }
+  const entryExpansion = normalizeTcgExpansion(String(entry.canonical_expansion || ""));
+  const groupExpansion = normalizeTcgExpansion(String(group.name || ""));
+  const groupAbbreviation = normalizeTcgExpansion(String(group.abbreviation || ""));
+  if (entryExpansion && groupExpansion) {
+    if (entryExpansion === groupExpansion || groupExpansion.endsWith(entryExpansion) || entryExpansion.endsWith(groupExpansion)) {
+      score += 26;
+      reasons.push("set");
+    } else if (groupAbbreviation && (entryExpansion === groupAbbreviation || groupExpansion.includes(entryExpansion))) {
+      score += 18;
+      reasons.push("set abreviado");
+    } else if (tcgTokenOverlap(entryExpansion, groupExpansion) >= 0.6) {
+      score += 12;
+      reasons.push("set similar");
+    } else {
+      score -= 16;
+    }
+  }
+  return { score: Math.max(0, Math.min(100, score)), reasons };
+}
+
+async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, products: TcgCsvProduct[]) {
+  const numbers = [...new Set(products
+    .map((product) => normalizeTcgNumber(tcgCsvExtendedValue(product, "Number", "Card Number")))
+    .filter(Boolean))];
+  if (!numbers.length) return new Map<string, Record<string, unknown>[]>();
+  const params = numbers;
+  const placeholders = params.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await db.query<Record<string, unknown>>(`
+    select id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
+    from card_index_entries
+    where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') in (${placeholders})
+  `, params);
+  const byNumber = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows.rows) {
+    const number = normalizeTcgNumber(String(row.card_number || ""));
+    const bucket = byNumber.get(number) || [];
+    bucket.push(row);
+    byNumber.set(number, bucket);
+  }
+  return byNumber;
+}
+
+async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvProduct, group: TcgCsvGroup, candidatesByNumber?: Map<string, Record<string, unknown>[]>) {
+  const number = normalizeTgPrimaryNumber(tcgCsvExtendedValue(product, "Number", "Card Number"));
+  const productId = String(product.productId || "").trim();
+  const rawName = String(product.name || product.cleanName || "").trim();
+  const rawExpansion = String(group.name || "").trim();
+  if (!number || !productId || !rawName || !rawExpansion) return "skipped" as const;
+
+  const normalizedNumber = normalizeTcgNumber(number);
+  const candidateRows = candidatesByNumber
+    ? (candidatesByNumber.get(normalizedNumber) || []).slice(0, 500)
+    : (await db.query<Record<string, unknown>>(`
+      select id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
+      from card_index_entries
+      where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') = $1
+      limit 500
+    `, [normalizedNumber])).rows;
+  let best: { row: Record<string, unknown>; score: number; reasons: string[] } | null = null;
+  for (const row of candidateRows) {
+    const scored = scoreTcgCandidate(row, product, group, number);
+    if (!best || scored.score > best.score) best = { row, ...scored };
+  }
+  if (!best || best.score < 72) return "skipped" as const;
+
+  const currentTcgId = String(best.row.tcgplayer_product_id || "").trim();
+  const isConflict = !!currentTcgId && currentTcgId !== productId;
+  const matchStatus = isConflict ? "conflict" : best.score >= 86 ? "matched" : "weak_match";
+  const productUrl = String(product.url || "").trim();
+  const imageUrl = upgradeTcgplayerImageUrl(String(product.imageUrl || "").trim());
+  const evidence = {
+    source: "tcgcsv",
+    groupId: String(group.groupId || ""),
+    groupName: rawExpansion,
+    groupAbbreviation: String(group.abbreviation || ""),
+    reasons: best.reasons,
+    extendedData: product.extendedData || []
+  };
+
+  await db.query(`
+    update card_index_entries
+    set
+      tcgplayer_product_id = case when $7 = 'conflict' then tcgplayer_product_id else $2 end,
+      tcgplayer_url = case when $7 = 'conflict' then tcgplayer_url else $3 end,
+      tcgplayer_image_url = case when $7 = 'conflict' then tcgplayer_image_url else $4 end,
+      image_url = case
+        when coalesce(image_url, '') <> '' then image_url
+        when $7 = 'conflict' then image_url
+        else $4
+      end,
+      image_source = case
+        when coalesce(image_url, '') <> '' then image_source
+        when $7 = 'conflict' then image_source
+        when $4 <> '' then 'tcgplayer'
+        else image_source
+      end,
+      match_confidence = greatest(match_confidence, $5),
+      match_status = case
+        when match_status = 'manual' then match_status
+        when $7 = 'conflict' then 'conflict'
+        when $5 > match_confidence then $7
+        else match_status
+      end,
+      evidence_json = $6::jsonb,
+      updated_at = now(),
+      last_verified_at = now()
+    where id = $1
+  `, [best.row.id, productId, productUrl, imageUrl, best.score, JSON.stringify(evidence), matchStatus]);
+
+  await db.query(`
+    insert into card_source_links (
+      id, card_index_id, source, external_id, url, raw_name, raw_expansion, raw_number,
+      raw_variant, image_url, confidence, evidence_json, created_at, updated_at
+    ) values ($1, $2, 'tcgplayer', $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, now(), now())
+    on conflict (card_index_id, source) do update set
+      external_id = excluded.external_id,
+      url = excluded.url,
+      raw_name = excluded.raw_name,
+      raw_expansion = excluded.raw_expansion,
+      raw_number = excluded.raw_number,
+      raw_variant = excluded.raw_variant,
+      image_url = excluded.image_url,
+      confidence = excluded.confidence,
+      evidence_json = excluded.evidence_json,
+      updated_at = now()
+  `, [
+    crypto.randomUUID(),
+    best.row.id,
+    productId,
+    productUrl,
+    rawName,
+    rawExpansion,
+    number,
+    tcgCsvExtendedValue(product, "Printing", "Variant", "Finish"),
+    imageUrl,
+    best.score,
+    JSON.stringify(evidence)
+  ]);
+
+  return isConflict ? "conflict" as const : matchStatus === "matched" ? "matched" as const : "weak" as const;
+}
+
 async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, options: { force?: boolean } = {}) {
   const sourceVersion = await fetchTcgCsvLastUpdated().catch(() => "");
   if (sourceVersion && !options.force) {
@@ -514,6 +782,59 @@ async function runMissedTcgplayerPriceAutoRefreshOnStartup() {
   }
 }
 
+async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; groupLimit?: number }) {
+  const db = await dbPromise;
+  const groups = (await fetchTcgCsvJson<TcgCsvGroup[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/groups`))
+    .filter((group) => group && group.groupId && group.name);
+  const groupOffset = Math.max(0, Math.floor(Number(options.groupOffset || 0)));
+  const groupLimit = Math.max(1, Math.min(25, Math.floor(Number(options.groupLimit || 5))));
+  const selectedGroups = groups.slice(groupOffset, groupOffset + groupLimit);
+  let rowsSeen = 0;
+  let rowsMatched = 0;
+  let rowsWeak = 0;
+  let rowsConflict = 0;
+  let rowsSkipped = 0;
+
+  for (const group of selectedGroups) {
+    const groupId = String(group.groupId || "").trim();
+    if (!groupId) continue;
+    const groupProducts = await fetchTcgCsvJson<TcgCsvProduct[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/${encodeURIComponent(groupId)}/products`);
+    const productsWithGroup = groupProducts.map((product) => ({ ...product, groupId: product.groupId || group.groupId }));
+    const candidatesByNumber = await loadTcgCandidateRowsForProducts(db, productsWithGroup);
+    for (const rawProduct of productsWithGroup) {
+      rowsSeen++;
+      const result = await linkTcgCsvProduct(db, rawProduct, group, candidatesByNumber);
+      if (result === "matched") rowsMatched++;
+      else if (result === "weak") rowsWeak++;
+      else if (result === "conflict") rowsConflict++;
+      else rowsSkipped++;
+    }
+    await sleep(120);
+  }
+
+  await db.query(`
+    insert into card_index_sync_runs (
+      id, source, status, rows_seen, rows_matched, rows_weak, rows_conflict,
+      started_at, completed_at
+    ) values ($1, 'tcgcsv-api', 'completed', $2, $3, $4, $5, now(), now())
+  `, [crypto.randomUUID(), rowsSeen, rowsMatched, rowsWeak, rowsConflict]);
+  const nextGroupOffset = groupOffset + selectedGroups.length < groups.length ? groupOffset + selectedGroups.length : null;
+  return {
+    status: await getCardIndexStatus(db),
+    rowsSeen,
+    rowsMatched,
+    rowsWeak,
+    rowsConflict,
+    rowsSkipped,
+    groupOffset,
+    groupLimit,
+    groupsProcessed: selectedGroups.length,
+    totalGroups: groups.length,
+    nextGroupOffset,
+    complete: nextGroupOffset === null
+  };
+}
+
 function tcgCsvWorkerProgressPath(): string {
   return path.resolve(projectRoot, "outputs", "tcgcsv-card-index-progress.json");
 }
@@ -539,38 +860,15 @@ async function readTcgCsvWorkerProgress(): Promise<Record<string, unknown> | nul
 }
 
 async function startTcgCsvCardIndexWorker(options: { groupOffset?: number; groupLimit?: number; loop?: boolean }) {
-  const progress = await readTcgCsvWorkerProgress();
-  if (progress && progress.running === true) {
-    return { started: false, alreadyRunning: true, progress, progressPath: tcgCsvWorkerProgressPath(), logPath: tcgCsvWorkerLogPath() };
-  }
-  await mkdir(path.dirname(tcgCsvWorkerLogPath()), { recursive: true });
-  const args = [
-    "run",
-    "card-index:tcgcsv",
-    "--",
-    `--data-dir=${dataDir}`,
-    `--progress=${tcgCsvWorkerProgressPath()}`,
-    `--group-offset=${Math.max(0, Math.floor(options.groupOffset || 0))}`,
-    `--group-limit=${Math.max(1, Math.min(25, Math.floor(options.groupLimit || 5)))}`,
-    "--sleep-ms=500"
-  ];
-  if (options.loop !== false) args.push("--loop");
-  const command = process.platform === "win32" ? "cmd.exe" : "npm";
-  const commandArgs = process.platform === "win32" ? ["/c", "npm", ...args] : args;
-  const child = spawn(command, commandArgs, {
-    cwd: projectRoot,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env: {
-      ...process.env,
-      PGLITE_DATA_DIR: dataDir,
-      ULTIMOTURNO_DATA_PROFILE: dataProfile,
-      ULTIMOTURNO_ALLOW_EXAMPLES: allowExamples ? "true" : "false"
-    }
-  });
-  child.unref();
-  return { started: true, pid: child.pid, progressPath: tcgCsvWorkerProgressPath(), logPath: tcgCsvWorkerLogPath() };
+  return {
+    started: false,
+    disabled: true,
+    requested: options,
+    progress: await readTcgCsvWorkerProgress(),
+    progressPath: tcgCsvWorkerProgressPath(),
+    logPath: tcgCsvWorkerLogPath(),
+    error: "Deshabilitado por seguridad: este worker abre PGlite desde otro proceso. Usar sincronizaciones HTTP/in-process del API."
+  };
 }
 
 async function readCardIndexImageWorkerProgress(): Promise<Record<string, unknown> | null> {
@@ -582,39 +880,16 @@ async function readCardIndexImageWorkerProgress(): Promise<Record<string, unknow
 }
 
 async function startCardIndexImageWorker(options: { batchSize?: number; concurrency?: number; loop?: boolean }) {
-  const progress = await readCardIndexImageWorkerProgress();
-  if (progress && progress.running === true) {
-    return { started: false, alreadyRunning: true, progress, progressPath: cardIndexImageWorkerProgressPath(), logPath: cardIndexImageWorkerLogPath() };
-  }
-  await mkdir(path.dirname(cardIndexImageWorkerLogPath()), { recursive: true });
-  const args = [
-    "run",
-    "card-index:images",
-    "--",
-    `--data-dir=${dataDir}`,
-    `--image-dir=${priceChartingImageDir}`,
-    `--progress=${cardIndexImageWorkerProgressPath()}`,
-    `--batch=${Math.max(1, Math.min(1000, Math.floor(options.batchSize || 250)))}`,
-    `--concurrency=${Math.max(1, Math.min(20, Math.floor(options.concurrency || 6)))}`,
-    "--sleep-ms=500"
-  ];
-  if (options.loop !== false) args.push("--loop");
-  const command = process.platform === "win32" ? "cmd.exe" : "npm";
-  const commandArgs = process.platform === "win32" ? ["/c", "npm", ...args] : args;
-  const child = spawn(command, commandArgs, {
-    cwd: projectRoot,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env: {
-      ...process.env,
-      PGLITE_DATA_DIR: dataDir,
-      ULTIMOTURNO_DATA_PROFILE: dataProfile,
-      ULTIMOTURNO_ALLOW_EXAMPLES: allowExamples ? "true" : "false"
-    }
-  });
-  child.unref();
-  return { started: true, pid: child.pid, progressPath: cardIndexImageWorkerProgressPath(), logPath: cardIndexImageWorkerLogPath() };
+  return {
+    started: false,
+    disabled: true,
+    requested: options,
+    progress: await readCardIndexImageWorkerProgress(),
+    progressPath: cardIndexImageWorkerProgressPath(),
+    logPath: cardIndexImageWorkerLogPath(),
+    replacementEndpoint: "/pricecharting-images/reindex-local",
+    error: "Deshabilitado por seguridad: este worker abre PGlite desde otro proceso. Usar /pricecharting-images/reindex-local o tools/pricecharting-image-worker.ts."
+  };
 }
 
 function describePriceChartingDownloadFailure(status: number, token: string): string {
@@ -1558,6 +1833,96 @@ async function findLocalPriceChartingImage(priceChartingId: string): Promise<{
   return null;
 }
 
+function imageContentTypeFromExtension(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".png") return "image/png";
+  if (extension === ".webp") return "image/webp";
+  return "image/jpeg";
+}
+
+async function reindexLocalPriceChartingImages(limit = 10000) {
+  const db = await dbPromise;
+  const seen = new Set<string>();
+  let scanned = 0;
+  let indexed = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const dir of priceChartingImageReadDirs) {
+    let entries: string[] = [];
+    try {
+      entries = await readdir(dir);
+    } catch (error) {
+      errors.push(`${dir}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+
+    for (const fileName of entries) {
+      if (indexed >= limit) break;
+      const match = fileName.match(/^(\d+)\.(?:jpe?g|png|webp)$/i);
+      if (!match) continue;
+      const priceChartingId = match[1];
+      if (seen.has(priceChartingId)) {
+        skipped++;
+        continue;
+      }
+      seen.add(priceChartingId);
+      scanned++;
+
+      const localPath = path.join(dir, fileName);
+      try {
+        const info = await stat(localPath);
+        if (!info.isFile() || info.size <= 0) {
+          skipped++;
+          continue;
+        }
+        const existing = await db.query<{ pricecharting_id: string }>(`
+          select pricecharting_id
+          from pricecharting_image_cache
+          where pricecharting_id = $1
+            and status = 'downloaded'
+            and public_url = $2
+          limit 1
+        `, [priceChartingId, `/pricecharting-images/files/${fileName}`]);
+        if (existing.rows[0]) {
+          skipped++;
+          continue;
+        }
+        const bytes = await readFile(localPath);
+        await recordPriceChartingImageSuccess(db, {
+          priceChartingId,
+          sourceImageUrl: `local-reindex:${localPath}`,
+          localPath,
+          publicUrl: `/pricecharting-images/files/${fileName}`,
+          contentType: imageContentTypeFromExtension(fileName),
+          byteSize: bytes.length,
+          contentHash: crypto.createHash("sha256").update(bytes).digest("hex")
+        });
+        await db.query(`
+          update card_index_entries
+          set image_url = $2,
+            image_source = 'pricecharting-local',
+            updated_at = now(),
+            last_verified_at = now()
+          where pricecharting_id = $1
+            and coalesce(image_url, '') not like '/pricecharting-images/files/%'
+        `, [priceChartingId, `/pricecharting-images/files/${fileName}`]);
+        indexed++;
+      } catch (error) {
+        errors.push(`${localPath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  return {
+    scanned,
+    indexed,
+    skipped,
+    directories: priceChartingImageReadDirs,
+    errors: errors.slice(0, 20)
+  };
+}
+
 async function processPriceChartingImageQueue(batchSize: number, concurrency: number, mode: ImageResolverMode, options: {
   onlyWithSourceImageUrl?: boolean;
   activeClaimBusinessId?: string;
@@ -1858,12 +2223,39 @@ async function processExternalImageIndexQueue(input: {
   };
 }
 
+function isLocalBrowserOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function requestCorsOrigin(request: IncomingMessage) {
+  const rawOrigin = request.headers.origin;
+  const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin || "";
+  const normalized = origin.trim().replace(/\/+$/, "");
+  if (!normalized) return "";
+  if (allowedOrigins.includes("*")) return normalized;
+  if (allowedOrigins.includes(normalized)) return normalized;
+  if (!productionMode && isLocalBrowserOrigin(normalized)) return normalized;
+  if (!productionMode && allowedOrigins.length === 0) return "*";
+  return "";
+}
+
+function applyCorsHeaders(request: IncomingMessage, response: ServerResponse) {
+  const origin = requestCorsOrigin(request);
+  if (origin) response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Vary", "Origin");
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-UltimoTurno-Access-Key");
+  response.setHeader("Access-Control-Max-Age", "86400");
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown) {
   response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization,X-UltimoTurno-Access-Key"
+    "Content-Type": "application/json; charset=utf-8"
   });
   response.end(JSON.stringify(payload, null, 2));
 }
@@ -1871,8 +2263,7 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
 function sendBuffer(response: ServerResponse, statusCode: number, body: Buffer, contentType: string) {
   response.writeHead(statusCode, {
     "Content-Type": contentType,
-    "Cache-Control": "public, max-age=31536000, immutable",
-    "Access-Control-Allow-Origin": "*"
+    "Cache-Control": "public, max-age=31536000, immutable"
   });
   response.end(body);
 }
@@ -1979,15 +2370,405 @@ function requestHasAccess(request: IncomingMessage) {
   return accessKeyMatches(parseCookies(request.headers.cookie).ultimoturno_access_key || "");
 }
 
+type MobileInventoryCandidate = {
+  id: string;
+  matchType: "inventory" | "card_index";
+  inventoryItemId?: string;
+  priceChartingId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  language: string;
+  condition: string;
+  finish: string;
+  gradingCompany: string;
+  grade: string;
+  availableQuantity: number;
+  priceArs: number;
+  priceUsd: number | null;
+  imageUrl: string;
+  helper: string;
+  score: number;
+};
+
+type MobileInventoryApplyResult = {
+  requestedEntries: number;
+  appliedEntries: number;
+  appliedGroups: number;
+  unitsApplied: number;
+  createdItems: number;
+  updatedItems: number;
+  skippedEntries: number;
+  errors: Array<{ id: string; name: string; error: string }>;
+};
+
+type MobileInventoryApplyGroup = {
+  key: string;
+  entries: MobileInventoryEntry[];
+  quantity: number;
+  representative: MobileInventoryEntry;
+  stockItem?: DbStockRow;
+};
+
+function stockPriceChartingId(item: DbStockRow): string {
+  return item.priceReferences?.priceCharting?.priceChartingId
+    || item.product.identifiers.find((identifier) => identifier.source === "pricecharting")?.externalId
+    || "";
+}
+
+function mobileGeneratedSku(entry: Pick<MobileInventoryEntry, "name" | "expansion" | "number" | "language" | "condition" | "finish" | "gradingCompany" | "grade">): string {
+  return [entry.name, entry.expansion, entry.number, entry.language, entry.gradingCompany || entry.condition, entry.grade, entry.finish]
+    .map((part) => String(part || "").trim().slice(0, 12).replace(/[^a-z0-9]+/gi, "").toUpperCase())
+    .filter(Boolean)
+    .join("-");
+}
+
+function mobileInventoryIdentityKey(entry: Pick<MobileInventoryEntry, "name" | "expansion" | "number" | "language" | "condition" | "finish" | "gradingCompany" | "grade">): string {
+  return [
+    normalizeMatchText(entry.name),
+    normalizeMatchText(entry.expansion),
+    normalizeCardNumber(entry.number),
+    normalizeMatchText(entry.language || "EN"),
+    normalizeMatchText(entry.gradingCompany || entry.condition || "NM"),
+    normalizeMatchText(entry.grade || ""),
+    normalizeMatchText(entry.finish || "normal")
+  ].join("|");
+}
+
+function stockInventoryIdentityKey(item: DbStockRow): string {
+  return [
+    normalizeMatchText(item.product.name),
+    normalizeMatchText(item.product.expansion),
+    normalizeCardNumber(item.product.number || ""),
+    normalizeMatchText(item.variant.language || "EN"),
+    normalizeMatchText(item.variant.gradingCompany || item.variant.condition || "NM"),
+    normalizeMatchText(item.variant.grade || ""),
+    normalizeMatchText(item.variant.finish || "normal")
+  ].join("|");
+}
+
+function mobileApplyNote(entries: MobileInventoryEntry[], quantity: number): string {
+  const helpers = [...new Set(entries.map((entry) => entry.helperName.trim()).filter(Boolean))].slice(0, 4);
+  const batches = [...new Set(entries.map((entry) => entry.intakeBatch.trim()).filter(Boolean))].slice(0, 3);
+  const helperText = helpers.length ? ` - ${helpers.join(", ")}` : "";
+  const batchText = batches.length ? ` - ${batches.join(", ")}` : "";
+  return `Carga movil: ${quantity} u. en ${entries.length} captura(s)${helperText}${batchText}`;
+}
+
+function mobileEntryToInventoryInput(entry: MobileInventoryEntry, quantity: number, note: string): UpsertInventoryInput {
+  return {
+    sku: entry.sku || mobileGeneratedSku(entry) || undefined,
+    name: entry.name || "Carta sin nombre",
+    expansion: entry.expansion || "Sin expansion",
+    number: entry.number || "",
+    imageUrl: entry.imageUrl || "",
+    priceChartingId: entry.priceChartingId || "",
+    language: entry.language || "EN",
+    condition: entry.condition || "NM",
+    finish: entry.finish || "normal",
+    gradingCompany: entry.gradingCompany || "",
+    grade: entry.grade || "",
+    location: entry.location || "",
+    intakeBatch: entry.intakeBatch || "",
+    inventoryStatus: "available",
+    quantityOnHand: quantity,
+    quantityReserved: 0,
+    priceArs: Math.max(0, Number(entry.priceArs || 0)),
+    priceUsd: entry.priceUsd && entry.priceUsd > 0 ? entry.priceUsd : null,
+    notes: entry.notes || "",
+    stockMovementNote: note,
+    stockMovementReferenceType: "mobile_intake"
+  };
+}
+
+async function applyMobileInventoryEntries(db: Awaited<typeof dbPromise>, user: AuthenticatedUser, ids: unknown): Promise<MobileInventoryApplyResult> {
+  return inventoryTransaction(db, (connection) => applyMobileInventoryEntriesInTransaction(connection, user, ids));
+}
+
+async function applyMobileInventoryEntriesInTransaction(db: Awaited<typeof dbPromise>, user: AuthenticatedUser, ids: unknown): Promise<MobileInventoryApplyResult> {
+  const requestedIds = Array.isArray(ids)
+    ? [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))]
+    : [];
+  const requestedIdSet = new Set(requestedIds);
+  const receipts = await db.query<{ id: string }>("select id from mobile_inventory_entries where business_id = $1 and applied_at is not null", [user.businessId]);
+  const appliedIds = new Set(receipts.rows.map((entry) => entry.id));
+  const pendingEntries = (await listMobileInventoryEntries(db, user.businessId, "pending", 20000)).entries.filter((entry) => !appliedIds.has(entry.id));
+  const entries = requestedIds.length
+    ? pendingEntries.filter((entry) => requestedIdSet.has(entry.id))
+    : pendingEntries;
+  const stock = await listStockForBusiness(db, user.businessId);
+  const stockById = new Map(stock.items.map((item) => [item.id, item]));
+  const stockBySku = new Map<string, DbStockRow>();
+  const stockByPriceCharting = new Map<string, DbStockRow>();
+  const stockByIdentity = new Map<string, DbStockRow>();
+  const refreshStockIndexes = (item: DbStockRow) => {
+    stockById.set(item.id, item);
+    if (item.sku) stockBySku.set(item.sku.trim().toLowerCase(), item);
+    const priceChartingId = stockPriceChartingId(item).trim();
+    if (priceChartingId && !stockByPriceCharting.has(priceChartingId)) stockByPriceCharting.set(`${priceChartingId}|${stockInventoryIdentityKey(item)}`, item);
+    const identityKey = stockInventoryIdentityKey(item);
+    if (identityKey && !stockByIdentity.has(identityKey)) stockByIdentity.set(identityKey, item);
+  };
+  stock.items.forEach(refreshStockIndexes);
+
+  const groups = new Map<string, MobileInventoryApplyGroup>();
+  for (const entry of entries) {
+    const quantity = Math.max(1, Math.floor(Number(entry.quantityOnHand || 1)));
+    const priceChartingId = entry.priceChartingId.trim();
+    const sku = entry.sku.trim();
+    const generatedSku = mobileGeneratedSku(entry);
+    const identityKey = mobileInventoryIdentityKey(entry);
+    const matchedStock = (entry.inventoryItemId ? stockById.get(entry.inventoryItemId) : undefined)
+      || (sku ? stockBySku.get(sku.toLowerCase()) : undefined)
+      || (generatedSku ? stockBySku.get(generatedSku.toLowerCase()) : undefined)
+      || (priceChartingId ? stockByPriceCharting.get(`${priceChartingId}|${identityKey}`) : undefined)
+      || stockByIdentity.get(identityKey);
+    const key = matchedStock?.id
+      ? `stock:${matchedStock.id}`
+      : priceChartingId
+        ? `pc:${priceChartingId}|${identityKey}`
+        : `identity:${identityKey}`;
+    const group = groups.get(key) || { key, entries: [], quantity: 0, representative: entry, stockItem: matchedStock };
+    group.entries.push(entry);
+    group.quantity += quantity;
+    if (!group.representative.imageUrl && entry.imageUrl) group.representative = entry;
+    if (!group.stockItem && matchedStock) group.stockItem = matchedStock;
+    groups.set(key, group);
+  }
+
+  const result: MobileInventoryApplyResult = {
+    requestedEntries: entries.length,
+    appliedEntries: 0,
+    appliedGroups: 0,
+    unitsApplied: 0,
+    createdItems: 0,
+    updatedItems: 0,
+    skippedEntries: requestedIds.length ? Math.max(0, requestedIds.length - entries.length) : 0,
+    errors: []
+  };
+
+  for (const group of groups.values()) {
+    try {
+      const note = mobileApplyNote(group.entries, group.quantity);
+      const stockItem = group.stockItem ? stockById.get(group.stockItem.id) || group.stockItem : undefined;
+      if (stockItem) {
+        const updated = await adjustInventoryQuantity(db, {
+          inventoryItemId: stockItem.id,
+          quantityDelta: group.quantity,
+          note
+        }, user);
+        refreshStockIndexes(updated);
+        result.updatedItems += 1;
+      } else {
+        const created = await upsertInventoryItem(db, mobileEntryToInventoryInput(group.representative, group.quantity, note), user);
+        refreshStockIndexes(created);
+        result.createdItems += 1;
+      }
+      for (const entry of group.entries) {
+        await updateMobileInventoryEntryStatus(db, entry.id, "reviewed", user);
+        await db.query("update mobile_inventory_entries set applied_at = now() where id = $1 and business_id = $2", [entry.id, user.businessId]);
+      }
+      result.appliedEntries += group.entries.length;
+      result.appliedGroups += 1;
+      result.unitsApplied += group.quantity;
+    } catch (error) {
+      throw new Error("No se cargo el lote; podes reintentar. " + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  return result;
+}
+
+function scoreMobileCandidate(query: string, candidate: { name: string; expansion: string; number: string; sku?: string; priceChartingId?: string }) {
+  const tokens = normalizeMatchText(query).split(" ").filter(Boolean);
+  if (!tokens.length) return 1;
+  const name = normalizeMatchText(candidate.name);
+  const expansion = normalizeMatchText(candidate.expansion);
+  const sku = normalizeMatchText(candidate.sku || "");
+  const id = normalizeMatchText(candidate.priceChartingId || "");
+  const number = normalizeCardNumber(candidate.number);
+  let score = 0;
+  for (const token of tokens) {
+    const cleanNumber = token.replace(/^#/, "").replace(/^0+([0-9])/, "$1");
+    if (/^[0-9]+[a-z]?$/i.test(cleanNumber)) {
+      if (number === cleanNumber) score += 70;
+      else if (number.includes(cleanNumber) || sku.includes(cleanNumber) || id.includes(cleanNumber)) score += 12;
+      else return 0;
+    } else if (name.split(" ").includes(token)) score += 45;
+    else if (name.includes(token)) score += 30;
+    else if (expansion.includes(token)) score += 16;
+    else if (sku.includes(token) || id.includes(token)) score += 10;
+    else return 0;
+  }
+  return score;
+}
+
+function optionalMobileNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mobileSearchWhere(query: string, params: unknown[]) {
+  const tokens = normalizeMatchText(query).split(" ").filter(Boolean).slice(0, 6);
+  const clauses: string[] = [];
+  for (const token of tokens) {
+    const cleanNumber = token.replace(/^#/, "").replace(/^0+([0-9])/, "$1");
+    const likeValue = `%${token}%`;
+    params.push(likeValue);
+    const likeParam = `$${params.length}`;
+    const haystack = `
+      lower(replace(replace(
+        coalesce(p.name, '') || ' ' ||
+        coalesce(p.expansion, '') || ' ' ||
+        coalesce(p.card_number, '') || ' ' ||
+        coalesce(ii.sku, '') || ' ' ||
+        coalesce(ii.tags, '') || ' ' ||
+        coalesce(pc_identifier.external_id, ''),
+        chr(39), ''
+      ), chr(8217), ''))
+    `;
+    if (/^[0-9]+[a-z]?$/i.test(cleanNumber)) {
+      params.push(cleanNumber);
+      const exactParam = `$${params.length}`;
+      clauses.push(`(
+        regexp_replace(lower(split_part(coalesce(p.card_number, ''), '/', 1)), '^0+', '') = ${exactParam}
+        or ${haystack} like ${likeParam}
+      )`);
+    } else {
+      clauses.push(`(${haystack} like ${likeParam})`);
+    }
+  }
+  return clauses.length ? `and ${clauses.join(" and ")}` : "";
+}
+
+async function searchStockMobileCandidates(db: Awaited<typeof dbPromise>, user: AuthenticatedUser, query: string, limit: number): Promise<MobileInventoryCandidate[]> {
+  const params: unknown[] = [user.businessId];
+  const where = mobileSearchWhere(query, params);
+  params.push(Math.max(1, Math.min(100, Math.floor(limit || 48))));
+  const limitParam = `$${params.length}`;
+  const result = await db.query<Record<string, unknown>>(`
+    select
+      ii.id,
+      ii.sku,
+      greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
+      coalesce(cp.price_ars, 0) as price_ars,
+      cp.price_usd,
+      ii.tags,
+      p.name as product_name,
+      p.expansion,
+      p.card_number,
+      p.image_url,
+      v.language,
+      v.condition,
+      v.finish,
+      v.grading_company,
+      v.grade,
+      coalesce(pc_identifier.external_id, '') as pricecharting_id
+    from inventory_items ii
+    join card_products p on p.id = ii.product_id
+    join card_variants v on v.id = ii.variant_id
+    left join current_prices cp on cp.inventory_item_id = ii.id
+    left join lateral (
+      select ei.external_id
+      from external_identifiers ei
+      join external_sources es on es.id = ei.source_id
+      where ei.business_id = ii.business_id
+        and es.name = 'pricecharting'
+        and (ei.product_id = p.id or ei.variant_id = v.id)
+      order by case when ei.variant_id = v.id then 0 else 1 end, ei.id
+      limit 1
+    ) pc_identifier on true
+    where ii.business_id = $1
+      and ii.active = true
+      ${where}
+    order by p.name, p.expansion, p.card_number, v.condition
+    limit ${limitParam}
+  `, params);
+  return result.rows
+    .map((row) => {
+      const candidate = {
+        id: String(row.id),
+        matchType: "inventory" as const,
+        inventoryItemId: String(row.id),
+        priceChartingId: String(row.pricecharting_id || ""),
+        sku: String(row.sku || ""),
+        name: String(row.product_name || ""),
+        expansion: String(row.expansion || ""),
+        number: String(row.card_number || ""),
+        language: String(row.language || ""),
+        condition: String(row.condition || ""),
+        finish: String(row.finish || ""),
+        gradingCompany: String(row.grading_company || ""),
+        grade: String(row.grade || ""),
+        availableQuantity: Number(row.available_quantity || 0),
+        priceArs: Number(row.price_ars || 0),
+        priceUsd: optionalMobileNumber(row.price_usd),
+        imageUrl: String(row.image_url || ""),
+        helper: `${String(row.sku || "")} - disponible ${Number(row.available_quantity || 0)}`,
+        score: 0
+      };
+      return { ...candidate, score: scoreMobileCandidate(query, candidate) };
+    })
+    .filter((candidate) => !query.trim() || candidate.score > 0);
+}
+
+async function searchMobileInventoryCandidates(db: Awaited<typeof dbPromise>, user: AuthenticatedUser, query: string, limit: number): Promise<{ candidates: MobileInventoryCandidate[] }> {
+  const safeLimit = Math.max(1, Math.min(30, Math.floor(limit || 12)));
+  const [stockCandidates, cardIndexData] = await Promise.all([
+    searchStockMobileCandidates(db, user, query, Math.max(safeLimit * 4, 24)),
+    listCardIndex(db, query, safeLimit, "all")
+  ]);
+  const seenPriceCharting = new Set(stockCandidates.map((candidate) => candidate.priceChartingId).filter(Boolean));
+  const indexCandidates = cardIndexData.entries
+    .filter((entry) => !seenPriceCharting.has(entry.priceChartingId))
+    .map((entry) => ({
+      id: entry.id,
+      matchType: "card_index" as const,
+      priceChartingId: entry.priceChartingId,
+      sku: "",
+      name: entry.canonicalName,
+      expansion: entry.canonicalExpansion,
+      number: entry.cardNumber,
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      gradingCompany: "",
+      grade: "",
+      availableQuantity: 0,
+      priceArs: 0,
+      priceUsd: null,
+      imageUrl: entry.imageUrl,
+      helper: `Indice maestro - ${entry.matchStatus}`,
+      score: Math.max(entry.matchConfidence, scoreMobileCandidate(query, {
+        name: entry.canonicalName,
+        expansion: entry.canonicalExpansion,
+        number: entry.cardNumber,
+        priceChartingId: entry.priceChartingId
+      }))
+    }));
+  const candidates = [...stockCandidates, ...indexCandidates]
+    .filter((candidate) => !query.trim() || candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "es", { numeric: true }))
+    .slice(0, safeLimit);
+  return { candidates };
+}
+
 async function handleRequest(request: IncomingMessage, response: ServerResponse) {
+  applyCorsHeaders(request, response);
   if (request.method === "OPTIONS") {
-    response.writeHead(204);
+    response.writeHead(requestCorsOrigin(request) ? 204 : 403);
     response.end();
     return;
   }
 
   try {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+    if (productionMode && request.headers.origin && !requestCorsOrigin(request)) {
+      sendJson(response, 403, { ok: false, error: "Origen no permitido." });
+      return;
+    }
     if (!requestHasAccess(request)) {
       sendJson(response, 401, { ok: false, error: "Clave de acceso requerida o incorrecta." });
       return;
@@ -2060,7 +2841,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     }
 
     if (url.pathname === "/health") {
-      sendJson(response, 200, { ...(await getHealth(db)), environment: { dataProfile, allowExamples, dataDir, priceChartingImageDir } });
+      sendJson(response, 200, { ...(await getHealth(db)), environment: { runtimeEnv, dbDriver, databaseUrlConfigured: Boolean(databaseUrl), allowDatabaseSsl: ["1", "true", "yes", "require"].includes(databaseSsl), dataProfile, allowExamples, dataDir, priceChartingImageDir, priceChartingImageReadDirs, allowedOrigins } });
       return;
     }
 
@@ -2081,6 +2862,49 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (url.pathname === "/mobile-intake/search" && request.method === "GET") {
+      const query = url.searchParams.get("q") || "";
+      const limit = Number(url.searchParams.get("limit") || 12);
+      sendJson(response, 200, await searchMobileInventoryCandidates(db, user, query, limit));
+      return;
+    }
+
+    if (url.pathname === "/mobile-intake/entries" && request.method === "GET") {
+      sendJson(response, 200, await listMobileInventoryEntries(
+        db,
+        user.businessId,
+        url.searchParams.get("status") || "pending",
+        Number(url.searchParams.get("limit") || 500)
+      ));
+      return;
+    }
+
+    if (url.pathname === "/mobile-intake/entries" && request.method === "POST") {
+      const body = await readJson<MobileInventoryInput>(request);
+      sendJson(response, 201, { entry: await createMobileInventoryEntry(db, body, user) });
+      return;
+    }
+
+    if (url.pathname === "/mobile-intake/apply" && request.method === "POST") {
+      const body = await readJson<{ ids?: string[] }>(request).catch((): { ids?: string[] } => ({}));
+      sendJson(response, 200, { result: await applyMobileInventoryEntries(db, user, body.ids) });
+      return;
+    }
+
+    if (url.pathname.match(/^\/mobile-intake\/entries\/[^/]+\/status$/) && request.method === "PUT") {
+      const entryId = url.pathname.split("/")[3];
+      const body = await readJson<{ status?: "pending" | "reviewed" | "rejected" }>(request);
+      const status = body.status === "reviewed" || body.status === "rejected" ? body.status : "pending";
+      sendJson(response, 200, { entry: await updateMobileInventoryEntryStatus(db, entryId, status, user) });
+      return;
+    }
+
+    if (url.pathname.match(/^\/mobile-intake\/entries\/[^/]+$/) && request.method === "DELETE") {
+      const entryId = url.pathname.split("/")[3];
+      sendJson(response, 200, await deleteMobileInventoryEntry(db, entryId, user));
+      return;
+    }
+
     if (url.pathname === "/stock-images/review" && request.method === "GET") {
       const items = await listStockImageReview(db, user.businessId);
       sendJson(response, 200, { items, total: items.length });
@@ -2090,6 +2914,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (url.pathname === "/pricecharting-images/catalog" && request.method === "GET") {
       const entries = await listPriceChartingImageCatalog(db);
       sendJson(response, 200, { entries, total: entries.length });
+      return;
+    }
+
+    if (url.pathname === "/inventory/intake" && request.method === "POST") {
+      const body = await readJson<UpsertInventoryInput>(request);
+      sendJson(response, 200, { item: await addInventoryStock(db, body, user) });
       return;
     }
 
@@ -2103,11 +2933,28 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (url.pathname === "/inventory/reset-stock" && request.method === "POST") {
+      const body = await readJson<{ confirmation?: string }>(request);
+      if (body.confirmation !== "RESET INVENTARIO") {
+        sendJson(response, 400, { error: "Confirmacion invalida. Escribi RESET INVENTARIO para poner el stock en cero." });
+        return;
+      }
+      sendJson(response, 200, { result: await resetInventoryStock(db, user) });
+      return;
+    }
+
     const imageForcePath = url.pathname.replace(/^\/api(?=\/inventory\/)/, "");
     if (imageForcePath.match(/^\/inventory\/[^/]+\/image\/force$/) && request.method === "POST") {
       const inventoryItemId = imageForcePath.split("/")[2];
       const body = await readJson<{ manualUrl?: string; mode?: ImageResolverMode }>(request).catch(() => ({}));
       sendJson(response, 200, await forceInventoryProductImage(db, inventoryItemId, body, user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/inventory\/[^/]+\/tags$/) && request.method === "PUT") {
+      const inventoryItemId = url.pathname.split("/")[2];
+      const body = await readJson<{ tags?: string }>(request);
+      sendJson(response, 200, { item: await updateInventoryItemTags(db, inventoryItemId, body.tags || "", user) });
       return;
     }
 
@@ -2137,6 +2984,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (url.pathname === "/order-boards" && request.method === "GET") {
+      sendJson(response, 200, await getOrderBoards(db, user.businessId));
+      return;
+    }
+    if (url.pathname === "/order-boards" && request.method === "POST") {
+      const body = await readJson<Parameters<typeof changeOrderBoard>[1]>(request);
+      sendJson(response, 200, await changeOrderBoard(db, body, user));
+      return;
+    }
     if (url.pathname === "/sales" && request.method === "GET") {
       sendJson(response, 200, await listSales(db, user.businessId));
       return;
@@ -2388,13 +3244,28 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     }
 
     if (url.pathname === "/card-index/rebuild-pricecharting" && request.method === "POST") {
-      sendJson(response, 200, { status: await refreshCardIndexFromPriceCharting(db) });
+      const body: { afterId?: string; limit?: number } = await readJson<{ afterId?: string; limit?: number }>(request).catch(() => ({}));
+      const batch = await refreshCardIndexFromPriceChartingBatch(db, {
+        afterId: body.afterId,
+        limit: Math.max(1, Math.min(5000, Number(body.limit || 1000)))
+      });
+      sendJson(response, 200, { ...batch });
+      return;
+    }
+
+    if (url.pathname === "/card-index/rebuild-pricecharting-batch" && request.method === "POST") {
+      const body: { afterId?: string; limit?: number } = await readJson<{ afterId?: string; limit?: number }>(request).catch(() => ({}));
+      const batch = await refreshCardIndexFromPriceChartingBatch(db, {
+        afterId: body.afterId,
+        limit: Math.max(1, Math.min(5000, Number(body.limit || 1000)))
+      });
+      sendJson(response, 200, { ...batch });
       return;
     }
 
     if (url.pathname === "/card-index/sync-tcgcsv" && request.method === "POST") {
       const body: { groupOffset?: number; groupLimit?: number; loop?: boolean } = await readJson<{ groupOffset?: number; groupLimit?: number; loop?: boolean }>(request).catch(() => ({}));
-      sendJson(response, 202, await startTcgCsvCardIndexWorker({ groupOffset: body.groupOffset, groupLimit: body.groupLimit, loop: body.loop }));
+      sendJson(response, 200, await syncCardIndexTcgCsvInProcess({ groupOffset: body.groupOffset, groupLimit: body.groupLimit }));
       return;
     }
 
@@ -2464,6 +3335,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
     if (url.pathname === "/pricecharting-images/external-index/status" && request.method === "GET") {
       sendJson(response, 200, { ok: true, index: await getExternalImageIndexStatus() });
+      return;
+    }
+
+    if (url.pathname === "/pricecharting-images/reindex-local" && request.method === "POST") {
+      const body: { limit?: number } = await readJson<{ limit?: number }>(request).catch(() => ({}));
+      const limit = Math.max(1, Math.min(2000, Number(body.limit || 500)));
+      const result = await reindexLocalPriceChartingImages(limit);
+      sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
       return;
     }
 
@@ -2573,7 +3452,7 @@ export function startServer() {
   });
   server.listen(port, () => {
     console.log(`UltimoTurno API listening on http://localhost:${port}`);
-    console.log(`PGlite data dir: ${dataDir}`);
+    console.log(dbDriver === "postgres" ? "Database driver: PostgreSQL remoto" : `PGlite data dir: ${dataDir}`);
     if (priceChartingAutoRefreshEnabled) {
       scheduleNextPriceChartingAutoRefresh();
       console.log(`PriceCharting auto refresh: ${priceChartingAutoRefreshTime} local. Proxima corrida: ${priceChartingAutoRefreshNextRunAt}`);
@@ -2593,5 +3472,25 @@ export function startServer() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  startServer();
+  const server = startServer();
+  const shutdown = (signal: string) => {
+    console.log(`Recibido ${signal}; cerrando API UltimoTurno...`);
+    if (priceChartingAutoRefreshTimer) clearTimeout(priceChartingAutoRefreshTimer);
+    if (tcgplayerPriceAutoRefreshTimer) clearTimeout(tcgplayerPriceAutoRefreshTimer);
+    server.close(() => {
+      void dbPromise
+        .then((db) => db.close())
+        .then(() => {
+          console.log("PGlite cerrada correctamente.");
+          process.exit(0);
+        })
+        .catch((error) => {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exit(1);
+        });
+    });
+    setTimeout(() => process.exit(1), 15000).unref();
+  };
+  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
 }

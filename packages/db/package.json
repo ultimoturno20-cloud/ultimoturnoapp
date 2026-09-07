@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
-    "csv-parse": "^6.2.1"
+    "csv-parse": "^6.2.1",
+    "pg": "^8.23.0"
   }
 }

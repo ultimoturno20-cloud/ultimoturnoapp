@@ -26,3 +26,7 @@ mobile-app/*.err.log
 !.env.example
 .data/
 outputs/
+.work/
+.recovery-tools/
+opencode.json
+siguientes instrucciones.txt

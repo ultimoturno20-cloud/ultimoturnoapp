@@ -60,7 +60,7 @@ evita que el telefono reutilice un bundle viejo.
 ## Probar en PC
 
 ```bash
-cd C:\Users\skype\Documents\Stock\mobile-app
+cd D:\UltimoTurno\Stock\mobile-app
 npm run web
 ```
 
@@ -71,7 +71,7 @@ Si Expo pregunta algo en la terminal, aceptar abrir en navegador.
 Esta app usa Expo SDK 54 y es compatible con Expo Go SDK 54.
 
 ```bash
-cd C:\Users\skype\Documents\Stock\mobile-app
+cd D:\UltimoTurno\Stock\mobile-app
 npm start -- --clear
 ```
 
@@ -98,7 +98,7 @@ puede instalarse junto a la version principal. No necesita Expo Go abierto.
 Antes de compilar:
 
 ```bash
-cd C:\Users\skype\Documents\Stock\mobile-app
+cd D:\UltimoTurno\Stock\mobile-app
 npm run check:deps
 npm run export:android
 ```

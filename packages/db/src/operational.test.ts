@@ -21,6 +21,7 @@ import {
   getPriceChartingImageCacheStatus,
   getTcgplayerPriceCacheStatus,
   loadExampleInventory,
+  listMovements,
   listClaimsWorkspace,
   listPriceChartingCache,
   listStockForBusiness,
@@ -71,8 +72,12 @@ describe("operational inventory database", () => {
     const reopened = await createOperationalDatabase(options);
     const stock = await listStockForBusiness(reopened, user.businessId);
     const persisted = stock.items.find((row) => row.sku === "TEST-PIKA-001");
+    const movements = await listMovements(reopened, user.businessId);
     assert.equal(persisted?.quantityOnHand, 5);
     assert.equal(stock.summary.totalSkus, 1);
+    assert.equal(movements.movements.filter((movement) => movement.sku === "TEST-PIKA-001").length, 2);
+    assert.ok(movements.movements.some((movement) => movement.sku === "TEST-PIKA-001" && movement.quantityDelta === 2 && movement.note === "Carga manual inicial de inventario"));
+    assert.ok(movements.movements.some((movement) => movement.sku === "TEST-PIKA-001" && movement.quantityDelta === 3 && movement.note === "Ajuste test"));
     await reopened.close();
   });
 
@@ -220,6 +225,60 @@ describe("operational inventory database", () => {
     assert.equal(unsoldItem?.quantityOnHand, 3);
     assert.equal(unsoldItem?.quantityReserved, 2);
     assert.equal(unsoldItem?.availableQuantity, 1);
+    await db.close();
+  });
+
+  it("shows cached images for restored claim sale lines without inventory items", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-restored-claim-sale-images-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "restored-claim-sale-image",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "7980043",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/restored-card",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/restored-card",
+        productName: "Restored Claim Card",
+        normalizedName: "restored claim card",
+        expansionName: "Claim Test",
+        normalizedExpansion: "claim test",
+        cardNumber: "7",
+        loosePriceUsd: 10,
+        imageUrl: "",
+        searchKey: "restored claim card claim test 7"
+      }]
+    });
+    await recordPriceChartingImageSuccess(db, {
+      priceChartingId: "7980043",
+      sourceImageUrl: "https://storage.googleapis.com/images.pricecharting.com/7980043/1600.jpg",
+      localPath: path.join(dataDir, "pricecharting-images", "7980043.jpg"),
+      publicUrl: "/pricecharting-images/files/7980043.jpg",
+      contentType: "image/jpeg",
+      byteSize: 207117,
+      contentHash: "restored-hash"
+    });
+
+    await db.query(`
+      insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, created_by)
+      values ('00000000-0000-4000-8000-000000000101', $1, 'Cliente restaurado', 'reservation', 'pending', 'claim', 12000, 0, $2)
+    `, [user.businessId, user.id]);
+    await db.query(`
+      insert into sale_items (
+        id, business_id, sale_id, inventory_item_id, quantity, unit_price_ars, line_total_ars, display_name, sku_snapshot
+      )
+      values (
+        '00000000-0000-4000-8000-000000000102', $1, '00000000-0000-4000-8000-000000000101',
+        null, 1, 12000, 12000, 'Restored Claim Card - Claim Test - $12000', 'PKM-PC-7980043'
+      )
+    `, [user.businessId]);
+
+    const sales = await listSales(db, user.businessId);
+    assert.equal(sales.sales.length, 1);
+    assert.equal(sales.sales[0].lines[0].inventoryItemId, "");
+    assert.equal(sales.sales[0].lines[0].imageUrl, "/pricecharting-images/files/7980043.jpg");
     await db.close();
   });
 

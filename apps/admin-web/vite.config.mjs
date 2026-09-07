@@ -9,7 +9,7 @@ export default defineConfig({
     allowedHosts: [".trycloudflare.com", ".ngrok-free.app"],
     proxy: {
       "/api": {
-        target: "http://localhost:4000",
+        target: process.env.ULTIMOTURNO_API_PROXY_TARGET || "http://localhost:4000",
         changeOrigin: true,
         rewrite: (requestPath) => requestPath.replace(/^\/api/, "")
       }
