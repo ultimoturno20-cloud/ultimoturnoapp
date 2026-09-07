@@ -2409,15 +2409,26 @@ async function readPublicDataStatus() {
       hasSales: Number(row?.sales || 0) > 0,
       hasClaimCards: Number(row?.claim_cards || 0) > 0
     };
-  } catch {
+  } catch (error) {
     return {
       databaseReachable: false,
+      databaseError: classifyPublicDatabaseError(error),
       hasInventoryItems: false,
       hasStockUnits: false,
       hasSales: false,
       hasClaimCards: false
     };
   }
+}
+
+function classifyPublicDatabaseError(error: unknown) {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  if (message.includes("does not exist") || message.includes("no such table") || message.includes("relation")) return "schema_unavailable";
+  if (message.includes("password") || message.includes("authentication") || message.includes("sasl")) return "authentication_failed";
+  if (message.includes("ssl") || message.includes("certificate") || message.includes("self-signed")) return "ssl_failed";
+  if (message.includes("timeout") || message.includes("etimedout")) return "timeout";
+  if (message.includes("enotfound") || message.includes("econnrefused") || message.includes("fetch failed") || message.includes("connect")) return "connection_failed";
+  return "unknown";
 }
 
 type MobileInventoryCandidate = {
