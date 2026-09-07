@@ -5945,8 +5945,10 @@ function normalizeApiBase(rawValue: string | undefined) {
 async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
   const accessKey = getStoredAccessKey();
   const requestPath = path.startsWith("/") ? path : `/${path}`;
-  const response = await fetch(`${apiBase}${requestPath}`, {
-    method: options.method || "GET",
+  const requestUrl = `${apiBase}${requestPath}`;
+  const method = options.method || "GET";
+  const response = await fetch(requestUrl, {
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(accessKey ? { "X-UltimoTurno-Access-Key": accessKey } : {}),
@@ -5956,7 +5958,8 @@ async function api<T>(path: string, options: { token?: string; method?: string; 
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(String(payload.error || `Error ${response.status}`));
+    const detail = String(payload.error || response.statusText || `Error ${response.status}`);
+    const error = new Error(`${method} ${requestUrl} -> ${response.status}: ${detail}`);
     (error as Error & { status?: number }).status = response.status;
     throw error;
   }
@@ -7036,5 +7039,6 @@ function errorMessage(error: unknown) {
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+
 
 
