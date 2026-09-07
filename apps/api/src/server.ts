@@ -2780,10 +2780,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
   }
 
   try {
-    const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+    let url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
     if (productionMode && request.headers.origin && !requestCorsOrigin(request)) {
       sendJson(response, 403, { ok: false, error: "Origen no permitido." });
       return;
+    }
+    if (url.pathname === "/dispatch") {
+      const targetPath = url.searchParams.get("path") || "/";
+      request.url = targetPath.startsWith("/") && !targetPath.startsWith("//") ? targetPath : "/";
+      url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     }
     if (!requestHasAccess(request)) {
       sendJson(response, 401, { ok: false, error: "Clave de acceso requerida o incorrecta." });
@@ -3510,5 +3515,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
 }
+
 
 
