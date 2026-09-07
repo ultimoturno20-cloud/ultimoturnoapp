@@ -917,7 +917,7 @@ function App() {
   }, [error, message]);
 
   useEffect(() => {
-    window.localStorage.setItem(importDraftStorageKey, JSON.stringify({ csvText, batch: importBatch }));
+    writeLocalStorage(importDraftStorageKey, JSON.stringify({ csvText, batch: importBatch }));
   }, [csvText, importBatch]);
 
   useEffect(() => {
@@ -1819,7 +1819,7 @@ function App() {
       setCsvText("");
       setImportResolutions({});
       setImportBatch(defaultImportBatch());
-      window.localStorage.removeItem(importDraftStorageKey);
+      removeLocalStorage(importDraftStorageKey);
       const receipt = `${result.alreadyApplied ? "Este lote ya estaba cargado" : "Lote cargado"}: ${result.applied} fila(s), ${result.skipped} omitida(s).`;
       setImportFeedback(receipt);
       showMessage(receipt);
@@ -5145,7 +5145,7 @@ function MobileIntakeView(props: {
   onExit: () => void;
 }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [helperName, setHelperName] = useState(() => window.localStorage.getItem(mobileHelperStorageKey) || "");
+  const [helperName, setHelperName] = useState(() => readLocalStorage(mobileHelperStorageKey));
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -5159,11 +5159,11 @@ function MobileIntakeView(props: {
     expansion: "",
     number: "",
     language: "EN",
-    condition: window.localStorage.getItem(mobileConditionStorageKey) || "NM",
+    condition: readLocalStorage(mobileConditionStorageKey) || "NM",
     finish: "normal",
     quantityOnHand: "1",
     location: "",
-    intakeBatch: window.localStorage.getItem(mobileBatchStorageKey) || "",
+    intakeBatch: readLocalStorage(mobileBatchStorageKey),
     priceArs: "0",
     priceUsd: "0",
     notes: ""
@@ -5174,11 +5174,11 @@ function MobileIntakeView(props: {
   todayStart.setHours(0, 0, 0, 0);
   const todayEntries = props.entries.filter((entry) => new Date(entry.createdAt).getTime() >= todayStart.getTime()).length;
   useEffect(() => {
-    window.localStorage.setItem(mobileHelperStorageKey, helperName);
+    writeLocalStorage(mobileHelperStorageKey, helperName);
   }, [helperName]);
   useEffect(() => {
-    window.localStorage.setItem(mobileBatchStorageKey, draft.intakeBatch);
-    window.localStorage.setItem(mobileConditionStorageKey, draft.condition);
+    writeLocalStorage(mobileBatchStorageKey, draft.intakeBatch);
+    writeLocalStorage(mobileConditionStorageKey, draft.condition);
   }, [draft.intakeBatch, draft.condition]);
   useEffect(() => {
     const clean = query.trim();
@@ -5213,7 +5213,7 @@ function MobileIntakeView(props: {
       expansion: candidate.expansion,
       number: candidate.number,
       language: candidate.language || current.language,
-      condition: window.localStorage.getItem(mobileConditionStorageKey) || candidate.condition || current.condition,
+      condition: readLocalStorage(mobileConditionStorageKey) || candidate.condition || current.condition,
       finish: candidate.finish || current.finish,
       priceArs: candidate.priceArs ? String(candidate.priceArs) : current.priceArs,
       priceUsd: candidate.priceUsd ? String(candidate.priceUsd) : current.priceUsd
@@ -5889,26 +5889,49 @@ function AccessGate({
   );
 }
 
-function getStoredAccessKey() {
+function readLocalStorage(key: string) {
+  if (typeof window === "undefined") return "";
   try {
-    return window.localStorage.getItem(accessKeyStorageKey) || "";
+    return window.localStorage?.getItem(key) || "";
   } catch {
     return "";
   }
 }
 
-function setStoredAccessKey(value: string) {
+function writeLocalStorage(key: string, value: string) {
+  if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(accessKeyStorageKey, value);
+    window.localStorage?.setItem(key, value);
+  } catch {
+    // Algunas vistas embebidas bloquean storage; la app debe seguir operando.
+  }
+}
+
+function removeLocalStorage(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.removeItem(key);
+  } catch {
+    // Sin accion: es solo persistencia local.
+  }
+}
+
+function getStoredAccessKey() {
+  return readLocalStorage(accessKeyStorageKey);
+}
+
+function setStoredAccessKey(value: string) {
+  writeLocalStorage(accessKeyStorageKey, value);
+  try {
     document.cookie = `${accessKeyCookieName}=${encodeURIComponent(value)}; path=/; SameSite=Lax`;
   } catch {
-    // El header igualmente queda cubierto por localStorage cuando esta disponible.
+    // El header igualmente queda cubierto por storage cuando esta disponible.
   }
 }
 
 function clearStoredAccessKey() {
+  removeLocalStorage(accessKeyStorageKey);
   try {
-    window.localStorage.removeItem(accessKeyStorageKey);
     document.cookie = `${accessKeyCookieName}=; path=/; max-age=0; SameSite=Lax`;
   } catch {
     // Sin accion: es solo limpieza de credencial local.
@@ -6058,7 +6081,7 @@ function defaultImportBatch(): ImportBatchState {
 function readImportDraft(): { csvText: string; batch: ImportBatchState } {
   if (typeof window === "undefined") return { csvText: "", batch: defaultImportBatch() };
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(importDraftStorageKey) || "{}") as { csvText?: string; batch?: Partial<ImportBatchState> };
+    const parsed = JSON.parse(readLocalStorage(importDraftStorageKey) || "{}") as { csvText?: string; batch?: Partial<ImportBatchState> };
     return {
       csvText: String(parsed.csvText || ""),
       batch: { ...defaultImportBatch(), ...(parsed.batch || {}) }
