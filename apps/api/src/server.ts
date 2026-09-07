@@ -2790,6 +2790,22 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       request.url = targetPath.startsWith("/") && !targetPath.startsWith("//") ? targetPath : "/";
       url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     }
+
+    if (url.pathname === "/public-status" && request.method === "GET") {
+      sendJson(response, 200, {
+        ok: true,
+        environment: {
+          runtimeEnv,
+          dbDriver,
+          databaseUrlConfigured: Boolean(databaseUrl),
+          dataProfile,
+          allowExamples,
+          requiresAccessKey: Boolean(sharedAccessKey)
+        }
+      });
+      return;
+    }
+
     if (!requestHasAccess(request)) {
       sendJson(response, 401, { ok: false, error: "Clave de acceso requerida o incorrecta." });
       return;
