@@ -909,11 +909,10 @@ function App() {
   }, [priceChartingImages.totalEntries, view]);
 
   useEffect(() => {
-    if (!message && !error) return;
+    if (!message || error) return;
     const timeout = window.setTimeout(() => {
       setMessage("");
-      setError("");
-    }, error ? 6000 : 3500);
+    }, 3500);
     return () => window.clearTimeout(timeout);
   }, [error, message]);
 
@@ -7037,4 +7036,5 @@ function errorMessage(error: unknown) {
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+
 
