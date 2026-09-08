@@ -3257,10 +3257,20 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             {!pickerSearching && pickerEntries.length ? <div className="catalog-picker-results">
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
                 {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
-                <div className="catalog-picker-card-copy"><strong>{entry.productName}</strong><span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span></div>
-                {entry.finish && entry.finish !== "normal" ? <span className="badge">{finishLabel(entry.finish)}</span> : null}
-                {entry.language ? <span className="badge">{entry.language}</span> : null}
-                <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />
+                <div className="catalog-picker-card-copy">
+                  <strong>{cleanCatalogPickerName(entry)}</strong>
+                  <span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span>
+                  <small>{entry.canonicalUrl ? catalogSourceLabel(entry) : "Inventario local"}</small>
+                </div>
+                <div className="catalog-picker-meta">
+                  <div className="catalog-picker-badges">
+                    {entry.finish && entry.finish !== "normal" ? <span className="badge">{finishLabel(entry.finish)}</span> : null}
+                    {entry.language ? <span className="badge">{entry.language}</span> : null}
+                  </div>
+                  {entry.loosePriceUsd === null || entry.loosePriceUsd === undefined ? (
+                    <span className="catalog-picker-price missing-price"><strong>{isTcgCatalogEntry(entry) ? "Referencia TCG" : "Sin precio PC"}</strong><em>imagen/catalogo</em></span>
+                  ) : <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />}
+                </div>
               </button>)}
             </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
           </section> : null}
@@ -6720,15 +6730,53 @@ function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
 
 function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback: PriceChartingCacheEntry[], limit: number): PriceChartingCacheEntry[] {
   const seen = new Set<string>();
+  const seenCatalogIdentity = new Set<string>();
   const merged: PriceChartingCacheEntry[] = [];
-  for (const entry of [...primary, ...fallback]) {
+  const sortedPrimary = [...primary].sort((left, right) => {
+    const leftHasPrice = left.loosePriceUsd !== null && left.loosePriceUsd !== undefined;
+    const rightHasPrice = right.loosePriceUsd !== null && right.loosePriceUsd !== undefined;
+    if (leftHasPrice !== rightHasPrice) return leftHasPrice ? -1 : 1;
+    const leftHasImage = Boolean(left.imageUrl);
+    const rightHasImage = Boolean(right.imageUrl);
+    if (leftHasImage !== rightHasImage) return leftHasImage ? -1 : 1;
+    return left.productName.localeCompare(right.productName, "es", { numeric: true });
+  });
+  for (const entry of [...sortedPrimary, ...fallback]) {
     const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
+    const identity = catalogPickerIdentity(entry);
+    const isReferenceOnly = isTcgCatalogEntry(entry) && (entry.loosePriceUsd === null || entry.loosePriceUsd === undefined);
     if (seen.has(key)) continue;
+    if (isReferenceOnly && seenCatalogIdentity.has(identity)) continue;
     seen.add(key);
+    seenCatalogIdentity.add(identity);
     merged.push(entry);
     if (merged.length >= limit) break;
   }
   return merged;
+}
+
+function isTcgCatalogEntry(entry: PriceChartingCacheEntry) {
+  return entry.priceChartingId.startsWith("tcgcsv-") || entry.canonicalUrl.includes("tcgplayer.com");
+}
+
+function catalogSourceLabel(entry: PriceChartingCacheEntry) {
+  if (isTcgCatalogEntry(entry)) return "TCGPlayer";
+  return "PriceCharting";
+}
+
+function cleanCatalogPickerName(entry: PriceChartingCacheEntry) {
+  const name = entry.productName.replace(/\s+-\s+\d+\s*\/\s*\d+\s*$/i, "").trim();
+  return name || entry.productName;
+}
+
+function catalogPickerIdentity(entry: PriceChartingCacheEntry) {
+  return [
+    normalize(cleanCatalogPickerName(entry)),
+    normalize(entry.expansionName),
+    primaryCardNumber(entry.cardNumber || ""),
+    normalize(entry.language || entry.languageGroup || ""),
+    normalize(entry.finish || "normal")
+  ].join("|");
 }
 
 function finishLabel(value: string) {

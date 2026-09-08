@@ -5810,25 +5810,26 @@ select {
 
 .catalog-picker-results {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   max-height: min(52vh, 520px);
   overflow-y: auto;
-  padding-right: 2px;
+  padding: 2px 4px 2px 0;
 }
 
 .catalog-picker-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) minmax(108px, auto);
-  gap: 10px;
+  grid-template-columns: 58px minmax(0, 1fr) minmax(132px, auto);
+  gap: 12px;
   align-items: center;
   width: 100%;
-  min-height: 68px;
-  padding: 9px;
+  min-height: 82px;
+  padding: 10px;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   color: var(--text);
   text-align: left;
   background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
 }
 
 .catalog-picker-row:hover,
@@ -5839,28 +5840,80 @@ select {
 
 .catalog-picker-row img,
 .catalog-picker-row .image-placeholder {
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 58px;
   object-fit: contain;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .catalog-picker-card-copy {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: 3px;
 }
 
 .catalog-picker-row strong,
-.catalog-picker-row span {
+.catalog-picker-row span,
+.catalog-picker-row small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.catalog-picker-card-copy strong {
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.catalog-picker-card-copy span {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.catalog-picker-card-copy small {
+  color: var(--muted-2);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.catalog-picker-meta {
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  min-width: 132px;
+  gap: 7px;
+}
+
+.catalog-picker-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 20px;
+}
+
 .catalog-picker-price {
   justify-items: end;
-  min-width: 108px;
+  min-width: 132px;
   text-align: right;
+}
+
+.catalog-picker-price.missing-price {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+}
+
+.catalog-picker-price.missing-price strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.catalog-picker-price.missing-price em {
+  color: var(--muted-2);
+  font-size: 11px;
+  font-style: normal;
 }
 
 .selected-catalog-card {
@@ -6136,8 +6189,17 @@ select {
     height: 44px;
   }
 
-  .catalog-picker-price {
+  .catalog-picker-meta {
     grid-column: 2;
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .catalog-picker-badges {
+    justify-content: flex-start;
+  }
+
+  .catalog-picker-price {
     justify-items: start;
     min-width: 0;
     text-align: left;
