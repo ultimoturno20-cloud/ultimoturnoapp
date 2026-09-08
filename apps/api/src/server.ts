@@ -2402,7 +2402,8 @@ function selectDatabaseUrl(): DatabaseUrlChoice {
     { source: "DATABASE_URL", value: cleanDatabaseUrlValue("DATABASE_URL", process.env.DATABASE_URL) },
     { source: "POSTGRES_URL", value: cleanDatabaseUrlValue("POSTGRES_URL", process.env.POSTGRES_URL) },
     { source: "POSTGRES_PRISMA_URL", value: cleanDatabaseUrlValue("POSTGRES_PRISMA_URL", process.env.POSTGRES_PRISMA_URL) },
-    { source: "POSTGRES_URL_NON_POOLING", value: cleanDatabaseUrlValue("POSTGRES_URL_NON_POOLING", process.env.POSTGRES_URL_NON_POOLING) }
+    { source: "POSTGRES_URL_NON_POOLING", value: cleanDatabaseUrlValue("POSTGRES_URL_NON_POOLING", process.env.POSTGRES_URL_NON_POOLING) },
+    { source: "POSTGRES_COMPONENTS", value: buildPostgresUrlFromComponents() }
   ]
     .filter((candidate) => candidate.value)
     .map((candidate) => ({ ...candidate, endpointKind: classifyPostgresEndpoint(candidate.value) }));
@@ -2416,12 +2417,28 @@ function selectDatabaseUrl(): DatabaseUrlChoice {
 
 function cleanDatabaseUrlValue(key: string, rawValue: unknown) {
   let value = String(rawValue || "").trim();
-  const assignment = value.match(/^(DATABASE_URL|POSTGRES_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING)\s*=\s*(.+)$/i);
-  if (assignment) value = assignment[2].trim();
+  const assignment = value.match(new RegExp(`(?:^|[\\r\\n])\\s*${key}\\s*=\\s*([^\\r\\n]+)`, "i"))
+    || value.match(/^(DATABASE_URL|POSTGRES_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING)\s*=\s*([^\r\n]+)$/i);
+  if (assignment) value = String(assignment[2] || assignment[1] || "").trim();
   if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1).trim();
   }
-  return value.replace(new RegExp(`^${key}\\s*=\\s*`, "i"), "").trim();
+  const embeddedUrl = value.match(/postgres(?:ql)?:\/\/[^\s"'`]+/i);
+  if (embeddedUrl) value = embeddedUrl[0].trim();
+  return value
+    .replace(new RegExp(`^${key}\\s*=\\s*`, "i"), "")
+    .replace(/[),;]+$/, "")
+    .trim();
+}
+
+function buildPostgresUrlFromComponents() {
+  const host = String(process.env.POSTGRES_HOST || "").trim();
+  const user = String(process.env.POSTGRES_USER || "").trim();
+  const password = String(process.env.POSTGRES_PASSWORD || "").trim();
+  const database = String(process.env.POSTGRES_DATABASE || process.env.POSTGRES_DB || "postgres").trim();
+  const port = String(process.env.POSTGRES_PORT || "5432").trim();
+  if (!host || !user || !password) return "";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database || "postgres")}`;
 }
 
 function isSupabaseDirectEndpoint(value: string) {
