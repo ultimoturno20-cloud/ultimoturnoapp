@@ -91,6 +91,7 @@ import {
   type UpsertInventoryInput
 } from "@ultimoturno/db";
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
+import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2410,6 +2411,96 @@ function normalizeDispatchTarget(url: URL) {
   return `${targetPath}${targetPath.includes("?") ? "&" : "?"}${extraQuery}`;
 }
 
+type PilotStockRestoreSummary = {
+  manifestRows: number;
+  manifestUnits: number;
+  manifestReservedUnits: number;
+  matchedRows: number;
+  currentUnits: number;
+  currentReservedUnits: number;
+  targetUnits: number;
+  targetReservedUnits: number;
+};
+
+function pilotStockManifestSummary(rows: PilotStockQuantityRestoreRow[]) {
+  return {
+    manifestRows: rows.length,
+    manifestUnits: rows.reduce((sum, row) => sum + row.quantityOnHand, 0),
+    manifestReservedUnits: rows.reduce((sum, row) => sum + row.quantityReserved, 0)
+  };
+}
+
+async function previewPilotStockQuantityRestore(db: Awaited<typeof dbPromise>): Promise<PilotStockRestoreSummary> {
+  const manifest = pilotStockManifestSummary(pilotStockQuantityRestoreRows);
+  const result = await db.query<{ matched_rows: string; current_units: string; current_reserved_units: string }>(`
+    select
+      count(ii.id)::text as matched_rows,
+      coalesce(sum(ii.quantity_on_hand), 0)::text as current_units,
+      coalesce(sum(ii.quantity_reserved), 0)::text as current_reserved_units
+    from inventory_items ii
+    where ii.active = true
+      and lower(ii.sku) = any($1::text[])
+  `, [pilotStockQuantityRestoreRows.map((row) => row.sku.toLowerCase())]);
+  const row = result.rows[0];
+  return {
+    ...manifest,
+    matchedRows: Number(row?.matched_rows || 0),
+    currentUnits: Number(row?.current_units || 0),
+    currentReservedUnits: Number(row?.current_reserved_units || 0),
+    targetUnits: manifest.manifestUnits,
+    targetReservedUnits: manifest.manifestReservedUnits
+  };
+}
+
+async function restorePilotStockQuantities(db: Awaited<typeof dbPromise>, actor: AuthenticatedUser) {
+  const before = await previewPilotStockQuantityRestore(db);
+  const runId = crypto.randomUUID();
+  await db.exec("begin");
+  try {
+    const valuesSql = pilotStockQuantityRestoreRows.map((_, index) => {
+      const offset = index * 3;
+      return `($${offset + 1}, $${offset + 2}, $${offset + 3})`;
+    }).join(", ");
+    const values = pilotStockQuantityRestoreRows.flatMap((row) => [row.sku, row.quantityOnHand, row.quantityReserved]);
+    const update = await db.query<{ updated_rows: string; total_units: string; reserved_units: string }>(`
+      with restore_values(sku, quantity_on_hand, quantity_reserved) as (
+        values ${valuesSql}
+      ), updated as (
+        update inventory_items ii
+        set quantity_on_hand = rv.quantity_on_hand,
+            quantity_reserved = rv.quantity_reserved,
+            updated_at = now()
+        from restore_values rv
+        where ii.active = true
+          and lower(ii.sku) = lower(rv.sku)
+        returning ii.sku, ii.quantity_on_hand, ii.quantity_reserved
+      )
+      select count(*)::text as updated_rows,
+             coalesce(sum(quantity_on_hand), 0)::text as total_units,
+             coalesce(sum(quantity_reserved), 0)::text as reserved_units
+      from updated
+    `, values);
+    const updated = update.rows[0];
+    const after = await previewPilotStockQuantityRestore(db);
+    await db.query(`
+      insert into audit_log (id, business_id, actor_user_id, action, entity_type, entity_id, before_data, after_data)
+      values ($1, $2, $3, 'inventory.restore_pilot_quantities', 'inventory', $4, $5::jsonb, $6::jsonb)
+    `, [crypto.randomUUID(), actor.businessId, actor.id, runId, JSON.stringify(before), JSON.stringify(after)]);
+    await db.exec("commit");
+    return {
+      runId,
+      before,
+      after,
+      updatedRows: Number(updated?.updated_rows || 0),
+      totalUnits: Number(updated?.total_units || 0),
+      reservedUnits: Number(updated?.reserved_units || 0)
+    };
+  } catch (error) {
+    await db.exec("rollback").catch(() => undefined);
+    throw error;
+  }
+}
+
 type DatabaseUrlChoice = {
   value: string;
   source: string;
@@ -3197,6 +3288,21 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         return;
       }
       sendJson(response, 200, { result: await resetInventoryStock(db, user) });
+      return;
+    }
+
+    if (url.pathname === "/inventory/restore-pilot-stock" && request.method === "POST") {
+      const body = await readJson<{ apply?: boolean; confirmation?: string }>(request);
+      const preview = await previewPilotStockQuantityRestore(db);
+      if (!body.apply) {
+        sendJson(response, 200, { ok: true, dryRun: true, preview });
+        return;
+      }
+      if (body.confirmation !== "RESTAURAR STOCK PILOTO") {
+        sendJson(response, 400, { ok: false, error: "Confirmacion invalida. Escribi RESTAURAR STOCK PILOTO para aplicar cantidades." });
+        return;
+      }
+      sendJson(response, 200, { ok: true, dryRun: false, result: await restorePilotStockQuantities(db, user) });
       return;
     }
 
