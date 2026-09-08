@@ -527,6 +527,7 @@ type PriceChartingCacheEntry = {
   expansionName: string;
   cardNumber: string;
   languageGroup: LanguageGroupFilter;
+  language?: string;
   loosePriceUsd: number | null;
   imageUrl: string;
   importedAt: string;
@@ -2308,6 +2309,7 @@ function App() {
           onForceImage={() => void forceProductImage()}
           onForceManualImage={forceProductImageManual}
           priceChartingCache={priceChartingCache}
+          allItems={stock.items}
           onSearchPriceCharting={(search) => void searchPriceChartingCache(search)}
         />
       ) : null}
@@ -3094,7 +3096,7 @@ function CartPanel(props: {
   );
 }
 
-function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage, priceChartingCache, onSearchPriceCharting }: {
+function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, onSearchPriceCharting }: {
   receipt: string;
   form: InventoryFormState;
   editing: boolean;
@@ -3107,6 +3109,7 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
   onForceImage: () => void;
   onForceManualImage: () => void;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
+  allItems: StockRow[];
   onSearchPriceCharting: (search: string) => void;
 }) {
   useEffect(() => {
@@ -3129,13 +3132,13 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
           <button className="modal-close" aria-label="Cerrar formulario" title="Cerrar" onClick={onClose}><Icon name="close" /></button>
         </header>
         {receipt ? <p className="intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
-        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Agregar stock y seguir"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} priceChartingCache={priceChartingCache} onSearchPriceCharting={onSearchPriceCharting} />
+        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Agregar stock y seguir"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} priceChartingCache={priceChartingCache} allItems={allItems} onSearchPriceCharting={onSearchPriceCharting} />
       </section>
     </div>
   );
 }
 
-function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, imageForcing, onForceImage, onForceManualImage, priceChartingCache, onSearchPriceCharting }: {
+function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, onSearchPriceCharting }: {
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -3148,9 +3151,11 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   onForceImage: () => void;
   onForceManualImage: () => void;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
+  allItems: StockRow[];
   onSearchPriceCharting: (search: string) => void;
 }) {
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [pickerLanguageGroup, setPickerLanguageGroup] = useState<LanguageGroupFilter>("all");
   const [pickerEntries, setPickerEntries] = useState<PriceChartingCacheEntry[]>([]);
   const [pickerSearching, setPickerSearching] = useState(false);
   const [pickerError, setPickerError] = useState("");
@@ -3160,10 +3165,15 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerSearching(true);
     setPickerError("");
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&limit=60`);
-      if (sequence === pickerSequence.current) setPickerEntries(result.entries);
+      const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
+      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
+      if (sequence === pickerSequence.current) setPickerEntries(mergeCatalogPickerEntries(result.entries, fallbackEntries, 60));
     } catch (error) {
-      if (sequence === pickerSequence.current) { setPickerEntries([]); setPickerError(errorMessage(error)); }
+      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
+      if (sequence === pickerSequence.current) {
+        setPickerEntries(fallbackEntries);
+        setPickerError(fallbackEntries.length ? "" : errorMessage(error));
+      }
     } finally { if (sequence === pickerSequence.current) setPickerSearching(false); }
   }
   useEffect(() => {
@@ -3172,7 +3182,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerSearching(true);
     const timer = window.setTimeout(() => void searchPicker(catalogSearch), 300);
     return () => { window.clearTimeout(timer); ++pickerSequence.current; };
-  }, [catalogSearch]);
+  }, [allItems, catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
   const [showDetails, setShowDetails] = useState(editing);
   useEffect(() => { if (!editing && !form.name) setCatalogPickerOpen(true); }, [editing, form.name]);
@@ -3194,6 +3204,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       imageUrl: entry.imageUrl,
       priceChartingId: entry.priceChartingId,
       priceChartingUrl: entry.canonicalUrl,
+      language: entry.language || form.language,
       priceUsd,
       priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : form.priceArs
     });
@@ -3231,7 +3242,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
 
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
-            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{priceChartingCache.status.totalEntries.toLocaleString("es-AR")} cartas</strong></div>
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas</strong></div>
+            <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
             <div className="catalog-picker-search">
               <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
               <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)}><Icon name="search" />Buscar</button>
@@ -3240,6 +3252,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
                 {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
                 <div className="catalog-picker-card-copy"><strong>{entry.productName}</strong><span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span></div>
+                {entry.language ? <span className="badge">{entry.language}</span> : null}
                 <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />
               </button>)}
             </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
@@ -6642,6 +6655,56 @@ function scoreStockSearch(item: StockRow, query: ReturnType<typeof parseUiSearch
   }
   if (query.raw && haystack.includes(query.raw)) score += 10;
   return score;
+}
+
+function searchInventoryCatalogEntries(items: StockRow[], search: string, languageGroup: LanguageGroupFilter, limit: number): PriceChartingCacheEntry[] {
+  const query = parseUiSearchQuery(search);
+  const seen = new Set<string>();
+  return items
+    .filter((item) => languageGroup === "all" || inventoryLanguageGroup(item.variant.language) === languageGroup)
+    .map((item) => ({ item, score: scoreStockSearch(item, query) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.item.product.name.localeCompare(right.item.product.name, "es", { numeric: true }))
+    .map(({ item }) => stockRowToCatalogEntry(item))
+    .filter((entry) => {
+      const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
+  const priceChartingIdentifier = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
+  const priceChartingReference = item.priceReferences?.priceCharting;
+  const priceChartingId = priceChartingReference?.priceChartingId || priceChartingIdentifier?.externalId || item.sku;
+  return {
+    priceChartingId,
+    canonicalUrl: priceChartingReference?.url || priceChartingIdentifier?.url || "",
+    sourceUrl: "",
+    productName: item.product.name,
+    expansionName: item.product.expansion,
+    cardNumber: item.product.number || "",
+    languageGroup: inventoryLanguageGroup(item.variant.language),
+    language: item.variant.language,
+    loosePriceUsd: priceChartingReference?.usd ?? item.priceUsd,
+    imageUrl: item.product.imageUrl || "",
+    importedAt: ""
+  };
+}
+
+function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback: PriceChartingCacheEntry[], limit: number): PriceChartingCacheEntry[] {
+  const seen = new Set<string>();
+  const merged: PriceChartingCacheEntry[] = [];
+  for (const entry of [...primary, ...fallback]) {
+    const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(entry);
+    if (merged.length >= limit) break;
+  }
+  return merged;
 }
 
 const arsFormatter = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
