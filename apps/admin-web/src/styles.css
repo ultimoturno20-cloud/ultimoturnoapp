@@ -122,6 +122,11 @@ button:hover:not(:disabled) {
   border-color: rgba(245, 197, 66, 0.45);
 }
 
+.warning-action {
+  color: var(--yellow);
+  border-color: rgba(245, 197, 66, 0.45);
+}
+
 .brand-lockup {
   display: flex;
   align-items: center;

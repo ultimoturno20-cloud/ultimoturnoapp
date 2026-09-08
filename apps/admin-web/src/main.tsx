@@ -808,6 +808,7 @@ function App() {
   const [showStockImageReview, setShowStockImageReview] = useState(false);
   const [stockImageReview, setStockImageReview] = useState<{ items: StockImageReviewItem[]; total: number }>({ items: [], total: 0 });
   const [stockImageReviewLoading, setStockImageReviewLoading] = useState(false);
+  const [stockRestoring, setStockRestoring] = useState(false);
   const [showImageCatalog, setShowImageCatalog] = useState(false);
   const [imageCatalog, setImageCatalog] = useState<{ entries: ImageCatalogEntry[]; total: number }>({ entries: [], total: 0 });
   const [imageCatalogLoading, setImageCatalogLoading] = useState(false);
@@ -1929,6 +1930,32 @@ function App() {
     }
   }
 
+  async function restorePilotStockFromManifest() {
+    if (stockRestoring) return;
+    setStockRestoring(true);
+    try {
+      const dryRun = await api<{ preview: { manifestRows: number; manifestUnits: number; manifestReservedUnits: number; matchedRows: number; currentUnits: number; currentReservedUnits: number } }>("/inventory/restore-pilot-stock", {
+        method: "POST",
+        body: {}
+      });
+      const confirmation = window.prompt(`Se van a restaurar ${dryRun.preview.manifestUnits} unidades (${dryRun.preview.manifestReservedUnits} reservadas) en ${dryRun.preview.matchedRows}/${dryRun.preview.manifestRows} SKUs. Escribi RESTAURAR STOCK PILOTO para aplicar.`);
+      if (confirmation !== "RESTAURAR STOCK PILOTO") {
+        showError(new Error("Restauracion cancelada."));
+        return;
+      }
+      const result = await api<{ result: { updatedRows: number; totalUnits: number; reservedUnits: number } }>("/inventory/restore-pilot-stock", {
+        method: "POST",
+        body: { apply: true, confirmation }
+      });
+      showMessage(`Stock restaurado: ${result.result.updatedRows} SKUs, ${result.result.totalUnits} unidades, ${result.result.reservedUnits} reservadas.`);
+      await refresh();
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setStockRestoring(false);
+    }
+  }
+
   const activeReservations = sales.filter((sale) => sale.saleType === "reservation" && sale.status !== "cancelled" && sale.status !== "delivered");
   const paidSales = sales.filter((sale) => sale.status === "paid" || sale.status === "delivered");
   const todayStart = new Date();
@@ -2045,6 +2072,8 @@ function App() {
           onCreate={startCreate}
           onImport={() => setView("import")}
           onLoadExamples={environment.allowExamples ? loadExamples : undefined}
+          onRestorePilotStock={!environment.allowExamples && stock.items.length > 0 && stock.summary.totalUnits === 0 ? restorePilotStockFromManifest : undefined}
+          stockRestoring={stockRestoring}
           onQuickOrder={() => startQuickOrder("reservation")}
           onGoInventory={() => setView("inventory")}
           onGoOrders={() => setView("orders")}
@@ -2281,6 +2310,8 @@ function Dashboard({
   onCreate,
   onImport,
   onLoadExamples,
+  onRestorePilotStock,
+  stockRestoring,
   onQuickOrder,
   onGoInventory,
   onGoOrders,
@@ -2299,6 +2330,8 @@ function Dashboard({
   onCreate: () => void;
   onImport: () => void;
   onLoadExamples?: () => void;
+  onRestorePilotStock?: () => void;
+  stockRestoring: boolean;
   onQuickOrder: () => void;
   onGoInventory: () => void;
   onGoOrders: () => void;
@@ -2362,6 +2395,7 @@ function Dashboard({
             <button className="primary-action" onClick={onQuickOrder}><Icon name="orders" />Nueva orden</button>
             <button className="primary-action" onClick={onCreate}><Icon name="plus" />Crear producto</button>
             {onLoadExamples ? <button className="secondary-action" onClick={onLoadExamples}>Cargar ejemplos</button> : null}
+            {onRestorePilotStock ? <button className="secondary-action warning-action" disabled={stockRestoring} onClick={onRestorePilotStock}><Icon name="refresh" />{stockRestoring ? "Restaurando..." : "Restaurar stock"}</button> : null}
             <button className="secondary-action" onClick={onImport}><Icon name="import" />Importar stock</button>
           </div>
         </div>
