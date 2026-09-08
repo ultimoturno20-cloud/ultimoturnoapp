@@ -1662,13 +1662,13 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
   params.push(safeLimit);
   const limitPlaceholder = `$${params.length}`;
   const result = await db.query<Record<string, unknown>>(`
-    select pricecharting_id, canonical_url, source_url, product_name,
-      normalized_name, expansion_name, normalized_expansion, card_number,
+    select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
+      pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
       pce.language_group, loose_price_usd,
       coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_match.image_url, '')) as image_url,
       tcg_price.tcgplayer_price_usd,
       tcg_price.tcgplayer_subtype,
-      search_key, imported_at
+      pce.search_key, pce.imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
     left join card_index_entries direct_cie on direct_cie.pricecharting_id = pce.pricecharting_id
