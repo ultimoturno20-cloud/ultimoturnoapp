@@ -3158,6 +3158,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const [catalogSearch, setCatalogSearch] = useState("");
   const [pickerLanguageGroup, setPickerLanguageGroup] = useState<LanguageGroupFilter>("all");
   const [pickerEntries, setPickerEntries] = useState<PriceChartingCacheEntry[]>([]);
+  const [pickerCatalogTotal, setPickerCatalogTotal] = useState(priceChartingCache.status.totalEntries);
   const [pickerSearching, setPickerSearching] = useState(false);
   const [pickerError, setPickerError] = useState("");
   const pickerSequence = useRef(0);
@@ -3166,9 +3167,12 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerSearching(true);
     setPickerError("");
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
+      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
       const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
-      if (sequence === pickerSequence.current) setPickerEntries(mergeCatalogPickerEntries(result.entries, fallbackEntries, 60));
+      if (sequence === pickerSequence.current) {
+        setPickerCatalogTotal(result.status?.totalEntries ?? priceChartingCache.status.totalEntries);
+        setPickerEntries(mergeCatalogPickerEntries(result.entries, fallbackEntries, 60));
+      }
     } catch (error) {
       const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
       if (sequence === pickerSequence.current) {
@@ -3244,7 +3248,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
 
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
-            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas</strong></div>
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas</strong></div>
             <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
             <div className="catalog-picker-search">
               <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
