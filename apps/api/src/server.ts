@@ -110,7 +110,7 @@ const databaseUrlChoice = selectDatabaseUrl();
 const databaseUrl = databaseUrlChoice.value;
 const databaseSsl = String(process.env.ULTIMOTURNO_DATABASE_SSL || (productionMode && dbDriver === "postgres" ? "true" : "false")).toLowerCase();
 const databaseSslEnabled = ["1", "true", "yes", "require"].includes(databaseSsl);
-const databasePoolMax = Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || 10);
+const databasePoolMax = Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || (productionMode ? 1 : 10));
 const deploymentCommitSha = String(process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
 const dbPromise = createOperationalDatabase({
   driver: dbDriver,

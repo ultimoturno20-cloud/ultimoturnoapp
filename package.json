@@ -19,6 +19,7 @@
     "db:postgres:check": "tsx scripts/check-postgres-connection.mts",
     "db:postgres:init": "tsx scripts/init-postgres-schema.mts",
     "db:migrate:pglite-to-postgres": "tsx scripts/migrate-pglite-to-postgres.mts",
+    "images:supabase:upload": "tsx scripts/upload-pricecharting-images-to-supabase.mts",
     "stock:restore:preview": "tsx scripts/preview-stock-quantity-restore.mts",
     "stock:restore:api": "tsx scripts/restore-pilot-stock-api.mts",
     "staging:web": "powershell -ExecutionPolicy Bypass -File scripts/start-staging-web.ps1",
