@@ -1,5 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import crypto from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,7 +95,13 @@ import { parsePriceChartingCsv } from "@ultimoturno/importers";
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..", "..", "..");
-const dataDir = process.env.PGLITE_DATA_DIR || path.resolve(process.cwd(), ".data", "ultimoturno-pilot-real");
+const dataDir = process.env.PGLITE_DATA_DIR || defaultPgliteDataDir();
+
+function defaultPgliteDataDir() {
+  const repoApiDataDir = path.resolve(projectRoot, "apps", "api", ".data", "ultimoturno-pilot-real");
+  if (existsSync(repoApiDataDir)) return repoApiDataDir;
+  return path.resolve(projectRoot, ".data", "ultimoturno-pilot-real");
+}
 const runtimeEnv = String(process.env.ULTIMOTURNO_ENV || "local").trim().toLowerCase() || "local";
 const productionMode = runtimeEnv === "production" || runtimeEnv === "prod";
 const dbDriver = String(process.env.ULTIMOTURNO_DB_DRIVER || "pglite").trim().toLowerCase() === "postgres" ? "postgres" : "pglite";
