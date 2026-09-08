@@ -212,6 +212,9 @@ class PostgresOperationalDatabase {
     this.pool = new Pool({
       connectionString: options.databaseUrl,
       max: options.poolMax || 10,
+      idleTimeoutMillis: 1000,
+      connectionTimeoutMillis: 10000,
+      maxUses: 100,
       ssl: options.ssl ? { rejectUnauthorized: false } : undefined
     });
     databaseDrivers.set(this, "postgres");

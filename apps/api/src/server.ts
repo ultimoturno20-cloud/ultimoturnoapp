@@ -2676,9 +2676,26 @@ function selectDatabaseUrl(): DatabaseUrlChoice {
   const primary = candidates[0] || { source: "none", value: "", endpointKind: "none" };
   const pooler = candidates.find((candidate) => isPooledPostgresEndpoint(candidate.value));
   const firstValid = candidates.find((candidate) => candidate.endpointKind !== "invalid");
+  if (productionMode && dbDriver === "postgres" && primary.endpointKind === "supabase_pooler_session") {
+    return supabaseTransactionPoolerChoice(primary);
+  }
   if (productionMode && dbDriver === "postgres" && pooler && (primary.endpointKind === "invalid" || isSupabaseDirectEndpoint(primary.value))) return pooler;
   if (primary.endpointKind === "invalid" && firstValid) return firstValid;
   return primary;
+}
+
+function supabaseTransactionPoolerChoice(choice: DatabaseUrlChoice): DatabaseUrlChoice {
+  try {
+    const url = new URL(choice.value);
+    url.port = "6543";
+    return {
+      value: url.toString(),
+      source: `${choice.source}:transaction-pooler`,
+      endpointKind: classifyPostgresEndpoint(url.toString())
+    };
+  } catch {
+    return choice;
+  }
 }
 
 function cleanDatabaseUrlValue(key: string, rawValue: unknown) {
