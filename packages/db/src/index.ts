@@ -1222,9 +1222,21 @@ export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options
         pce.card_number,
         pce.language_group,
         pce.canonical_url,
-        coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url
+        coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, '')) as image_url
       from pricecharting_cache_entries pce
       left join pricecharting_image_cache pic using (pricecharting_id)
+      left join lateral (
+        select cie.image_url
+        from card_index_entries cie
+        where cie.pricecharting_id like 'tcgcsv-%'
+          and coalesce(cie.image_url, '') <> ''
+          and cie.language_group = pce.language_group
+          and cie.normalized_expansion = pce.normalized_expansion
+          and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
+              regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
+        order by cie.updated_at desc
+        limit 1
+      ) tcg_image on true
       where pce.pricecharting_id > $1
       order by pce.pricecharting_id
       limit $2
@@ -1651,10 +1663,22 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     select pricecharting_id, canonical_url, source_url, product_name,
       normalized_name, expansion_name, normalized_expansion, card_number,
       pce.language_group, loose_price_usd,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url,
+      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, '')) as image_url,
       search_key, imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
+    left join lateral (
+      select cie.image_url
+      from card_index_entries cie
+      where cie.pricecharting_id like 'tcgcsv-%'
+        and coalesce(cie.image_url, '') <> ''
+        and cie.language_group = pce.language_group
+        and cie.normalized_expansion = pce.normalized_expansion
+        and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
+            regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
+      order by cie.updated_at desc
+      limit 1
+    ) tcg_image on true
     ${whereSql}
     order by pce.product_name, pce.expansion_name, pce.card_number
     limit ${limitPlaceholder}
@@ -3241,10 +3265,22 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
   const result = await db.query<Record<string, unknown>>(`
     select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
       pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
-      pce.language_group, pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url, '') as image_url,
+      pce.language_group, pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, ''), '') as image_url,
       pce.search_key, pce.imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
+    left join lateral (
+      select cie.image_url
+      from card_index_entries cie
+      where cie.pricecharting_id like 'tcgcsv-%'
+        and coalesce(cie.image_url, '') <> ''
+        and cie.language_group = pce.language_group
+        and cie.normalized_expansion = pce.normalized_expansion
+        and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
+            regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
+      order by cie.updated_at desc
+      limit 1
+    ) tcg_image on true
     where pce.pricecharting_id = $1
     limit 1
   `, [priceChartingId]);
