@@ -307,8 +307,8 @@ function nextDailyRunAt(time: string, from = new Date()): Date {
   return next;
 }
 
-async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof dbPromise>) {
-  const token = normalizePriceChartingToken(String(process.env.PRICECHARTING_TOKEN || ""));
+async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof dbPromise>, options: { token?: string; preserveExisting?: boolean } = {}) {
+  const token = normalizePriceChartingToken(String(options.token || process.env.PRICECHARTING_TOKEN || ""));
   if (!token) throw new Error("Falta configurar PRICECHARTING_TOKEN en el entorno de la API.");
   if (token.length !== 40) {
     throw new Error(`PRICECHARTING_TOKEN no parece valido: tiene ${token.length} caracteres y PriceCharting normalmente usa tokens de 40. Ejecuta Configurar PriceCharting.cmd y pega el token o el link API/Download completo.`);
@@ -330,7 +330,8 @@ async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof d
     sourceHash: crypto.createHash("sha256").update(csvText).digest("hex"),
     rowsReceived: parsed.rowsReceived,
     rowsSkipped: parsed.rowsSkipped,
-    rows: parsed.rows
+    rows: parsed.rows,
+    pruneMissing: options.preserveExisting === true ? false : undefined
   });
 }
 
@@ -3911,7 +3912,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/pricecharting-cache/refresh" && request.method === "POST") {
       try {
-        const status = await refreshPriceChartingCacheFromConfiguredToken(db);
+        const body: { token?: string; preserveExisting?: boolean } = await readJson<{ token?: string; preserveExisting?: boolean }>(request).catch(() => ({}));
+        const status = await refreshPriceChartingCacheFromConfiguredToken(db, {
+          token: body.token,
+          preserveExisting: body.preserveExisting !== false
+        });
         sendJson(response, 200, { ok: true, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

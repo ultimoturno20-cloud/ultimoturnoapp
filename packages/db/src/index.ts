@@ -910,6 +910,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
   rowsReceived: number;
   rowsSkipped: number;
   rows: PriceChartingCacheInput[];
+  pruneMissing?: boolean;
 }): Promise<PriceChartingCacheStatus> {
   if (!input.rows.length) throw new Error("El cache de PriceCharting no contiene filas validas.");
   const runId = crypto.randomUUID();
@@ -961,7 +962,9 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       `, params);
     }
 
-    await db.query("delete from pricecharting_cache_entries where sync_run_id <> $1", [runId]);
+    if (input.pruneMissing !== false) {
+      await db.query("delete from pricecharting_cache_entries where sync_run_id <> $1", [runId]);
+    }
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback");
