@@ -98,7 +98,8 @@ const dataDir = process.env.PGLITE_DATA_DIR || path.resolve(process.cwd(), ".dat
 const runtimeEnv = String(process.env.ULTIMOTURNO_ENV || "local").trim().toLowerCase() || "local";
 const productionMode = runtimeEnv === "production" || runtimeEnv === "prod";
 const dbDriver = String(process.env.ULTIMOTURNO_DB_DRIVER || "pglite").trim().toLowerCase() === "postgres" ? "postgres" : "pglite";
-const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+const databaseUrlChoice = selectDatabaseUrl();
+const databaseUrl = databaseUrlChoice.value;
 const databaseSsl = String(process.env.ULTIMOTURNO_DATABASE_SSL || (productionMode && dbDriver === "postgres" ? "true" : "false")).toLowerCase();
 const databaseSslEnabled = ["1", "true", "yes", "require"].includes(databaseSsl);
 const databasePoolMax = Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || 10);
@@ -2390,6 +2391,57 @@ function requestHasAccess(request: IncomingMessage) {
   return accessKeyMatches(parseCookies(request.headers.cookie).ultimoturno_access_key || "");
 }
 
+type DatabaseUrlChoice = {
+  value: string;
+  source: string;
+  endpointKind: string;
+};
+
+function selectDatabaseUrl(): DatabaseUrlChoice {
+  const candidates = [
+    { source: "DATABASE_URL", value: String(process.env.DATABASE_URL || "").trim() },
+    { source: "POSTGRES_URL", value: String(process.env.POSTGRES_URL || "").trim() },
+    { source: "POSTGRES_PRISMA_URL", value: String(process.env.POSTGRES_PRISMA_URL || "").trim() },
+    { source: "POSTGRES_URL_NON_POOLING", value: String(process.env.POSTGRES_URL_NON_POOLING || "").trim() }
+  ].filter((candidate) => candidate.value);
+  const primary = candidates[0] || { source: "none", value: "" };
+  const pooler = candidates.find((candidate) => isPooledPostgresEndpoint(candidate.value));
+  const selected = productionMode && dbDriver === "postgres" && isSupabaseDirectEndpoint(primary.value) && pooler
+    ? pooler
+    : primary;
+  return {
+    ...selected,
+    endpointKind: classifyPostgresEndpoint(selected.value)
+  };
+}
+
+function isSupabaseDirectEndpoint(value: string) {
+  return classifyPostgresEndpoint(value) === "supabase_direct";
+}
+
+function isPooledPostgresEndpoint(value: string) {
+  return classifyPostgresEndpoint(value).includes("pooler");
+}
+
+function classifyPostgresEndpoint(value: string) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    const port = url.port || "5432";
+    if (hostname.endsWith(".pooler.supabase.com")) {
+      return port === "6543" ? "supabase_pooler_transaction" : "supabase_pooler_session";
+    }
+    if (/^db\.[a-z0-9-]+\.supabase\.co$/.test(hostname)) {
+      return port === "6543" ? "supabase_dedicated_pooler" : "supabase_direct";
+    }
+    if (hostname.includes("neon.tech")) return "neon";
+    if (hostname.includes("vercel-storage.com")) return "vercel_postgres";
+    return value ? "other" : "none";
+  } catch {
+    return value ? "invalid" : "none";
+  }
+}
+
 async function readPublicDataStatus() {
   const rawPostgres = await readRawPostgresStatus();
   try {
@@ -2893,6 +2945,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
           runtimeEnv,
           dbDriver,
           databaseUrlConfigured: Boolean(databaseUrl),
+          databaseUrlSource: databaseUrlChoice.source,
+          databaseEndpointKind: databaseUrlChoice.endpointKind,
           dataProfile,
           allowExamples,
           requiresAccessKey: Boolean(sharedAccessKey)
