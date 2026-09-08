@@ -2446,21 +2446,35 @@ async function readRawPostgresStatus() {
 }
 
 function classifyPublicDatabaseError(error: unknown) {
-  const code = String(
-    (error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : "") ||
-    (error && typeof error === "object" && "cause" in error && error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code?: unknown }).code : "")
-  ).toLowerCase();
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-  const combined = `${code} ${message}`;
+  const combined = collectPublicErrorSignals(error);
   if (combined.includes("does not exist") || combined.includes("no such table") || combined.includes("relation")) return "schema_unavailable";
   if (combined.includes("syntax error") || combined.includes("constraint") || combined.includes("duplicate key")) return "schema_bootstrap_failed";
   if (combined.includes("password") || combined.includes("authentication") || combined.includes("sasl") || combined.includes("28p01") || combined.includes("tenant or user")) return "authentication_failed";
   if (combined.includes("permission denied") || combined.includes("42501")) return "permission_denied";
   if (combined.includes("ssl") || combined.includes("certificate") || combined.includes("self-signed")) return "ssl_failed";
   if (combined.includes("timeout") || combined.includes("etimedout")) return "timeout";
-  if (combined.includes("enotfound") || combined.includes("econnrefused") || combined.includes("econnreset") || combined.includes("enetunreach") || combined.includes("network") || combined.includes("socket") || combined.includes("fetch failed") || combined.includes("connect")) return "connection_failed";
+  if (combined.includes("aggregateerror") || combined.includes("enotfound") || combined.includes("eai_again") || combined.includes("econnrefused") || combined.includes("econnreset") || combined.includes("enetunreach") || combined.includes("network") || combined.includes("socket") || combined.includes("fetch failed") || combined.includes("connect")) return "connection_failed";
   if (combined.includes("cannot find module") || combined.includes("module_not_found") || combined.includes("err_module_not_found")) return "module_unavailable";
   return "unknown";
+}
+
+function collectPublicErrorSignals(error: unknown, depth = 0): string {
+  if (depth > 3) return "";
+  if (!error || typeof error !== "object") return String(error || "").toLowerCase();
+  const record = error as Record<string, unknown>;
+  const signals = [
+    record.name,
+    record.code,
+    record.errno,
+    record.syscall,
+    record.type,
+    error instanceof Error ? error.message : String(error)
+  ];
+  if (record.cause) signals.push(collectPublicErrorSignals(record.cause, depth + 1));
+  if (Array.isArray(record.errors)) {
+    for (const child of record.errors.slice(0, 5)) signals.push(collectPublicErrorSignals(child, depth + 1));
+  }
+  return signals.filter(Boolean).join(" ").toLowerCase();
 }
 
 type MobileInventoryCandidate = {
