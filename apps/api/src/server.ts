@@ -2507,7 +2507,6 @@ function classifyPostgresEndpoint(value: string) {
 }
 
 async function readPublicDataStatus() {
-  const rawPostgres = await readRawPostgresStatus();
   try {
     const db = await dbPromise;
     const result = await db.query<{
@@ -2524,7 +2523,7 @@ async function readPublicDataStatus() {
     `);
     const row = result.rows[0];
     return {
-      rawPostgres,
+      rawPostgres: dbDriver === "postgres" ? { reachable: true, via: "operational" } : null,
       databaseReachable: true,
       hasInventoryItems: Number(row?.inventory_items || 0) > 0,
       hasStockUnits: Number(row?.stock_units || 0) > 0,
@@ -2533,7 +2532,7 @@ async function readPublicDataStatus() {
     };
   } catch (error) {
     return {
-      rawPostgres,
+      rawPostgres: await readRawPostgresStatus(),
       databaseReachable: false,
       databaseError: classifyPublicDatabaseError(error),
       hasInventoryItems: false,
