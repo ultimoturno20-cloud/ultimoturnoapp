@@ -573,7 +573,139 @@ async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, pr
   return byNumber;
 }
 
-async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvProduct, group: TcgCsvGroup, candidatesByNumber?: Map<string, Record<string, unknown>[]>) {
+async function seedTcgCsvProduct(
+  db: Awaited<typeof dbPromise>,
+  product: TcgCsvProduct,
+  group: TcgCsvGroup,
+  input: { priceChartingRunId: string; number: string; rawName: string; rawExpansion: string }
+) {
+  const productId = String(product.productId || "").trim();
+  const productUrl = String(product.url || "").trim();
+  const imageUrl = upgradeTcgplayerImageUrl(String(product.imageUrl || "").trim());
+  const syntheticId = `tcgcsv-${productId}`;
+  const normalizedName = normalizeTcgName(input.rawName);
+  const normalizedExpansion = normalizeTcgExpansion(input.rawExpansion);
+  const languageGroup = inferTcgCsvLanguageGroup(input.rawName, input.rawExpansion, productUrl, String(group.abbreviation || ""));
+  const evidence = {
+    source: "tcgcsv-seed",
+    groupId: String(group.groupId || ""),
+    groupName: input.rawExpansion,
+    groupAbbreviation: String(group.abbreviation || ""),
+    extendedData: product.extendedData || []
+  };
+
+  await db.query(`
+    insert into pricecharting_cache_entries (
+      pricecharting_id, canonical_url, source_url, product_name, normalized_name,
+      expansion_name, normalized_expansion, card_number, language_group,
+      loose_price_usd, image_url, search_key, sync_run_id, imported_at
+    ) values ($1, $2, $2, $3, $4, $5, $6, $7, $8, null, $9, $10, $11, now())
+    on conflict (pricecharting_id) do update set
+      canonical_url = coalesce(nullif(pricecharting_cache_entries.canonical_url, ''), excluded.canonical_url),
+      source_url = coalesce(nullif(pricecharting_cache_entries.source_url, ''), excluded.source_url),
+      product_name = excluded.product_name,
+      normalized_name = excluded.normalized_name,
+      expansion_name = excluded.expansion_name,
+      normalized_expansion = excluded.normalized_expansion,
+      card_number = excluded.card_number,
+      language_group = excluded.language_group,
+      image_url = coalesce(nullif(pricecharting_cache_entries.image_url, ''), nullif(excluded.image_url, ''), ''),
+      search_key = excluded.search_key,
+      imported_at = now()
+  `, [
+    syntheticId,
+    productUrl,
+    input.rawName,
+    normalizedName,
+    input.rawExpansion,
+    normalizedExpansion,
+    input.number,
+    languageGroup,
+    imageUrl,
+    [input.rawName, input.rawExpansion, input.number, productId].map(normalizeTcgText).join(" "),
+    input.priceChartingRunId
+  ]);
+
+  const cardIndexId = crypto.randomUUID();
+  await db.query(`
+    insert into card_index_entries (
+      id, pricecharting_id, canonical_name, canonical_expansion, card_number,
+      language_group, normalized_name, normalized_expansion, pricecharting_url,
+      tcgplayer_product_id, tcgplayer_url, tcgplayer_image_url, image_url, image_source,
+      match_confidence, match_status, evidence_json, created_at, updated_at, last_verified_at
+    ) values ($1, $2, $3, $4, $5, $6, $7, $8, '', $9, $10, $11, $11, $12, 100, 'matched', $13::jsonb, now(), now(), now())
+    on conflict (pricecharting_id) do update set
+      tcgplayer_product_id = excluded.tcgplayer_product_id,
+      tcgplayer_url = excluded.tcgplayer_url,
+      tcgplayer_image_url = excluded.tcgplayer_image_url,
+      image_url = coalesce(nullif(card_index_entries.image_url, ''), nullif(excluded.image_url, ''), ''),
+      image_source = case when coalesce(card_index_entries.image_url, '') <> '' then card_index_entries.image_source else excluded.image_source end,
+      language_group = excluded.language_group,
+      match_confidence = greatest(card_index_entries.match_confidence, 100),
+      match_status = case when card_index_entries.match_status = 'manual' then card_index_entries.match_status else 'matched' end,
+      evidence_json = excluded.evidence_json,
+      updated_at = now(),
+      last_verified_at = now()
+  `, [
+    cardIndexId,
+    syntheticId,
+    input.rawName,
+    input.rawExpansion,
+    input.number,
+    languageGroup,
+    normalizedName,
+    normalizedExpansion,
+    productId,
+    productUrl,
+    imageUrl,
+    imageUrl ? "tcgplayer" : "",
+    JSON.stringify(evidence)
+  ]);
+
+  await db.query(`
+    insert into card_source_links (
+      id, card_index_id, source, external_id, url, raw_name, raw_expansion, raw_number,
+      raw_variant, image_url, confidence, evidence_json, created_at, updated_at
+    )
+    select $1, cie.id, 'tcgplayer', $2, $3, $4, $5, $6, $7, $8, 100, $9::jsonb, now(), now()
+    from card_index_entries cie
+    where cie.pricecharting_id = $10
+    on conflict (card_index_id, source) do update set
+      external_id = excluded.external_id,
+      url = excluded.url,
+      raw_name = excluded.raw_name,
+      raw_expansion = excluded.raw_expansion,
+      raw_number = excluded.raw_number,
+      raw_variant = excluded.raw_variant,
+      image_url = excluded.image_url,
+      confidence = excluded.confidence,
+      evidence_json = excluded.evidence_json,
+      updated_at = now()
+  `, [
+    crypto.randomUUID(),
+    productId,
+    productUrl,
+    input.rawName,
+    input.rawExpansion,
+    input.number,
+    tcgCsvExtendedValue(product, "Printing", "Variant", "Finish"),
+    imageUrl,
+    JSON.stringify(evidence),
+    syntheticId
+  ]);
+}
+
+function inferTcgCsvLanguageGroup(...values: string[]): "english" | "chinese" | "japanese" {
+  const text = normalizeTcgText(values.filter(Boolean).join(" "));
+  const tokens = new Set(text.split(" ").filter(Boolean));
+  if (["chinese", "china", "simplified", "traditional", "taiwan", "hong kong", "zh cn", "zh tw"].some((signal) => text.includes(signal))) return "chinese";
+  if (["zh", "cn", "chs", "cht"].some((signal) => tokens.has(signal))) return "chinese";
+  if (["japanese", "japan", "korean", "korea", "indonesia", "indonesian", "thai", "thailand", "vietnam", "vietnamese", "asia", "asian"].some((signal) => text.includes(signal))) return "japanese";
+  if (["jp", "ja", "kr", "ko"].some((signal) => tokens.has(signal))) return "japanese";
+  return "english";
+}
+
+async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvProduct, group: TcgCsvGroup, candidatesByNumber?: Map<string, Record<string, unknown>[]>, seedMissing?: { priceChartingRunId: string }) {
   const number = normalizeTgPrimaryNumber(tcgCsvExtendedValue(product, "Number", "Card Number"));
   const productId = String(product.productId || "").trim();
   const rawName = String(product.name || product.cleanName || "").trim();
@@ -594,7 +726,11 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
     const scored = scoreTcgCandidate(row, product, group, number);
     if (!best || scored.score > best.score) best = { row, ...scored };
   }
-  if (!best || best.score < 72) return "skipped" as const;
+  if (!best || best.score < 72) {
+    if (!seedMissing) return "skipped" as const;
+    await seedTcgCsvProduct(db, product, group, { priceChartingRunId: seedMissing.priceChartingRunId, number, rawName, rawExpansion });
+    return "created" as const;
+  }
 
   const currentTcgId = String(best.row.tcgplayer_product_id || "").trim();
   const isConflict = !!currentTcgId && currentTcgId !== productId;
@@ -811,7 +947,7 @@ async function runMissedTcgplayerPriceAutoRefreshOnStartup() {
   }
 }
 
-async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; groupLimit?: number }) {
+async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; groupLimit?: number; seedMissing?: boolean }) {
   const db = await dbPromise;
   const groups = (await fetchTcgCsvJson<TcgCsvGroup[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/groups`))
     .filter((group) => group && group.groupId && group.name);
@@ -822,7 +958,17 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
   let rowsMatched = 0;
   let rowsWeak = 0;
   let rowsConflict = 0;
+  let rowsCreated = 0;
   let rowsSkipped = 0;
+  const priceChartingRunId = crypto.randomUUID();
+  if (options.seedMissing !== false) {
+    await db.query(`
+      insert into pricecharting_cache_runs (
+        id, category, status, rows_received, rows_imported, rows_skipped,
+        source_hash, started_at, completed_at
+      ) values ($1, 'tcgcsv-pokemon-cards', 'completed', 0, 0, 0, '', now(), now())
+    `, [priceChartingRunId]);
+  }
 
   for (const group of selectedGroups) {
     const groupId = String(group.groupId || "").trim();
@@ -832,10 +978,11 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
     const candidatesByNumber = await loadTcgCandidateRowsForProducts(db, productsWithGroup);
     for (const rawProduct of productsWithGroup) {
       rowsSeen++;
-      const result = await linkTcgCsvProduct(db, rawProduct, group, candidatesByNumber);
+      const result = await linkTcgCsvProduct(db, rawProduct, group, candidatesByNumber, options.seedMissing === false ? undefined : { priceChartingRunId });
       if (result === "matched") rowsMatched++;
       else if (result === "weak") rowsWeak++;
       else if (result === "conflict") rowsConflict++;
+      else if (result === "created") rowsCreated++;
       else rowsSkipped++;
     }
     await sleep(120);
@@ -846,7 +993,14 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
       id, source, status, rows_seen, rows_matched, rows_weak, rows_conflict,
       started_at, completed_at
     ) values ($1, 'tcgcsv-api', 'completed', $2, $3, $4, $5, now(), now())
-  `, [crypto.randomUUID(), rowsSeen, rowsMatched, rowsWeak, rowsConflict]);
+  `, [crypto.randomUUID(), rowsSeen, rowsMatched + rowsCreated, rowsWeak, rowsConflict]);
+  if (options.seedMissing !== false) {
+    await db.query(`
+      update pricecharting_cache_runs
+      set rows_received = $2, rows_imported = $3, rows_skipped = $4, completed_at = now()
+      where id = $1
+    `, [priceChartingRunId, rowsSeen, rowsCreated, rowsSkipped]);
+  }
   const nextGroupOffset = groupOffset + selectedGroups.length < groups.length ? groupOffset + selectedGroups.length : null;
   return {
     status: await getCardIndexStatus(db),
@@ -854,6 +1008,7 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
     rowsMatched,
     rowsWeak,
     rowsConflict,
+    rowsCreated,
     rowsSkipped,
     groupOffset,
     groupLimit,
@@ -3628,8 +3783,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/card-index/sync-tcgcsv" && request.method === "POST") {
-      const body: { groupOffset?: number; groupLimit?: number; loop?: boolean } = await readJson<{ groupOffset?: number; groupLimit?: number; loop?: boolean }>(request).catch(() => ({}));
-      sendJson(response, 200, await syncCardIndexTcgCsvInProcess({ groupOffset: body.groupOffset, groupLimit: body.groupLimit }));
+      const body: { groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean } = await readJson<{ groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean }>(request).catch(() => ({}));
+      sendJson(response, 200, await syncCardIndexTcgCsvInProcess({ groupOffset: body.groupOffset, groupLimit: body.groupLimit, seedMissing: body.seedMissing }));
       return;
     }
 
