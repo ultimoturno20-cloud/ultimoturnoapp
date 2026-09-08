@@ -1369,9 +1369,12 @@ export async function listCardIndex(db: PGlite, query = "", limit = 50, filter =
   else if (filter === "manual") clauses.push("review_status = 'manual'");
   else if (filter === "pending_review") clauses.push("(review_status = 'pending' and match_status in ('weak_match', 'conflict'))");
   for (const token of parsedQuery.textTokens) {
-    params.push(`%${token}%`);
-    const placeholder = `$${params.length}`;
-    clauses.push(`(normalized_name like ${placeholder} or normalized_expansion like ${placeholder} or lower(pricecharting_id) like ${placeholder} or lower(tcgplayer_product_id) like ${placeholder})`);
+    const variantClauses = searchTokenVariants(token).map((variant) => {
+      params.push(`%${variant}%`);
+      const placeholder = `$${params.length}`;
+      return `(normalized_name like ${placeholder} or normalized_expansion like ${placeholder} or lower(pricecharting_id) like ${placeholder} or lower(tcgplayer_product_id) like ${placeholder})`;
+    });
+    clauses.push(`(${variantClauses.join(" or ")})`);
   }
   for (const token of parsedQuery.numberTokens) {
     params.push(token, `%${token}%`);
@@ -1626,9 +1629,12 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
   }
   const searchClauses: string[] = [];
   for (const token of parsedQuery.textTokens) {
-    params.push(`%${token}%`);
-    const placeholder = `$${params.length}`;
-    searchClauses.push(`(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`);
+    const variantClauses = searchTokenVariants(token).map((variant) => {
+      params.push(`%${variant}%`);
+      const placeholder = `$${params.length}`;
+      return `(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`;
+    });
+    searchClauses.push(`(${variantClauses.join(" or ")})`);
   }
   if (parsedQuery.numberTokens.length) {
     const numberClauses = parsedQuery.numberTokens.map((token) => {
@@ -5237,13 +5243,29 @@ function optionalNumber(value: unknown): number | undefined {
 
 function parseSearchQuery(value: string): { raw: string; rawLike: string; tokens: string[]; textTokens: string[]; numberTokens: string[] } {
   const raw = normalizeImportText(value);
-  const tokens = raw.split(" ").filter(Boolean);
+  const tokens = raw.split(" ").filter((token) => token && token !== "s");
   const numberTokens = [...new Set(tokens
     .map((token) => token.replace(/^#/, ""))
     .filter((token) => /^[0-9]+[a-z]?$/i.test(token))
     .map((token) => token.replace(/^0+([0-9])/, "$1")))].slice(0, 1);
   const textTokens = [...new Set(tokens.filter((token) => !/^[0-9]+[a-z]?$/i.test(token.replace(/^#/, ""))))];
   return { raw, rawLike: `%${raw}%`, tokens, textTokens, numberTokens };
+}
+
+function searchTokenVariants(token: string): string[] {
+  const variants = new Set([token]);
+  if (token.endsWith("ies") && token.length > 4) variants.add(`${token.slice(0, -3)}y`);
+  if (token.endsWith("s") && token.length > 3) variants.add(token.slice(0, -1));
+  return [...variants];
+}
+
+function textIncludesSearchToken(value: string, token: string): boolean {
+  return searchTokenVariants(token).some((variant) => value.includes(variant));
+}
+
+function wordsIncludeSearchToken(value: string, token: string): boolean {
+  const words = new Set(value.split(" ").filter(Boolean));
+  return searchTokenVariants(token).some((variant) => words.has(variant));
 }
 
 function scorePriceChartingSearchRow(row: Record<string, unknown>, query: ReturnType<typeof parseSearchQuery>): number {
@@ -5255,11 +5277,11 @@ function scorePriceChartingSearchRow(row: Record<string, unknown>, query: Return
   const cardNumber = primaryImportCardNumber(String(row.card_number || ""));
   let score = 0;
   for (const token of query.textTokens) {
-    if (name.split(" ").includes(token)) score += 45;
-    else if (name.includes(token)) score += 32;
-    else if (expansion.split(" ").includes(token)) score += 18;
-    else if (expansion.includes(token)) score += 12;
-    else if (searchKey.includes(token) || id.includes(token)) score += 6;
+    if (wordsIncludeSearchToken(name, token)) score += 45;
+    else if (textIncludesSearchToken(name, token)) score += 32;
+    else if (wordsIncludeSearchToken(expansion, token)) score += 18;
+    else if (textIncludesSearchToken(expansion, token)) score += 12;
+    else if (textIncludesSearchToken(searchKey, token) || id.includes(token)) score += 6;
     else return 0;
   }
   for (const token of query.numberTokens) {

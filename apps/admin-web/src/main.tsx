@@ -6610,13 +6610,29 @@ function normalize(value: string) {
 
 function parseUiSearchQuery(value: string) {
   const raw = normalize(value);
-  const tokens = raw.split(" ").filter(Boolean);
+  const tokens = raw.split(" ").filter((token) => token && token !== "s");
   const numberTokens = [...new Set(tokens
     .map((token) => token.replace(/^#/, ""))
     .filter((token) => /^[0-9]+[a-z]?$/i.test(token))
     .map((token) => token.replace(/^0+([0-9])/, "$1")))].slice(0, 1);
   const textTokens = [...new Set(tokens.filter((token) => !/^[0-9]+[a-z]?$/i.test(token.replace(/^#/, ""))))];
   return { raw, tokens, textTokens, numberTokens };
+}
+
+function uiSearchTokenVariants(token: string): string[] {
+  const variants = new Set([token]);
+  if (token.endsWith("ies") && token.length > 4) variants.add(`${token.slice(0, -3)}y`);
+  if (token.endsWith("s") && token.length > 3) variants.add(token.slice(0, -1));
+  return [...variants];
+}
+
+function normalizedTextIncludesToken(value: string, token: string): boolean {
+  return uiSearchTokenVariants(token).some((variant) => value.includes(variant));
+}
+
+function normalizedWordsIncludeToken(value: string, token: string): boolean {
+  const words = new Set(value.split(" ").filter(Boolean));
+  return uiSearchTokenVariants(token).some((variant) => words.has(variant));
 }
 
 function primaryCardNumber(value: string) {
@@ -6644,12 +6660,12 @@ function scoreStockSearch(item: StockRow, query: ReturnType<typeof parseUiSearch
   const haystack = `${name} ${expansionText} ${skuText} ${miscText}`;
   let score = 0;
   for (const token of query.textTokens) {
-    if (nameWords.includes(token)) score += 50;
-    else if (name.includes(token)) score += 34;
-    else if (skuText.includes(token)) score += 24;
-    else if (expansionText.includes(token)) score += 16;
-    else if (miscText.includes(token)) score += 7;
-    else if (haystack.includes(token)) score += 3;
+    if (normalizedWordsIncludeToken(name, token)) score += 50;
+    else if (normalizedTextIncludesToken(name, token)) score += 34;
+    else if (normalizedTextIncludesToken(skuText, token)) score += 24;
+    else if (normalizedTextIncludesToken(expansionText, token)) score += 16;
+    else if (normalizedTextIncludesToken(miscText, token)) score += 7;
+    else if (normalizedTextIncludesToken(haystack, token)) score += 3;
     else return 0;
   }
   const itemNumber = primaryCardNumber(item.product.number || "");
