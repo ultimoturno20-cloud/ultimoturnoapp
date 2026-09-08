@@ -304,6 +304,22 @@ export type OperationalDatabaseOptions = {
   adminName?: string;
 };
 
+export async function checkPostgresConnection(options: Pick<OperationalDatabaseOptions, "databaseUrl" | "ssl" | "poolMax">): Promise<void> {
+  const databaseUrl = String(options.databaseUrl || "").trim();
+  if (!databaseUrl) throw new Error("DATABASE_URL es obligatorio para revisar PostgreSQL.");
+  const { Pool } = pgModule;
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    max: options.poolMax || 1,
+    ssl: options.ssl ? { rejectUnauthorized: false } : undefined
+  });
+  try {
+    await pool.query("select 1");
+  } finally {
+    await pool.end();
+  }
+}
+
 export type AuthenticatedUser = {
   id: string;
   businessId: string;

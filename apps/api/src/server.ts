@@ -23,6 +23,7 @@ import {
   createClaimSection,
   createPurchase,
   createSale,
+  checkPostgresConnection,
   createOperationalDatabase,
   deleteMobileInventoryEntry,
   deleteClaimCard,
@@ -99,12 +100,15 @@ const productionMode = runtimeEnv === "production" || runtimeEnv === "prod";
 const dbDriver = String(process.env.ULTIMOTURNO_DB_DRIVER || "pglite").trim().toLowerCase() === "postgres" ? "postgres" : "pglite";
 const databaseUrl = String(process.env.DATABASE_URL || "").trim();
 const databaseSsl = String(process.env.ULTIMOTURNO_DATABASE_SSL || (productionMode && dbDriver === "postgres" ? "true" : "false")).toLowerCase();
+const databaseSslEnabled = ["1", "true", "yes", "require"].includes(databaseSsl);
+const databasePoolMax = Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || 10);
+const deploymentCommitSha = String(process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
 const dbPromise = createOperationalDatabase({
   driver: dbDriver,
   dataDir,
   databaseUrl,
-  ssl: ["1", "true", "yes", "require"].includes(databaseSsl),
-  poolMax: Number(process.env.ULTIMOTURNO_DATABASE_POOL_MAX || 10)
+  ssl: databaseSslEnabled,
+  poolMax: databasePoolMax
 });
 const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "pokemon-cards").trim() || "pokemon-cards";
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
@@ -2387,6 +2391,7 @@ function requestHasAccess(request: IncomingMessage) {
 }
 
 async function readPublicDataStatus() {
+  const rawPostgres = await readRawPostgresStatus();
   try {
     const db = await dbPromise;
     const result = await db.query<{
@@ -2403,6 +2408,7 @@ async function readPublicDataStatus() {
     `);
     const row = result.rows[0];
     return {
+      rawPostgres,
       databaseReachable: true,
       hasInventoryItems: Number(row?.inventory_items || 0) > 0,
       hasStockUnits: Number(row?.stock_units || 0) > 0,
@@ -2411,6 +2417,7 @@ async function readPublicDataStatus() {
     };
   } catch (error) {
     return {
+      rawPostgres,
       databaseReachable: false,
       databaseError: classifyPublicDatabaseError(error),
       hasInventoryItems: false,
@@ -2421,13 +2428,38 @@ async function readPublicDataStatus() {
   }
 }
 
+async function readRawPostgresStatus() {
+  if (dbDriver !== "postgres") return null;
+  try {
+    await checkPostgresConnection({
+      databaseUrl,
+      ssl: databaseSslEnabled,
+      poolMax: 1
+    });
+    return { reachable: true };
+  } catch (error) {
+    return {
+      reachable: false,
+      error: classifyPublicDatabaseError(error)
+    };
+  }
+}
+
 function classifyPublicDatabaseError(error: unknown) {
+  const code = String(
+    (error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : "") ||
+    (error && typeof error === "object" && "cause" in error && error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code?: unknown }).code : "")
+  ).toLowerCase();
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-  if (message.includes("does not exist") || message.includes("no such table") || message.includes("relation")) return "schema_unavailable";
-  if (message.includes("password") || message.includes("authentication") || message.includes("sasl")) return "authentication_failed";
-  if (message.includes("ssl") || message.includes("certificate") || message.includes("self-signed")) return "ssl_failed";
-  if (message.includes("timeout") || message.includes("etimedout")) return "timeout";
-  if (message.includes("enotfound") || message.includes("econnrefused") || message.includes("fetch failed") || message.includes("connect")) return "connection_failed";
+  const combined = `${code} ${message}`;
+  if (combined.includes("does not exist") || combined.includes("no such table") || combined.includes("relation")) return "schema_unavailable";
+  if (combined.includes("syntax error") || combined.includes("constraint") || combined.includes("duplicate key")) return "schema_bootstrap_failed";
+  if (combined.includes("password") || combined.includes("authentication") || combined.includes("sasl") || combined.includes("28p01") || combined.includes("tenant or user")) return "authentication_failed";
+  if (combined.includes("permission denied") || combined.includes("42501")) return "permission_denied";
+  if (combined.includes("ssl") || combined.includes("certificate") || combined.includes("self-signed")) return "ssl_failed";
+  if (combined.includes("timeout") || combined.includes("etimedout")) return "timeout";
+  if (combined.includes("enotfound") || combined.includes("econnrefused") || combined.includes("econnreset") || combined.includes("enetunreach") || combined.includes("network") || combined.includes("socket") || combined.includes("fetch failed") || combined.includes("connect")) return "connection_failed";
+  if (combined.includes("cannot find module") || combined.includes("module_not_found") || combined.includes("err_module_not_found")) return "module_unavailable";
   return "unknown";
 }
 
@@ -2840,6 +2872,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const data = await readPublicDataStatus();
       sendJson(response, 200, {
         ok: true,
+        deployment: {
+          commitSha: deploymentCommitSha
+        },
         environment: {
           runtimeEnv,
           dbDriver,
@@ -2925,7 +2960,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/health") {
-      sendJson(response, 200, { ...(await getHealth(db)), environment: { runtimeEnv, dbDriver, databaseUrlConfigured: Boolean(databaseUrl), allowDatabaseSsl: ["1", "true", "yes", "require"].includes(databaseSsl), dataProfile, allowExamples, dataDir, priceChartingImageDir, priceChartingImageReadDirs, allowedOrigins } });
+      sendJson(response, 200, { ...(await getHealth(db)), environment: { runtimeEnv, dbDriver, databaseUrlConfigured: Boolean(databaseUrl), allowDatabaseSsl: databaseSslEnabled, dataProfile, allowExamples, dataDir, priceChartingImageDir, priceChartingImageReadDirs, allowedOrigins } });
       return;
     }
 
