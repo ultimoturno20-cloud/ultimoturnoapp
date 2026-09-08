@@ -698,8 +698,8 @@ async function seedTcgCsvProduct(
 function inferTcgCsvLanguageGroup(...values: string[]): "english" | "chinese" | "japanese" {
   const text = normalizeTcgText(values.filter(Boolean).join(" "));
   const tokens = new Set(text.split(" ").filter(Boolean));
-  if (["chinese", "china", "simplified", "traditional", "taiwan", "hong kong", "zh cn", "zh tw"].some((signal) => text.includes(signal))) return "chinese";
-  if (["zh", "cn", "chs", "cht"].some((signal) => tokens.has(signal))) return "chinese";
+  if (["chinese", "simplified", "traditional", "taiwan", "hong kong", "zh cn", "zh tw"].some((signal) => text.includes(signal))) return "chinese";
+  if (["zh", "cn", "chs", "cht", "china"].some((signal) => tokens.has(signal))) return "chinese";
   if (["japanese", "japan", "korean", "korea", "indonesia", "indonesian", "thai", "thailand", "vietnam", "vietnamese", "asia", "asian"].some((signal) => text.includes(signal))) return "japanese";
   if (["jp", "ja", "kr", "ko"].some((signal) => tokens.has(signal))) return "japanese";
   return "english";
