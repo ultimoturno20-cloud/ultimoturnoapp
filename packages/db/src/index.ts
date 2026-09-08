@@ -174,7 +174,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -636,6 +636,7 @@ export type PriceChartingCacheInput = {
   cardNumber: string;
   loosePriceUsd: number | null;
   imageUrl: string;
+  languageGroup?: LanguageGroup;
   searchKey: string;
 };
 
@@ -735,6 +736,7 @@ export type CardIndexEntry = {
   canonicalName: string;
   canonicalExpansion: string;
   cardNumber: string;
+  languageGroup: LanguageGroup;
   priceChartingUrl: string;
   tcgplayerProductId: string;
   tcgplayerUrl: string;
@@ -750,6 +752,8 @@ export type CardIndexEntry = {
   updatedAt: string;
   reviewedAt?: string;
 };
+
+export type LanguageGroup = "english" | "chinese" | "japanese";
 
 export type TcgCsvGroupInput = {
   groupId: number | string;
@@ -925,19 +929,20 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       const chunk = uniqueRows.slice(offset, offset + 200);
       const params: unknown[] = [];
       const values = chunk.map((row, index) => {
-        const base = index * 12;
+        const base = index * 13;
+        const languageGroup = row.languageGroup || inferLanguageGroup(row.expansionName, row.productName, row.canonicalUrl);
         params.push(
           row.priceChartingId, row.canonicalUrl, row.sourceUrl, row.productName,
           row.normalizedName, row.expansionName, row.normalizedExpansion,
-          row.cardNumber, row.loosePriceUsd, row.imageUrl, row.searchKey, runId
+          row.cardNumber, row.loosePriceUsd, row.imageUrl, languageGroup, row.searchKey, runId
         );
-        return `(${Array.from({ length: 12 }, (_, parameter) => `$${base + parameter + 1}`).join(", ")}, now())`;
+        return `(${Array.from({ length: 13 }, (_, parameter) => `$${base + parameter + 1}`).join(", ")}, now())`;
       }).join(",\n");
       await db.query(`
         insert into pricecharting_cache_entries (
           pricecharting_id, canonical_url, source_url, product_name,
           normalized_name, expansion_name, normalized_expansion, card_number,
-          loose_price_usd, image_url, search_key, sync_run_id, imported_at
+          loose_price_usd, image_url, language_group, search_key, sync_run_id, imported_at
         ) values ${values}
         on conflict (pricecharting_id) do update set
           canonical_url = excluded.canonical_url,
@@ -949,6 +954,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
           card_number = excluded.card_number,
           loose_price_usd = excluded.loose_price_usd,
           image_url = excluded.image_url,
+          language_group = excluded.language_group,
           search_key = excluded.search_key,
           sync_run_id = excluded.sync_run_id,
           imported_at = now()
@@ -1207,6 +1213,7 @@ export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options
         pce.expansion_name,
         pce.normalized_expansion,
         pce.card_number,
+        pce.language_group,
         pce.canonical_url,
         coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url
       from pricecharting_cache_entries pce
@@ -1222,14 +1229,16 @@ export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options
     }
     const params: unknown[] = [];
     const values = chunk.map((row, index) => {
-      const base = index * 11;
+      const base = index * 12;
       const imageUrl = String(row.image_url || "");
+      const languageGroup = inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || ""));
       params.push(
         crypto.randomUUID(),
         String(row.pricecharting_id || ""),
         String(row.product_name || ""),
         String(row.expansion_name || ""),
         String(row.card_number || ""),
+        languageGroup,
         String(row.normalized_name || normalizeImportText(String(row.product_name || ""))),
         String(row.normalized_expansion || normalizeImportText(String(row.expansion_name || ""))),
         String(row.canonical_url || ""),
@@ -1237,18 +1246,19 @@ export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options
         imageUrl,
         imageUrl ? imageSourceForIndex(imageUrl) : ""
       );
-      return `(${Array.from({ length: 11 }, (_, parameter) => `$${base + parameter + 1}`).join(", ")}, now(), now())`;
+      return `(${Array.from({ length: 12 }, (_, parameter) => `$${base + parameter + 1}`).join(", ")}, now(), now())`;
     }).join(",\n");
     await db.query(`
       insert into card_index_entries (
         id, pricecharting_id, canonical_name, canonical_expansion, card_number,
-        normalized_name, normalized_expansion, pricecharting_url, pricecharting_image_url,
+        language_group, normalized_name, normalized_expansion, pricecharting_url, pricecharting_image_url,
         image_url, image_source, created_at, updated_at
       ) values ${values}
       on conflict (pricecharting_id) do update set
         canonical_name = excluded.canonical_name,
         canonical_expansion = excluded.canonical_expansion,
         card_number = excluded.card_number,
+        language_group = excluded.language_group,
         normalized_name = excluded.normalized_name,
         normalized_expansion = excluded.normalized_expansion,
         pricecharting_url = excluded.pricecharting_url,
@@ -1331,11 +1341,16 @@ export async function getCardIndexStatus(db: PGlite): Promise<CardIndexStatus> {
   };
 }
 
-export async function listCardIndex(db: PGlite, query = "", limit = 50, filter = "all"): Promise<{ entries: CardIndexEntry[]; status: CardIndexStatus }> {
+export async function listCardIndex(db: PGlite, query = "", limit = 50, filter = "all", languageGroup = "all"): Promise<{ entries: CardIndexEntry[]; status: CardIndexStatus }> {
   const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const parsedQuery = parseSearchQuery(query);
+  const safeLanguageGroup = normalizeLanguageGroupFilter(languageGroup);
   const params: unknown[] = [];
   const clauses: string[] = [];
+  if (safeLanguageGroup !== "all") {
+    params.push(safeLanguageGroup);
+    clauses.push(`language_group = $${params.length}`);
+  }
   if (filter === "matched") clauses.push("match_status = 'matched'");
   else if (filter === "weak_match") clauses.push("match_status = 'weak_match'");
   else if (filter === "conflict") clauses.push("match_status = 'conflict'");
@@ -1589,18 +1604,24 @@ export async function enrichCardIndexFromTcgCsv(db: PGlite, input: {
   };
 }
 
-export async function listPriceChartingCache(db: PGlite, query = "", limit = 50): Promise<{
+export async function listPriceChartingCache(db: PGlite, query = "", limit = 50, languageGroup = "all"): Promise<{
   entries: PriceChartingCacheEntry[];
   status: PriceChartingCacheStatus;
 }> {
   const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const parsedQuery = parseSearchQuery(query);
+  const safeLanguageGroup = normalizeLanguageGroupFilter(languageGroup);
   const params: unknown[] = [];
   const clauses: string[] = [];
+  if (safeLanguageGroup !== "all") {
+    params.push(safeLanguageGroup);
+    clauses.push(`pce.language_group = $${params.length}`);
+  }
+  const searchClauses: string[] = [];
   for (const token of parsedQuery.textTokens) {
     params.push(`%${token}%`);
     const placeholder = `$${params.length}`;
-    clauses.push(`(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`);
+    searchClauses.push(`(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`);
   }
   if (parsedQuery.numberTokens.length) {
     const numberClauses = parsedQuery.numberTokens.map((token) => {
@@ -1609,21 +1630,21 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50)
       const fuzzy = `$${params.length}`;
       return `(regexp_replace(lower(split_part(pce.card_number, '/', 1)), '^0+', '') = ${exact} or lower(regexp_replace(pce.card_number, '[^a-z0-9]+', '', 'g')) like ${fuzzy} or lower(pce.pricecharting_id) like ${fuzzy})`;
     });
-    clauses.push(`(${numberClauses.join(" or ")})`);
+    searchClauses.push(`(${numberClauses.join(" or ")})`);
   }
-  const whereSql = parsedQuery.tokens.length
-    ? (() => {
-        params.push(parsedQuery.rawLike);
-        const rawLikePlaceholder = `$${params.length}`;
-        return `where (${clauses.join(" and ")}) or lower(pce.pricecharting_id) like ${rawLikePlaceholder}`;
-      })()
-    : "";
+  if (parsedQuery.tokens.length) {
+    params.push(parsedQuery.rawLike);
+    const rawLikePlaceholder = `$${params.length}`;
+    searchClauses.push(`lower(pce.pricecharting_id) like ${rawLikePlaceholder}`);
+  }
+  if (searchClauses.length) clauses.push(`(${searchClauses.join(" or ")})`);
+  const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
   params.push(safeLimit);
   const limitPlaceholder = `$${params.length}`;
   const result = await db.query<Record<string, unknown>>(`
     select pricecharting_id, canonical_url, source_url, product_name,
       normalized_name, expansion_name, normalized_expansion, card_number,
-      loose_price_usd,
+      pce.language_group, loose_price_usd,
       coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url,
       search_key, imported_at
     from pricecharting_cache_entries pce
@@ -1650,6 +1671,7 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50)
       cardNumber: String(row.card_number || ""),
       loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
       imageUrl: String(row.image_url || ""),
+      languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
       searchKey: String(row.search_key),
       importedAt: String(row.imported_at)
     })),
@@ -3212,7 +3234,7 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
   const result = await db.query<Record<string, unknown>>(`
     select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
       pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
-      pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url, '') as image_url,
+      pce.language_group, pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url, '') as image_url,
       pce.search_key, pce.imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
@@ -3231,6 +3253,7 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
     cardNumber: String(row.card_number || ""),
     loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
     imageUrl: String(row.image_url || ""),
+    languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
     searchKey: String(row.search_key || ""),
     importedAt: String(row.imported_at)
   } : null;
@@ -3293,6 +3316,26 @@ function cleanPriceChartingProductName(name: string): string {
     .replace(/\s+(?:reverse holo|cosmos holo|holo)$/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function inferLanguageGroup(...values: string[]): LanguageGroup {
+  const text = normalizeImportText(values.filter(Boolean).join(" "));
+  const chineseSignals = [
+    "chinese", "china", "simplified", "traditional", "taiwan", "hong kong",
+    "zh cn", "zh tw", "cn", "chs", "cht", "sc", "tc"
+  ];
+  if (chineseSignals.some((signal) => text.includes(signal))) return "chinese";
+
+  const japaneseBucketSignals = [
+    "japanese", "japan", "jp", "ja",
+    "korean", "korea", "kr", "ko",
+    "indonesia", "indonesian", "id",
+    "thai", "thailand", "th",
+    "vietnam", "vietnamese", "asia", "asian"
+  ];
+  if (japaneseBucketSignals.some((signal) => text.includes(signal))) return "japanese";
+
+  return "english";
 }
 
 export async function listClaimsWorkspace(db: PGlite, businessId = demoBusinessId): Promise<ClaimsWorkspace> {
@@ -5233,6 +5276,7 @@ function mapCardIndexRow(row: Record<string, unknown>): CardIndexEntry {
     canonicalName: String(row.canonical_name || ""),
     canonicalExpansion: String(row.canonical_expansion || ""),
     cardNumber: String(row.card_number || ""),
+    languageGroup: inferLanguageGroup(String(row.canonical_expansion || ""), String(row.canonical_name || ""), String(row.pricecharting_url || ""), String(row.language_group || "")),
     priceChartingUrl: String(row.pricecharting_url || ""),
     tcgplayerProductId: String(row.tcgplayer_product_id || ""),
     tcgplayerUrl: String(row.tcgplayer_url || ""),
@@ -5248,6 +5292,12 @@ function mapCardIndexRow(row: Record<string, unknown>): CardIndexEntry {
     updatedAt: String(row.updated_at || ""),
     reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined
   };
+}
+
+function normalizeLanguageGroupFilter(value: string): LanguageGroup | "all" {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "english" || normalized === "chinese" || normalized === "japanese") return normalized;
+  return "all";
 }
 
 function buildCardIndexLookup(entries: CardIndexEntry[]): { byNumber: Map<string, CardIndexEntry[]> } {

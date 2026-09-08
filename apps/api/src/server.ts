@@ -3574,7 +3574,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const query = url.searchParams.get("query") || "";
       const limit = Number(url.searchParams.get("limit") || 50);
       const filter = url.searchParams.get("filter") || "all";
-      sendJson(response, 200, await listCardIndex(db, query, limit, filter));
+      const languageGroup = url.searchParams.get("languageGroup") || "all";
+      sendJson(response, 200, await listCardIndex(db, query, limit, filter, languageGroup));
       return;
     }
 
@@ -3641,7 +3642,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/pricecharting-cache" && request.method === "GET") {
       const query = url.searchParams.get("query") || "";
       const limit = Number(url.searchParams.get("limit") || 50);
-      sendJson(response, 200, await listPriceChartingCache(db, query, limit));
+      const languageGroup = url.searchParams.get("languageGroup") || "all";
+      sendJson(response, 200, await listPriceChartingCache(db, query, limit, languageGroup));
       return;
     }
 

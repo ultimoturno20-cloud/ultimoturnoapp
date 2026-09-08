@@ -4628,6 +4628,7 @@ select {
 
 .issue-filter-row,
 .availability-filter-row,
+.language-group-row,
 .price-source-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -4689,6 +4690,38 @@ select {
   color: var(--muted);
   font-size: 12px;
   font-weight: 950;
+}
+
+.language-group-row {
+  align-items: center;
+  padding-top: 4px;
+}
+
+.language-group-row > span {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.language-group-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--text);
+  background: #08080a;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.language-group-row button.active {
+  border-color: rgba(91, 141, 239, 0.82);
+  color: #ffffff;
+  background: rgba(91, 141, 239, 0.16);
 }
 
 .price-source-filter-row button {

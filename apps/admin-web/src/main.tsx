@@ -4,6 +4,7 @@ import "./styles.css";
 
 type View = "dashboard" | "inventory" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "admin";
 type AvailabilityFilter = "all" | "available" | "reserved" | "out";
+type LanguageGroupFilter = "all" | "english" | "japanese" | "chinese";
 type SortMode = "name" | "expansion" | "number" | "price" | "quantity";
 type IssueFilter = "all" | "missingImage" | "missingPriceCharting" | "zeroPrice" | "lowStock" | "duplicates";
 type InventoryPriceSource = "sale" | "pricecharting" | "tcgplayer" | "coolstuff";
@@ -21,6 +22,7 @@ type InventoryFilters = {
   query: string;
   expansion: string;
   language: string;
+  languageGroup: LanguageGroupFilter;
   condition: string;
   location: string;
   intakeBatch: string;
@@ -524,6 +526,7 @@ type PriceChartingCacheEntry = {
   productName: string;
   expansionName: string;
   cardNumber: string;
+  languageGroup: LanguageGroupFilter;
   loosePriceUsd: number | null;
   imageUrl: string;
   importedAt: string;
@@ -610,6 +613,7 @@ type CardIndexEntry = {
   canonicalName: string;
   canonicalExpansion: string;
   cardNumber: string;
+  languageGroup: LanguageGroupFilter;
   priceChartingUrl: string;
   tcgplayerProductId: string;
   tcgplayerUrl: string;
@@ -783,6 +787,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [expansion, setExpansion] = useState("all");
   const [language, setLanguage] = useState("all");
+  const [languageGroup, setLanguageGroup] = useState<LanguageGroupFilter>("all");
   const [condition, setCondition] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
@@ -814,6 +819,7 @@ function App() {
   const [imageCatalogLoading, setImageCatalogLoading] = useState(false);
   const [imageCatalogFilter, setImageCatalogFilter] = useState<"all" | "downloaded" | "url_found" | "failed" | "pending">("all");
   const [imageCatalogSearch, setImageCatalogSearch] = useState("");
+  const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
 
   async function fetchOperationalData() {
     const [stockData, movementData, auditData, me] = await Promise.all([
@@ -960,6 +966,7 @@ function App() {
         return (!parsedSearch.tokens.length || searchScore > 0) &&
           (expansion === "all" || item.product.expansion === expansion) &&
           (language === "all" || item.variant.language === language) &&
+          (languageGroup === "all" || inventoryLanguageGroup(item.variant.language) === languageGroup) &&
           (condition === "all" || item.variant.condition === condition) &&
           (locationFilter === "all" || item.location === locationFilter) &&
           (batchFilter === "all" || item.intakeBatch === batchFilter) &&
@@ -982,7 +989,7 @@ function App() {
         return leftItem.product.name.localeCompare(rightItem.product.name, "es");
       })
       .map(({ item }) => item);
-  }, [availability, batchFilter, blueRate, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, locationFilter, query, sortMode, stock.items, tagFilter]);
+  }, [availability, batchFilter, blueRate, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, languageGroup, locationFilter, query, sortMode, stock.items, tagFilter]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -1588,18 +1595,18 @@ function App() {
     }
   }
 
-  async function searchPriceChartingCache(search: string) {
+  async function searchPriceChartingCache(search: string, nextLanguageGroup: LanguageGroupFilter = catalogLanguageGroup) {
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&limit=60`);
+      const result = await api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(nextLanguageGroup)}&limit=60`);
       setPriceChartingCache(result);
     } catch (nextError) {
       showError(nextError);
     }
   }
 
-  async function searchCardIndex(search: string, filter: CardIndexFilter = "all") {
+  async function searchCardIndex(search: string, filter: CardIndexFilter = "all", nextLanguageGroup: LanguageGroupFilter = catalogLanguageGroup) {
     try {
-      const result = await api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>(`/card-index?query=${encodeURIComponent(search)}&filter=${encodeURIComponent(filter)}&limit=120`);
+      const result = await api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>(`/card-index?query=${encodeURIComponent(search)}&filter=${encodeURIComponent(filter)}&languageGroup=${encodeURIComponent(nextLanguageGroup)}&limit=120`);
       setCardIndexEntries(result.entries);
       setCardIndexStatus(result.status);
     } catch (nextError) {
@@ -2082,6 +2089,7 @@ function App() {
             setQuery("");
             setExpansion("all");
             setLanguage("all");
+            setLanguageGroup("all");
             setCondition("all");
             setLocationFilter("all");
             setBatchFilter("all");
@@ -2107,7 +2115,7 @@ function App() {
           selected={selected}
           selectedMovements={selectedMovements}
           options={options}
-          filters={{ query, expansion, language, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
+          filters={{ query, expansion, language, languageGroup, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
           density={inventoryDensity}
           quality={quality}
           adjustment={adjustment}
@@ -2120,6 +2128,7 @@ function App() {
             if (patch.query !== undefined) setQuery(patch.query);
             if (patch.expansion !== undefined) setExpansion(patch.expansion);
             if (patch.language !== undefined) setLanguage(patch.language);
+            if (patch.languageGroup !== undefined) setLanguageGroup(patch.languageGroup);
             if (patch.condition !== undefined) setCondition(patch.condition);
             if (patch.location !== undefined) setLocationFilter(patch.location);
             if (patch.intakeBatch !== undefined) setBatchFilter(patch.intakeBatch);
@@ -2134,6 +2143,7 @@ function App() {
             setQuery("");
             setExpansion("all");
             setLanguage("all");
+            setLanguageGroup("all");
             setCondition("all");
             setLocationFilter("all");
             setBatchFilter("all");
@@ -2202,6 +2212,12 @@ function App() {
           cardIndexRebuildAfterId={cardIndexRebuildAfterId}
           cardIndexNextGroupOffset={cardIndexNextGroupOffset}
           blueRate={blueRate}
+          languageGroup={catalogLanguageGroup}
+          onLanguageGroupChange={(nextLanguageGroup) => {
+            setCatalogLanguageGroup(nextLanguageGroup);
+            void searchPriceChartingCache("", nextLanguageGroup);
+            void searchCardIndex("", "all", nextLanguageGroup);
+          }}
           onPriceChartingSearch={(search) => void searchPriceChartingCache(search)}
           onCardIndexSearch={(search, filter) => void searchCardIndex(search, filter)}
           onCardIndexReview={(cardIndexId, input) => void reviewCardIndex(cardIndexId, input)}
@@ -2688,7 +2704,7 @@ function InventoryView(props: {
   const [batchInventoryStatus, setBatchInventoryStatus] = useState("");
   const [batchTags, setBatchTags] = useState("");
   const [batchPriceSource, setBatchPriceSource] = useState<"none" | InventoryPriceSource>("none");
-  const activeFilters = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.availability, filters.issue].filter((value) => value !== "all").length
+  const activeFilters = [filters.expansion, filters.languageGroup, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.availability, filters.issue].filter((value) => value !== "all").length
     + (filters.priceSource !== "sale" ? 1 : 0);
   const availabilityCounts = useMemo(() => ({
     all: allItems.length,
@@ -2805,6 +2821,7 @@ function InventoryView(props: {
             <button className={filters.availability === value ? "active" : ""} key={value} onClick={() => props.onFilterChange({ availability: value })}>{label}<span>{count}</span></button>
           ))}
         </div>
+        <LanguageGroupSelector value={filters.languageGroup} onChange={(value) => props.onFilterChange({ languageGroup: value })} />
         <div className="price-source-filter-row">
           <span>Precios</span>
           {([
@@ -4505,6 +4522,8 @@ function CatalogView(props: {
   cardIndexRebuildAfterId: string;
   cardIndexNextGroupOffset: number | null;
   blueRate: BlueExchangeRate;
+  languageGroup: LanguageGroupFilter;
+  onLanguageGroupChange: (languageGroup: LanguageGroupFilter) => void;
   onPriceChartingSearch: (search: string) => void;
   onCardIndexSearch: (search: string, filter?: CardIndexFilter) => void;
   onCardIndexReview: (cardIndexId: string, input: { action: "approve" | "reject" | "manual"; tcgplayerProductId?: string; tcgplayerUrl?: string; imageUrl?: string; note?: string }) => void;
@@ -4726,6 +4745,12 @@ function CatalogView(props: {
             <div><span>Sin TCG</span><strong>{auditCounts.missingTcg}</strong></div>
             <div><span>Sin imagen</span><strong>{auditCounts.missingImage}</strong></div>
           </div>
+          <LanguageGroupSelector value={props.languageGroup} onChange={(value) => {
+            setPriceChartingSearch("");
+            setCardIndexSearch("");
+            setCardIndexFilter("all");
+            props.onLanguageGroupChange(value);
+          }} />
           <div className="catalog-bulk-approve">
             <div>
               <strong>Aprobacion automatica</strong>
@@ -6431,6 +6456,33 @@ function inventoryVariantLabel(item: StockRow): string {
   const grading = inventoryGradingLabel(item);
   const condition = grading ? grading : item.variant.condition;
   return [item.variant.language, condition, item.variant.finish].filter(Boolean).join(" / ");
+}
+
+const languageGroupOptions: Array<{ value: LanguageGroupFilter; label: string; flag: string }> = [
+  { value: "all", label: "Todos", flag: "" },
+  { value: "english", label: "Ingles", flag: "🇺🇸" },
+  { value: "japanese", label: "Japones", flag: "🇯🇵" },
+  { value: "chinese", label: "Chino", flag: "🇨🇳" }
+];
+
+function LanguageGroupSelector({ value, onChange }: { value: LanguageGroupFilter; onChange: (value: LanguageGroupFilter) => void }) {
+  return (
+    <div className="language-group-row">
+      <span>Idioma:</span>
+      {languageGroupOptions.map((option) => (
+        <button className={value === option.value ? "active" : ""} key={option.value} type="button" onClick={() => onChange(option.value)}>
+          {option.flag ? <span aria-hidden="true">{option.flag}</span> : null}{option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function inventoryLanguageGroup(language: string): LanguageGroupFilter {
+  const normalized = normalize(language);
+  if (["cn", "zh", "chs", "cht", "sc", "tc", "chinese", "china", "simplified", "traditional"].some((token) => normalized.includes(token))) return "chinese";
+  if (["ja", "jp", "japanese", "japan", "kr", "ko", "korean", "korea", "id", "indonesia", "indonesian", "thai", "th", "vietnam", "asia"].some((token) => normalized.includes(token))) return "japanese";
+  return "english";
 }
 
 function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blueRate: BlueExchangeRate): {
