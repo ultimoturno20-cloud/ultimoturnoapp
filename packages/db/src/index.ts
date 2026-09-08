@@ -1627,14 +1627,13 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     params.push(safeLanguageGroup);
     clauses.push(`pce.language_group = $${params.length}`);
   }
-  const searchClauses: string[] = [];
   for (const token of parsedQuery.textTokens) {
     const variantClauses = searchTokenVariants(token).map((variant) => {
       params.push(`%${variant}%`);
       const placeholder = `$${params.length}`;
       return `(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`;
     });
-    searchClauses.push(`(${variantClauses.join(" or ")})`);
+    clauses.push(`(${variantClauses.join(" or ")})`);
   }
   if (parsedQuery.numberTokens.length) {
     const numberClauses = parsedQuery.numberTokens.map((token) => {
@@ -1643,14 +1642,8 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
       const fuzzy = `$${params.length}`;
       return `(regexp_replace(lower(split_part(pce.card_number, '/', 1)), '^0+', '') = ${exact} or lower(regexp_replace(pce.card_number, '[^a-z0-9]+', '', 'g')) like ${fuzzy} or lower(pce.pricecharting_id) like ${fuzzy})`;
     });
-    searchClauses.push(`(${numberClauses.join(" or ")})`);
+    clauses.push(`(${numberClauses.join(" or ")})`);
   }
-  if (parsedQuery.tokens.length) {
-    params.push(parsedQuery.rawLike);
-    const rawLikePlaceholder = `$${params.length}`;
-    searchClauses.push(`lower(pce.pricecharting_id) like ${rawLikePlaceholder}`);
-  }
-  if (searchClauses.length) clauses.push(`(${searchClauses.join(" or ")})`);
   const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
   params.push(safeLimit);
   const limitPlaceholder = `$${params.length}`;
