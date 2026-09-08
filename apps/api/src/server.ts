@@ -2399,20 +2399,29 @@ type DatabaseUrlChoice = {
 
 function selectDatabaseUrl(): DatabaseUrlChoice {
   const candidates = [
-    { source: "DATABASE_URL", value: String(process.env.DATABASE_URL || "").trim() },
-    { source: "POSTGRES_URL", value: String(process.env.POSTGRES_URL || "").trim() },
-    { source: "POSTGRES_PRISMA_URL", value: String(process.env.POSTGRES_PRISMA_URL || "").trim() },
-    { source: "POSTGRES_URL_NON_POOLING", value: String(process.env.POSTGRES_URL_NON_POOLING || "").trim() }
-  ].filter((candidate) => candidate.value);
-  const primary = candidates[0] || { source: "none", value: "" };
+    { source: "DATABASE_URL", value: cleanDatabaseUrlValue("DATABASE_URL", process.env.DATABASE_URL) },
+    { source: "POSTGRES_URL", value: cleanDatabaseUrlValue("POSTGRES_URL", process.env.POSTGRES_URL) },
+    { source: "POSTGRES_PRISMA_URL", value: cleanDatabaseUrlValue("POSTGRES_PRISMA_URL", process.env.POSTGRES_PRISMA_URL) },
+    { source: "POSTGRES_URL_NON_POOLING", value: cleanDatabaseUrlValue("POSTGRES_URL_NON_POOLING", process.env.POSTGRES_URL_NON_POOLING) }
+  ]
+    .filter((candidate) => candidate.value)
+    .map((candidate) => ({ ...candidate, endpointKind: classifyPostgresEndpoint(candidate.value) }));
+  const primary = candidates[0] || { source: "none", value: "", endpointKind: "none" };
   const pooler = candidates.find((candidate) => isPooledPostgresEndpoint(candidate.value));
-  const selected = productionMode && dbDriver === "postgres" && isSupabaseDirectEndpoint(primary.value) && pooler
-    ? pooler
-    : primary;
-  return {
-    ...selected,
-    endpointKind: classifyPostgresEndpoint(selected.value)
-  };
+  const firstValid = candidates.find((candidate) => candidate.endpointKind !== "invalid");
+  if (productionMode && dbDriver === "postgres" && pooler && (primary.endpointKind === "invalid" || isSupabaseDirectEndpoint(primary.value))) return pooler;
+  if (primary.endpointKind === "invalid" && firstValid) return firstValid;
+  return primary;
+}
+
+function cleanDatabaseUrlValue(key: string, rawValue: unknown) {
+  let value = String(rawValue || "").trim();
+  const assignment = value.match(/^(DATABASE_URL|POSTGRES_URL|POSTGRES_PRISMA_URL|POSTGRES_URL_NON_POOLING)\s*=\s*(.+)$/i);
+  if (assignment) value = assignment[2].trim();
+  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1).trim();
+  }
+  return value.replace(new RegExp(`^${key}\\s*=\\s*`, "i"), "").trim();
 }
 
 function isSupabaseDirectEndpoint(value: string) {
