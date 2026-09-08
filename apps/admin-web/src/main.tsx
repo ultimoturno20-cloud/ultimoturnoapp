@@ -524,12 +524,16 @@ type PriceChartingCacheEntry = {
   canonicalUrl: string;
   sourceUrl: string;
   productName: string;
+  normalizedName?: string;
   expansionName: string;
+  normalizedExpansion?: string;
   cardNumber: string;
   languageGroup: LanguageGroupFilter;
   language?: string;
   finish?: string;
   loosePriceUsd: number | null;
+  tcgplayerPriceUsd?: number | null;
+  tcgplayerSubtype?: string;
   imageUrl: string;
   importedAt: string;
 };
@@ -3161,6 +3165,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const [pickerCatalogTotal, setPickerCatalogTotal] = useState(priceChartingCache.status.totalEntries);
   const [pickerSearching, setPickerSearching] = useState(false);
   const [pickerError, setPickerError] = useState("");
+  const [pickerCurrency, setPickerCurrency] = useState<"USD" | "ARS">("USD");
   const pickerSequence = useRef(0);
   async function searchPicker(search: string) {
     const sequence = ++pickerSequence.current;
@@ -3249,7 +3254,10 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
             <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas</strong></div>
-            <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
+            <div className="catalog-picker-tools">
+              <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
+              <CurrencyToggle value={pickerCurrency} onChange={setPickerCurrency} />
+            </div>
             <div className="catalog-picker-search">
               <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
               <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)}><Icon name="search" />Buscar</button>
@@ -3259,7 +3267,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                 {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
                 <div className="catalog-picker-card-copy">
                   <strong>{cleanCatalogPickerName(entry)}</strong>
-                  <span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span>
+                  <span>{cleanCatalogPickerExpansion(entry) || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span>
                   <small>{entry.canonicalUrl ? catalogSourceLabel(entry) : "Inventario local"}</small>
                 </div>
                 <div className="catalog-picker-meta">
@@ -3267,9 +3275,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                     {entry.finish && entry.finish !== "normal" ? <span className="badge">{finishLabel(entry.finish)}</span> : null}
                     {entry.language ? <span className="badge">{entry.language}</span> : null}
                   </div>
-                  {entry.loosePriceUsd === null || entry.loosePriceUsd === undefined ? (
-                    <span className="catalog-picker-price missing-price"><strong>{isTcgCatalogEntry(entry) ? "Referencia TCG" : "Sin precio PC"}</strong><em>imagen/catalogo</em></span>
-                  ) : <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />}
+                  <CatalogPickerPrices entry={entry} blueRate={blueRate} currency={pickerCurrency} />
                 </div>
               </button>)}
             </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
@@ -6723,6 +6729,8 @@ function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
     language: item.variant.language,
     finish: item.variant.finish || "normal",
     loosePriceUsd: priceChartingReference?.usd ?? item.priceUsd,
+    tcgplayerPriceUsd: item.priceReferences?.tcgplayer.marketPriceUsd ?? item.priceReferences?.tcgplayer.usd ?? null,
+    tcgplayerSubtype: item.priceReferences?.tcgplayer.subTypeName || "",
     imageUrl: item.product.imageUrl || "",
     importedAt: ""
   };
@@ -6731,6 +6739,7 @@ function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
 function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback: PriceChartingCacheEntry[], limit: number): PriceChartingCacheEntry[] {
   const seen = new Set<string>();
   const seenCatalogIdentity = new Set<string>();
+  const seenLooseIdentity = new Set<string>();
   const merged: PriceChartingCacheEntry[] = [];
   const sortedPrimary = [...primary].sort((left, right) => {
     const leftHasPrice = left.loosePriceUsd !== null && left.loosePriceUsd !== undefined;
@@ -6744,11 +6753,14 @@ function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback:
   for (const entry of [...sortedPrimary, ...fallback]) {
     const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
     const identity = catalogPickerIdentity(entry);
+    const looseIdentity = catalogPickerLooseIdentity(entry);
     const isReferenceOnly = isTcgCatalogEntry(entry) && (entry.loosePriceUsd === null || entry.loosePriceUsd === undefined);
     if (seen.has(key)) continue;
     if (isReferenceOnly && seenCatalogIdentity.has(identity)) continue;
+    if (isReferenceOnly && seenLooseIdentity.has(looseIdentity)) continue;
     seen.add(key);
     seenCatalogIdentity.add(identity);
+    seenLooseIdentity.add(looseIdentity);
     merged.push(entry);
     if (merged.length >= limit) break;
   }
@@ -6769,14 +6781,67 @@ function cleanCatalogPickerName(entry: PriceChartingCacheEntry) {
   return name || entry.productName;
 }
 
+function cleanCatalogPickerExpansion(entry: PriceChartingCacheEntry) {
+  const expansion = entry.expansionName.replace(/^[A-Z]{1,5}\d*:\s*/i, "").trim();
+  return expansion || entry.expansionName;
+}
+
 function catalogPickerIdentity(entry: PriceChartingCacheEntry) {
   return [
     normalize(cleanCatalogPickerName(entry)),
-    normalize(entry.expansionName),
+    normalize(entry.normalizedExpansion || cleanCatalogPickerExpansion(entry)),
     primaryCardNumber(entry.cardNumber || ""),
     normalize(entry.language || entry.languageGroup || ""),
     normalize(entry.finish || "normal")
   ].join("|");
+}
+
+function catalogPickerLooseIdentity(entry: PriceChartingCacheEntry) {
+  return [
+    normalize(cleanCatalogPickerName(entry)),
+    primaryCardNumber(entry.cardNumber || ""),
+    normalize(entry.language || entry.languageGroup || ""),
+    normalize(entry.finish || "normal")
+  ].join("|");
+}
+
+function CurrencyToggle({ value, onChange }: { value: "USD" | "ARS"; onChange: (value: "USD" | "ARS") => void }) {
+  return (
+    <div className="catalog-currency-toggle" aria-label="Moneda del catalogo">
+      <span>Moneda:</span>
+      {(["USD", "ARS"] as const).map((currency) => (
+        <button className={value === currency ? "active" : ""} key={currency} type="button" onClick={() => onChange(currency)}>
+          {currency}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CatalogPickerPrices({ entry, blueRate, currency }: { entry: PriceChartingCacheEntry; blueRate: BlueExchangeRate; currency: "USD" | "ARS" }) {
+  const pc = entry.loosePriceUsd ?? null;
+  const tcg = entry.tcgplayerPriceUsd ?? null;
+  return (
+    <div className="catalog-picker-prices">
+      <CatalogPickerPriceLine label="PC" description="Precio de PriceCharting" valueUsd={pc} blueRate={blueRate} currency={currency} missingLabel="Sin precio PC" />
+      <CatalogPickerPriceLine label="TCG" description="Precio de TCGPlayer" valueUsd={tcg} blueRate={blueRate} currency={currency} missingLabel="Sin precio TCG" note={entry.tcgplayerSubtype || ""} />
+    </div>
+  );
+}
+
+function CatalogPickerPriceLine({ label, description, valueUsd, blueRate, currency, missingLabel, note = "" }: { label: string; description: string; valueUsd: number | null; blueRate: BlueExchangeRate; currency: "USD" | "ARS"; missingLabel: string; note?: string }) {
+  const hasPrice = valueUsd !== null && valueUsd !== undefined && Number.isFinite(valueUsd);
+  return (
+    <span className={`catalog-picker-price-line ${hasPrice ? "" : "missing"}`} title={`${label}: ${description}`}>
+      <small>{label}</small>
+      <strong>{hasPrice ? formatCatalogCurrency(Number(valueUsd), blueRate, currency) : missingLabel}</strong>
+      {note && hasPrice ? <em>{note}</em> : null}
+    </span>
+  );
+}
+
+function formatCatalogCurrency(valueUsd: number, blueRate: BlueExchangeRate, currency: "USD" | "ARS") {
+  return currency === "USD" ? formatUsd(valueUsd) : formatArs(toBlueArs(valueUsd, blueRate));
 }
 
 function finishLabel(value: string) {

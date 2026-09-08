@@ -645,6 +645,8 @@ export type PriceChartingCacheInput = {
 
 export type PriceChartingCacheEntry = PriceChartingCacheInput & {
   finish: string;
+  tcgplayerPriceUsd: number | null;
+  tcgplayerSubtype: string;
   importedAt: string;
 };
 
@@ -1663,22 +1665,35 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     select pricecharting_id, canonical_url, source_url, product_name,
       normalized_name, expansion_name, normalized_expansion, card_number,
       pce.language_group, loose_price_usd,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, '')) as image_url,
+      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_match.image_url, '')) as image_url,
+      tcg_price.tcgplayer_price_usd,
+      tcg_price.tcgplayer_subtype,
       search_key, imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
+    left join card_index_entries direct_cie on direct_cie.pricecharting_id = pce.pricecharting_id
     left join lateral (
-      select cie.image_url
+      select cie.image_url, cie.tcgplayer_product_id
       from card_index_entries cie
       where cie.pricecharting_id like 'tcgcsv-%'
-        and coalesce(cie.image_url, '') <> ''
+        and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
         and cie.language_group = pce.language_group
         and cie.normalized_expansion = pce.normalized_expansion
         and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
             regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
-      order by cie.updated_at desc
+      order by case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.updated_at desc
       limit 1
-    ) tcg_image on true
+    ) tcg_match on true
+    left join lateral (
+      select coalesce(tpce.market_price_usd, tpce.mid_price_usd, tpce.low_price_usd, tpce.direct_low_price_usd, tpce.high_price_usd) as tcgplayer_price_usd,
+        tpce.sub_type_name as tcgplayer_subtype
+      from tcgplayer_price_cache_entries tpce
+      where tpce.tcgplayer_product_id = coalesce(nullif(direct_cie.tcgplayer_product_id, ''), nullif(tcg_match.tcgplayer_product_id, ''))
+        and coalesce(tpce.market_price_usd, tpce.mid_price_usd, tpce.low_price_usd, tpce.direct_low_price_usd, tpce.high_price_usd) is not null
+      order by case when lower(tpce.sub_type_name) in ('', 'normal') then 0 else 1 end,
+        tpce.market_price_usd desc nulls last
+      limit 1
+    ) tcg_price on true
     ${whereSql}
     order by pce.product_name, pce.expansion_name, pce.card_number
     limit ${limitPlaceholder}
@@ -1701,6 +1716,8 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
       cardNumber: String(row.card_number || ""),
       finish: inferFinishFromPriceChartingName(String(row.product_name || ""), String(row.canonical_url || "")),
       loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
+      tcgplayerPriceUsd: optionalNumber(row.tcgplayer_price_usd) ?? null,
+      tcgplayerSubtype: String(row.tcgplayer_subtype || ""),
       imageUrl: String(row.image_url || ""),
       languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
       searchKey: String(row.search_key),
@@ -3265,22 +3282,36 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
   const result = await db.query<Record<string, unknown>>(`
     select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
       pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
-      pce.language_group, pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, ''), '') as image_url,
+      pce.language_group, pce.loose_price_usd,
+      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_match.image_url, ''), '') as image_url,
+      tcg_price.tcgplayer_price_usd,
+      tcg_price.tcgplayer_subtype,
       pce.search_key, pce.imported_at
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
+    left join card_index_entries direct_cie on direct_cie.pricecharting_id = pce.pricecharting_id
     left join lateral (
-      select cie.image_url
+      select cie.image_url, cie.tcgplayer_product_id
       from card_index_entries cie
       where cie.pricecharting_id like 'tcgcsv-%'
-        and coalesce(cie.image_url, '') <> ''
+        and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
         and cie.language_group = pce.language_group
         and cie.normalized_expansion = pce.normalized_expansion
         and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
             regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
-      order by cie.updated_at desc
+      order by case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.updated_at desc
       limit 1
-    ) tcg_image on true
+    ) tcg_match on true
+    left join lateral (
+      select coalesce(tpce.market_price_usd, tpce.mid_price_usd, tpce.low_price_usd, tpce.direct_low_price_usd, tpce.high_price_usd) as tcgplayer_price_usd,
+        tpce.sub_type_name as tcgplayer_subtype
+      from tcgplayer_price_cache_entries tpce
+      where tpce.tcgplayer_product_id = coalesce(nullif(direct_cie.tcgplayer_product_id, ''), nullif(tcg_match.tcgplayer_product_id, ''))
+        and coalesce(tpce.market_price_usd, tpce.mid_price_usd, tpce.low_price_usd, tpce.direct_low_price_usd, tpce.high_price_usd) is not null
+      order by case when lower(tpce.sub_type_name) in ('', 'normal') then 0 else 1 end,
+        tpce.market_price_usd desc nulls last
+      limit 1
+    ) tcg_price on true
     where pce.pricecharting_id = $1
     limit 1
   `, [priceChartingId]);
@@ -3296,6 +3327,8 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
     cardNumber: String(row.card_number || ""),
     finish: inferFinishFromPriceChartingName(String(row.product_name || ""), String(row.canonical_url || "")),
     loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
+    tcgplayerPriceUsd: optionalNumber(row.tcgplayer_price_usd) ?? null,
+    tcgplayerSubtype: String(row.tcgplayer_subtype || ""),
     imageUrl: String(row.image_url || ""),
     languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
     searchKey: String(row.search_key || ""),
