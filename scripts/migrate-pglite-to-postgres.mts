@@ -160,7 +160,7 @@ const target = await createOperationalDatabase({
 });
 
 try {
-  await target.query("begin");
+  await target.exec("begin");
   await target.query(`truncate table ${tables.map(quoteIdentifier).join(", ")} cascade`);
   const copied: Array<{ table: string; rows: number }> = [];
   const selectedTables = skipCaches ? tables.filter((table) => !cacheTables.has(table)) : tables;
@@ -169,7 +169,7 @@ try {
     copied.push({ table, rows });
     console.error(`${table}: ${rows}`);
   }
-  await target.query("commit");
+  await target.exec("commit");
   console.log(JSON.stringify({
     ok: true,
     sourceDataDir,
@@ -178,7 +178,7 @@ try {
     totalRows: copied.reduce((sum, item) => sum + item.rows, 0)
   }, null, 2));
 } catch (error) {
-  await target.query("rollback").catch(() => undefined);
+  await target.exec("rollback").catch(() => undefined);
   throw error;
 } finally {
   await source.close();

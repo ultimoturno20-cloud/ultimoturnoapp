@@ -2391,6 +2391,18 @@ function requestHasAccess(request: IncomingMessage) {
   return accessKeyMatches(parseCookies(request.headers.cookie).ultimoturno_access_key || "");
 }
 
+function normalizeDispatchTarget(url: URL) {
+  const targetPath = url.searchParams.get("path") || "/";
+  if (!targetPath.startsWith("/") || targetPath.startsWith("//")) return "/";
+
+  const extraParams = new URLSearchParams(url.searchParams);
+  extraParams.delete("path");
+  const extraQuery = extraParams.toString();
+  if (!extraQuery) return targetPath;
+
+  return `${targetPath}${targetPath.includes("?") ? "&" : "?"}${extraQuery}`;
+}
+
 type DatabaseUrlChoice = {
   value: string;
   source: string;
@@ -2981,8 +2993,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
     if (url.pathname === "/dispatch") {
-      const targetPath = url.searchParams.get("path") || "/";
-      request.url = targetPath.startsWith("/") && !targetPath.startsWith("//") ? targetPath : "/";
+      request.url = normalizeDispatchTarget(url);
+
       url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     }
 

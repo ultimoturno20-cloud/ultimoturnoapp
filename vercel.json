@@ -2,6 +2,22 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "outputDirectory": "apps/admin-web/dist",
+  "rewrites": [
+    { "source": "/api/auth/:path*", "destination": "/api/dispatch?path=/auth/:path*" },
+    { "source": "/api/mobile-intake/:path*", "destination": "/api/dispatch?path=/mobile-intake/:path*" },
+    { "source": "/api/stock-images/:path*", "destination": "/api/dispatch?path=/stock-images/:path*" },
+    { "source": "/api/inventory/:path*", "destination": "/api/dispatch?path=/inventory/:path*" },
+    { "source": "/api/sales/:path*", "destination": "/api/dispatch?path=/sales/:path*" },
+    { "source": "/api/sale-items/:path*", "destination": "/api/dispatch?path=/sale-items/:path*" },
+    { "source": "/api/claims/:path*", "destination": "/api/dispatch?path=/claims/:path*" },
+    { "source": "/api/card-index/:path*", "destination": "/api/dispatch?path=/card-index/:path*" },
+    { "source": "/api/pricecharting-cache/:path*", "destination": "/api/dispatch?path=/pricecharting-cache/:path*" },
+    { "source": "/api/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
+    { "source": "/api/tcgplayer-prices/:path*", "destination": "/api/dispatch?path=/tcgplayer-prices/:path*" },
+    { "source": "/api/exchange-rate/:path*", "destination": "/api/dispatch?path=/exchange-rate/:path*" },
+    { "source": "/api/examples/:path*", "destination": "/api/dispatch?path=/examples/:path*" },
+    { "source": "/api/imports/:path*", "destination": "/api/dispatch?path=/imports/:path*" }
+  ],
   "functions": {
     "api/[...path].ts": {
       "maxDuration": 60
