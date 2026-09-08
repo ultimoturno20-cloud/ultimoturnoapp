@@ -22,7 +22,30 @@ PRICECHARTING_AUTO_REFRESH_ENABLED=false
 TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED=false
 ```
 
-`DATABASE_URL` debe guardarse como secreto. Para Supabase, preferir la URL de **Session Pooler** cuando la red de deploy no use IPv6 directo.
+`DATABASE_URL` debe guardarse como secreto. En Vercel, el valor debe ser solo la URL (`postgresql://...`), sin `DATABASE_URL=` adelante y sin comillas externas.
+
+Para Supabase + Vercel, preferir la URL de **Supavisor / Transaction pooler** o **Session pooler**. La URL directa `db.<project-ref>.supabase.co:5432` suele depender de IPv6; Vercel no siempre puede llegar a ese host desde funciones serverless.
+
+## Diagnostico publico seguro
+
+El endpoint `GET /api/public-status` no expone datos de negocio ni secretos, pero sirve para revisar si Vercel tomo la configuracion correcta:
+
+```json
+{
+  "environment": {
+    "dbDriver": "postgres",
+    "databaseUrlConfigured": true,
+    "databaseUrlSource": "DATABASE_URL",
+    "databaseEndpointKind": "supabase_pooler_transaction"
+  },
+  "data": {
+    "rawPostgres": { "reachable": true },
+    "databaseReachable": true
+  }
+}
+```
+
+Si `databaseEndpointKind` aparece como `invalid`, corregir el valor de `DATABASE_URL` en Vercel. Si `rawPostgres.reachable` aparece como `false` con una URL directa de Supabase, cambiar a una URL pooler IPv4.
 
 ## Comandos de Vercel
 
