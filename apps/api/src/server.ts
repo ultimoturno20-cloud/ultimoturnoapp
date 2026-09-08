@@ -2425,10 +2425,11 @@ function cleanDatabaseUrlValue(key: string, rawValue: unknown) {
   }
   const embeddedUrl = value.match(/postgres(?:ql)?:\/\/[^\s"'`]+/i);
   if (embeddedUrl) value = embeddedUrl[0].trim();
-  return value
+  value = value
     .replace(new RegExp(`^${key}\\s*=\\s*`, "i"), "")
     .replace(/[),;]+$/, "")
     .trim();
+  return repairPostgresCredentialEncoding(value);
 }
 
 function buildPostgresUrlFromComponents() {
@@ -2439,6 +2440,31 @@ function buildPostgresUrlFromComponents() {
   const port = String(process.env.POSTGRES_PORT || "5432").trim();
   if (!host || !user || !password) return "";
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database || "postgres")}`;
+}
+
+function repairPostgresCredentialEncoding(value: string) {
+  if (classifyPostgresEndpoint(value) !== "invalid") return value;
+  const protocol = value.match(/^(postgres(?:ql)?:\/\/)/i)?.[1];
+  if (!protocol) return value;
+  const rest = value.slice(protocol.length);
+  const atIndex = rest.lastIndexOf("@");
+  if (atIndex <= 0) return value;
+  const userInfo = rest.slice(0, atIndex);
+  const hostAndPath = rest.slice(atIndex + 1);
+  const separatorIndex = userInfo.indexOf(":");
+  if (separatorIndex <= 0 || !hostAndPath) return value;
+  const username = encodeConnectionCredential(userInfo.slice(0, separatorIndex));
+  const password = encodeConnectionCredential(userInfo.slice(separatorIndex + 1));
+  const repaired = `${protocol}${username}:${password}@${hostAndPath}`;
+  return classifyPostgresEndpoint(repaired) === "invalid" ? value : repaired;
+}
+
+function encodeConnectionCredential(value: string) {
+  try {
+    return encodeURIComponent(decodeURIComponent(value));
+  } catch {
+    return encodeURIComponent(value);
+  }
 }
 
 function isSupabaseDirectEndpoint(value: string) {
