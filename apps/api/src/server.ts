@@ -2281,12 +2281,12 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
   response.end(JSON.stringify(payload, null, 2));
 }
 
-function sendBuffer(response: ServerResponse, statusCode: number, body: Buffer, contentType: string) {
+function sendBuffer(response: ServerResponse, statusCode: number, body: Buffer, contentType: string, omitBody = false) {
   response.writeHead(statusCode, {
     "Content-Type": contentType,
     "Cache-Control": "public, max-age=31536000, immutable"
   });
-  response.end(body);
+  response.end(omitBody ? undefined : body);
 }
 
 function imageContentTypeForFile(fileName: string, fallback = "image/jpeg") {
@@ -3024,7 +3024,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
-    if (url.pathname.startsWith("/pricecharting-images/files/") && request.method === "GET") {
+    if (url.pathname.startsWith("/pricecharting-images/files/") && (request.method === "GET" || request.method === "HEAD")) {
       const fileName = decodeURIComponent(url.pathname.replace("/pricecharting-images/files/", ""));
       if (!/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(fileName)) {
         sendJson(response, 400, { ok: false, error: "Nombre de imagen invalido." });
@@ -3032,13 +3032,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       }
       const cached = await readCachedPriceChartingImage(fileName);
       if (cached) {
-        sendBuffer(response, 200, cached.body, cached.contentType);
+        sendBuffer(response, 200, cached.body, cached.contentType, request.method === "HEAD");
         return;
       }
       const db = await dbPromise;
       const repaired = await fetchAndCacheMissingPriceChartingImage(db, fileName);
       if (repaired) {
-        sendBuffer(response, 200, repaired.body, repaired.contentType);
+        sendBuffer(response, 200, repaired.body, repaired.contentType, request.method === "HEAD");
         return;
       }
       sendJson(response, 404, { ok: false, error: "Imagen no encontrada." });
