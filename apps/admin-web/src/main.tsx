@@ -731,6 +731,7 @@ const mobileHelperStorageKey = "ultimoturno_mobile_helper_name";
 const mobileBatchStorageKey = "ultimoturno_mobile_default_batch";
 const mobileConditionStorageKey = "ultimoturno_mobile_default_condition";
 const fallbackBlueRateSell = 1540;
+const minimumSalePriceArs = 800;
 const exampleSnapshotCsv = `sku,name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,location,quantityOnHand,quantityReserved,priceArs,priceUsd
 UT-CSV-HORSEA-AQ-EN-NM,Horsea,Aquapolis,85,EN,NM,normal,,,,Caja agua C,2,0,4500,3.6
 ,Flareon EX,Generations,RC28,EN,NM,normal,,,,Caja fuego A,1,0,180000,117
@@ -1047,9 +1048,10 @@ function App() {
     productRequest.current = true;
     setProductSaving(true);
     try {
+      const body = normalizeInventorySalePrice(form, blueRate);
       const result = await api<{ item: StockRow }>(editingId ? `/inventory/${editingId}` : "/inventory/intake", {
         method: editingId ? "PUT" : "POST",
-        body: form
+        body
       });
       setStock((current) => {
         const exists = current.items.some((item) => item.id === result.item.id);
@@ -3200,6 +3202,10 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const isGraded = Boolean(form.gradingCompany || form.grade || form.condition === "GRADED");
   const available = Math.max(0, form.quantityOnHand - form.quantityReserved);
   const convertedArs = form.priceUsd ? Math.round(toBlueArs(form.priceUsd, blueRate)) : 0;
+  const recommendedPriceArs = recommendedSalePriceArs(form.priceUsd, blueRate);
+  const applyRecommendedPrice = () => {
+    set({ priceArs: recommendedPriceArs, priceUsd: roundUsd(fromBlueArs(recommendedPriceArs, blueRate)) });
+  };
   const setSalePriceArs = (value: string) => {
     if (value === "") {
       set({ priceArs: 0, priceUsd: null });
@@ -3214,7 +3220,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       return;
     }
     const priceUsd = Math.max(0, Number(value || 0));
-    set({ priceUsd, priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : 0 });
+    set({ priceUsd, priceArs: priceUsd ? recommendedSalePriceArs(priceUsd, blueRate) : 0 });
   };
   const setPresentation = (presentation: "RAW" | "GRADED") => {
     if (presentation === "GRADED") set({ condition: "GRADED", gradingCompany: form.gradingCompany || "PSA", grade: form.grade || "10" });
@@ -3232,8 +3238,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       priceChartingUrl: entry.canonicalUrl,
       language: entry.language || form.language,
       finish: entry.finish || form.finish,
-      priceUsd,
-      priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : form.priceArs
+      priceUsd: priceUsd ? roundUsd(fromBlueArs(recommendedSalePriceArs(priceUsd, blueRate), blueRate)) : form.priceUsd,
+      priceArs: recommendedSalePriceArs(priceUsd, blueRate)
     });
     setCatalogPickerOpen(false);
   };
@@ -3305,8 +3311,9 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             <div className="edit-section-heading"><h3>Agregar existencias</h3><span>El costo es opcional</span></div>
             <div className="edit-field-grid">
               <label>Cantidad a agregar<input autoFocus required type="number" min={1} step={1} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
-              <label>Precio de venta ARS<input type="number" min={0} step={0.01} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} placeholder="Opcional" /></label>
+              <label>Precio de venta ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} placeholder="Opcional" /></label>
               <label>Precio de venta USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} placeholder="Opcional" /></label>
+              <div className="price-helper recommended-price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
               <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
               <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
               <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
@@ -3352,8 +3359,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <label>Estado<select value={form.inventoryStatus} onChange={(event) => set({ inventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
               {editing ? <><label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label></> : null}
               <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} /></label>
-              <label>Precio ARS<input type="number" min={0} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} /></label>
-              <div className="price-helper"><span>Cotizacion actual</span><strong>{formatArs(blueRate.sell)}</strong>{convertedArs ? <button type="button" className="secondary-action" onClick={() => set({ priceArs: convertedArs })}>Usar {formatArs(convertedArs)}</button> : null}</div>
+              <label>Precio ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} /></label>
+              <div className="price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
             </div>
           </section>
 
@@ -6894,6 +6901,25 @@ function toBlueArs(valueUsd: number | null | undefined, blueRate: BlueExchangeRa
 function fromBlueArs(valueArs: number | null | undefined, blueRate: BlueExchangeRate) {
   if (!valueArs || valueArs <= 0 || blueRate.sell <= 0) return 0;
   return valueArs / blueRate.sell;
+}
+
+function roundRecommendedArs(valueArs: number) {
+  if (!Number.isFinite(valueArs) || valueArs <= 0) return minimumSalePriceArs;
+  return Math.max(minimumSalePriceArs, Math.ceil(valueArs / 100) * 100);
+}
+
+function recommendedSalePriceArs(priceUsd: number | null | undefined, blueRate: BlueExchangeRate) {
+  return roundRecommendedArs(toBlueArs(priceUsd, blueRate));
+}
+
+function normalizeInventorySalePrice(form: InventoryFormState, blueRate: BlueExchangeRate): InventoryFormState {
+  const currentArs = Number.isFinite(form.priceArs) ? form.priceArs : 0;
+  const nextArs = currentArs > 0 ? roundRecommendedArs(currentArs) : recommendedSalePriceArs(form.priceUsd, blueRate);
+  return {
+    ...form,
+    priceArs: nextArs,
+    priceUsd: roundUsd(fromBlueArs(nextArs, blueRate))
+  };
 }
 
 function formatDate(value: string) {

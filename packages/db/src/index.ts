@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import type { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
 
+const minimumSalePriceArs = 800;
+
 export type DatabaseCheck = {
   table: string;
   count: number;
@@ -2662,6 +2664,7 @@ export async function upsertInventoryItem(
   const inventoryStatus = normalizeInventoryStatus(input.inventoryStatus);
   const tags = input.tags === undefined ? before?.tags || "" : normalizeInventoryTags(input.tags);
   const quantityDelta = input.quantityOnHand - (before?.quantityOnHand || 0);
+  const salePriceArs = normalizeSalePriceArs(input.priceArs || 0);
 
   {
     if (before) {
@@ -2729,7 +2732,7 @@ export async function upsertInventoryItem(
             price_usd = excluded.price_usd,
             manual_override = true,
             updated_at = now()
-    `, [itemId, actor.businessId, input.priceArs || 0, input.priceUsd ?? null]);
+    `, [itemId, actor.businessId, salePriceArs, input.priceUsd ?? null]);
 
     await upsertExternalIdentifier(db, actor.businessId, productId, variantId, "pricecharting", input.priceChartingId || input.priceChartingUrl || "", input.priceChartingUrl || undefined);
     await upsertExternalIdentifier(db, actor.businessId, productId, variantId, "monprice", input.monPriceId || "", undefined);
@@ -5133,6 +5136,11 @@ function validateInventoryInput(input: UpsertInventoryInput): void {
   if (!input.finish?.trim()) throw new Error("El acabado es obligatorio");
   if (!Number.isInteger(input.quantityOnHand) || input.quantityOnHand < 0) throw new Error("La cantidad total debe ser un entero mayor o igual a cero");
   if ((input.quantityReserved || 0) > input.quantityOnHand) throw new Error("La cantidad reservada no puede superar el total");
+}
+
+function normalizeSalePriceArs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return minimumSalePriceArs;
+  return Math.max(minimumSalePriceArs, Math.ceil(value / 100) * 100);
 }
 
 function buildSku(input: UpsertInventoryInput): string {
