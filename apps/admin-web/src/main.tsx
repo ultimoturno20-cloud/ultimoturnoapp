@@ -3200,6 +3200,22 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const isGraded = Boolean(form.gradingCompany || form.grade || form.condition === "GRADED");
   const available = Math.max(0, form.quantityOnHand - form.quantityReserved);
   const convertedArs = form.priceUsd ? Math.round(toBlueArs(form.priceUsd, blueRate)) : 0;
+  const setSalePriceArs = (value: string) => {
+    if (value === "") {
+      set({ priceArs: 0, priceUsd: null });
+      return;
+    }
+    const priceArs = Math.max(0, Number(value || 0));
+    set({ priceArs, priceUsd: priceArs ? roundUsd(fromBlueArs(priceArs, blueRate)) : null });
+  };
+  const setSalePriceUsd = (value: string) => {
+    if (value === "") {
+      set({ priceUsd: null, priceArs: 0 });
+      return;
+    }
+    const priceUsd = Math.max(0, Number(value || 0));
+    set({ priceUsd, priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : 0 });
+  };
   const setPresentation = (presentation: "RAW" | "GRADED") => {
     if (presentation === "GRADED") set({ condition: "GRADED", gradingCompany: form.gradingCompany || "PSA", grade: form.grade || "10" });
     else set({ condition: form.condition === "GRADED" ? "NM" : form.condition, gradingCompany: "", grade: "", gradingCert: "" });
@@ -3289,8 +3305,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             <div className="edit-section-heading"><h3>Agregar existencias</h3><span>El costo es opcional</span></div>
             <div className="edit-field-grid">
               <label>Cantidad a agregar<input autoFocus required type="number" min={1} step={1} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
-              <label>Precio de venta ARS<input type="number" min={0} step={0.01} value={form.priceArs || ""} onChange={(event) => set({ priceArs: Number(event.target.value) })} placeholder="Opcional" /></label>
-              <label>Precio de venta USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => set({ priceUsd: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Opcional" /></label>
+              <label>Precio de venta ARS<input type="number" min={0} step={0.01} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} placeholder="Opcional" /></label>
+              <label>Precio de venta USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} placeholder="Opcional" /></label>
               <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
               <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
               <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
@@ -3335,9 +3351,9 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <label>Categoria(s)<input value={form.tags} onChange={(event) => set({ tags: event.target.value })} placeholder="jugables, old, full art..." list="inventory-tag-suggestions" /></label>
               <label>Estado<select value={form.inventoryStatus} onChange={(event) => set({ inventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
               {editing ? <><label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label></> : null}
-              <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => set({ priceUsd: event.target.value ? Number(event.target.value) : null })} /></label>
-              <label>Precio ARS<input type="number" min={0} value={form.priceArs} onChange={(event) => set({ priceArs: Number(event.target.value) })} /></label>
-              <div className="price-helper"><span>Blue actual</span><strong>{formatArs(blueRate.sell)}</strong>{convertedArs ? <button type="button" className="secondary-action" onClick={() => set({ priceArs: convertedArs })}>Usar {formatArs(convertedArs)}</button> : null}</div>
+              <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} /></label>
+              <label>Precio ARS<input type="number" min={0} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} /></label>
+              <div className="price-helper"><span>Cotizacion actual</span><strong>{formatArs(blueRate.sell)}</strong>{convertedArs ? <button type="button" className="secondary-action" onClick={() => set({ priceArs: convertedArs })}>Usar {formatArs(convertedArs)}</button> : null}</div>
             </div>
           </section>
 
@@ -6891,6 +6907,10 @@ function formatShortDate(value: string) {
 function formatUsd(value: number | null) {
   if (value === null) return "Sin precio";
   return usdFormatter.format(value);
+}
+
+function roundUsd(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function formatBytes(value: number) {
