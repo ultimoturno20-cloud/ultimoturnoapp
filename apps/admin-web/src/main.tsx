@@ -6480,8 +6480,11 @@ function LanguageGroupSelector({ value, onChange }: { value: LanguageGroupFilter
 
 function inventoryLanguageGroup(language: string): LanguageGroupFilter {
   const normalized = normalize(language);
-  if (["cn", "zh", "chs", "cht", "sc", "tc", "chinese", "china", "simplified", "traditional"].some((token) => normalized.includes(token))) return "chinese";
-  if (["ja", "jp", "japanese", "japan", "kr", "ko", "korean", "korea", "id", "indonesia", "indonesian", "thai", "th", "vietnam", "asia"].some((token) => normalized.includes(token))) return "japanese";
+  const tokens = new Set(normalized.split(" ").filter(Boolean));
+  if (["chinese", "china", "simplified", "traditional", "taiwan"].some((token) => normalized.includes(token))) return "chinese";
+  if (["zh", "cn", "chs", "cht"].some((token) => tokens.has(token))) return "chinese";
+  if (["japanese", "japan", "korean", "korea", "indonesia", "indonesian", "thai", "thailand", "vietnam", "asia"].some((token) => normalized.includes(token))) return "japanese";
+  if (["ja", "jp", "kr", "ko"].some((token) => tokens.has(token))) return "japanese";
   return "english";
 }
 

@@ -174,7 +174,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -3320,20 +3320,23 @@ function cleanPriceChartingProductName(name: string): string {
 
 export function inferLanguageGroup(...values: string[]): LanguageGroup {
   const text = normalizeImportText(values.filter(Boolean).join(" "));
+  const tokens = new Set(text.split(" ").filter(Boolean));
   const chineseSignals = [
     "chinese", "china", "simplified", "traditional", "taiwan", "hong kong",
-    "zh cn", "zh tw", "cn", "chs", "cht", "sc", "tc"
+    "zh cn", "zh tw"
   ];
   if (chineseSignals.some((signal) => text.includes(signal))) return "chinese";
+  if (["zh", "cn", "chs", "cht"].some((signal) => tokens.has(signal))) return "chinese";
 
   const japaneseBucketSignals = [
-    "japanese", "japan", "jp", "ja",
-    "korean", "korea", "kr", "ko",
-    "indonesia", "indonesian", "id",
-    "thai", "thailand", "th",
+    "japanese", "japan",
+    "korean", "korea",
+    "indonesia", "indonesian",
+    "thai", "thailand",
     "vietnam", "vietnamese", "asia", "asian"
   ];
   if (japaneseBucketSignals.some((signal) => text.includes(signal))) return "japanese";
+  if (["jp", "ja", "kr", "ko"].some((signal) => tokens.has(signal))) return "japanese";
 
   return "english";
 }

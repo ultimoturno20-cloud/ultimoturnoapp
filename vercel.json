@@ -21,6 +21,7 @@
   ],
   "functions": {
     "api/[...path].ts": {
+      "includeFiles": "packages/db/{migrations,seeds}/**",
       "maxDuration": 60
     }
   }
