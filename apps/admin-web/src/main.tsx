@@ -734,6 +734,7 @@ function App() {
   const [accessRequired, setAccessRequired] = useState(false);
   const [accessKeyDraft, setAccessKeyDraft] = useState(() => getStoredAccessKey());
   const [accessChecking, setAccessChecking] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [userName, setUserName] = useState("");
   const [environment, setEnvironment] = useState<AppEnvironment>({ dataProfile: "EJEMPLOS", allowExamples: true });
   const [blueRate, setBlueRate] = useState<BlueExchangeRate>(() => fallbackBlueRate());
@@ -882,6 +883,7 @@ function App() {
     setStoredAccessKey(nextKey);
     try {
       await refresh();
+      setInitialLoadComplete(true);
       setAccessRequired(false);
       setError("");
       showMessage("Acceso habilitado.");
@@ -897,10 +899,12 @@ function App() {
   useEffect(() => {
     if (initialExamplesChecked) return;
     setInitialExamplesChecked(true);
-    refresh(true).catch((nextError) => {
-      if (isAccessError(nextError)) setAccessRequired(true);
-      else setError(errorMessage(nextError));
-    });
+    refresh(true)
+      .catch((nextError) => {
+        if (isAccessError(nextError)) setAccessRequired(true);
+        else setError(errorMessage(nextError));
+      })
+      .finally(() => setInitialLoadComplete(true));
   }, [initialExamplesChecked]);
 
   useEffect(() => {
@@ -1955,6 +1959,8 @@ function App() {
     setCartFocusNonce((value) => value + 1);
     showMessage(mode === "reservation" ? "Orden suelta lista: agrega cartas y crea la reserva." : "Venta directa lista: agrega cartas y confirma el cobro.");
   };
+
+  if (!initialLoadComplete && !accessRequired) return <BootScreen />;
 
   if (accessRequired) {
     return (
@@ -5849,6 +5855,21 @@ function MoneyStack({ ars, usd, blueRate, compact = false, label, className = ""
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return <div className="empty-state"><strong>{title}</strong><span>{body}</span></div>;
+}
+
+function BootScreen() {
+  return (
+    <main className="access-shell">
+      <section className="access-card boot-card" aria-live="polite">
+        <img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" />
+        <div>
+          <h1>UltimoTurno</h1>
+          <p className="subtitle">Conectando...</p>
+        </div>
+        <div className="boot-progress" />
+      </section>
+    </main>
+  );
 }
 
 function AccessGate({
