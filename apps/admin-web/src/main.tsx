@@ -528,6 +528,7 @@ type PriceChartingCacheEntry = {
   cardNumber: string;
   languageGroup: LanguageGroupFilter;
   language?: string;
+  finish?: string;
   loosePriceUsd: number | null;
   imageUrl: string;
   importedAt: string;
@@ -3205,6 +3206,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       priceChartingId: entry.priceChartingId,
       priceChartingUrl: entry.canonicalUrl,
       language: entry.language || form.language,
+      finish: entry.finish || form.finish,
       priceUsd,
       priceArs: priceUsd ? Math.round(toBlueArs(priceUsd, blueRate)) : form.priceArs
     });
@@ -3252,6 +3254,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
                 {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
                 <div className="catalog-picker-card-copy"><strong>{entry.productName}</strong><span>{entry.expansionName || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span></div>
+                {entry.finish && entry.finish !== "normal" ? <span className="badge">{finishLabel(entry.finish)}</span> : null}
                 {entry.language ? <span className="badge">{entry.language}</span> : null}
                 <MoneyStack usd={entry.loosePriceUsd} blueRate={blueRate} compact className="catalog-picker-price" />
               </button>)}
@@ -6688,6 +6691,7 @@ function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
     cardNumber: item.product.number || "",
     languageGroup: inventoryLanguageGroup(item.variant.language),
     language: item.variant.language,
+    finish: item.variant.finish || "normal",
     loosePriceUsd: priceChartingReference?.usd ?? item.priceUsd,
     imageUrl: item.product.imageUrl || "",
     importedAt: ""
@@ -6705,6 +6709,16 @@ function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback:
     if (merged.length >= limit) break;
   }
   return merged;
+}
+
+function finishLabel(value: string) {
+  const normalized = normalize(value);
+  if (normalized === "reverse holo" || normalized === "reverse") return "Reverse";
+  if (normalized === "cosmos holo") return "Cosmos";
+  if (normalized === "master ball" || normalized === "masterball") return "Master Ball";
+  if (normalized === "poke ball" || normalized === "pokeball") return "Poke Ball";
+  if (normalized === "holo") return "Holo";
+  return value;
 }
 
 const arsFormatter = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });

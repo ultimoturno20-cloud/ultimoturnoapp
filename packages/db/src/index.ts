@@ -641,6 +641,7 @@ export type PriceChartingCacheInput = {
 };
 
 export type PriceChartingCacheEntry = PriceChartingCacheInput & {
+  finish: string;
   importedAt: string;
 };
 
@@ -1672,6 +1673,7 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
       expansionName: String(row.expansion_name || ""),
       normalizedExpansion: String(row.normalized_expansion || ""),
       cardNumber: String(row.card_number || ""),
+      finish: inferFinishFromPriceChartingName(String(row.product_name || ""), String(row.canonical_url || "")),
       loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
       imageUrl: String(row.image_url || ""),
       languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
@@ -3254,6 +3256,7 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
     expansionName: String(row.expansion_name || ""),
     normalizedExpansion: String(row.normalized_expansion || ""),
     cardNumber: String(row.card_number || ""),
+    finish: inferFinishFromPriceChartingName(String(row.product_name || ""), String(row.canonical_url || "")),
     loosePriceUsd: optionalNumber(row.loose_price_usd) ?? null,
     imageUrl: String(row.image_url || ""),
     languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
@@ -3303,8 +3306,8 @@ async function resolveInventoryItemForPriceChartingPurchase(db: PGlite, priceCha
   return itemId;
 }
 
-function inferFinishFromPriceChartingName(name: string): string {
-  const normalizedName = normalizeImportText(name);
+function inferFinishFromPriceChartingName(...values: string[]): string {
+  const normalizedName = normalizeImportText(values.filter(Boolean).join(" "));
   if (normalizedName.includes("reverse holo")) return "reverse holo";
   if (normalizedName.includes("cosmos holo")) return "cosmos holo";
   if (normalizedName.includes("holo")) return "holo";
