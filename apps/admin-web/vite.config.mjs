@@ -12,6 +12,10 @@ export default defineConfig({
         target: process.env.ULTIMOTURNO_API_PROXY_TARGET || "http://localhost:4000",
         changeOrigin: true,
         rewrite: (requestPath) => requestPath.replace(/^\/api/, "")
+      },
+      "/pricecharting-images": {
+        target: process.env.ULTIMOTURNO_API_PROXY_TARGET || "http://localhost:4000",
+        changeOrigin: true
       }
     }
   }

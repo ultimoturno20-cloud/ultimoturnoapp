@@ -3,6 +3,7 @@
   "installCommand": "npm install",
   "outputDirectory": "apps/admin-web/dist",
   "rewrites": [
+    { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
     { "source": "/api/auth/:path*", "destination": "/api/dispatch?path=/auth/:path*" },
     { "source": "/api/mobile-intake/:path*", "destination": "/api/dispatch?path=/mobile-intake/:path*" },
     { "source": "/api/stock-images/:path*", "destination": "/api/dispatch?path=/stock-images/:path*" },
