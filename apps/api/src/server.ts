@@ -51,6 +51,7 @@ import {
   listMobileInventoryEntries,
   listActiveClaimMissingPriceChartingImages,
   listPriceChartingCache,
+  listUnifiedCatalogCards,
   listSales,
   listStockForBusiness,
   listStockImageReview,
@@ -3817,6 +3818,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const limit = Number(url.searchParams.get("limit") || 50);
       const languageGroup = url.searchParams.get("languageGroup") || "all";
       sendJson(response, 200, await listPriceChartingCache(db, query, limit, languageGroup));
+      return;
+    }
+
+    if (url.pathname === "/catalog-cards" && request.method === "GET") {
+      const query = url.searchParams.get("query") || "";
+      const limit = Number(url.searchParams.get("limit") || 50);
+      const languageGroup = url.searchParams.get("languageGroup") || "all";
+      sendJson(response, 200, await listUnifiedCatalogCards(db, query, limit, languageGroup));
       return;
     }
 

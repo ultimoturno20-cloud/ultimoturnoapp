@@ -520,9 +520,13 @@ type ClaimOrderPreview = {
 };
 
 type PriceChartingCacheEntry = {
+  catalogId?: string;
   priceChartingId: string;
   canonicalUrl: string;
   sourceUrl: string;
+  priceChartingUrl?: string;
+  tcgplayerUrl?: string;
+  tcgplayerProductId?: string;
   productName: string;
   normalizedName?: string;
   expansionName: string;
@@ -532,6 +536,7 @@ type PriceChartingCacheEntry = {
   language?: string;
   finish?: string;
   loosePriceUsd: number | null;
+  priceChartingPriceUsd?: number | null;
   tcgplayerPriceUsd?: number | null;
   tcgplayerSubtype?: string;
   imageUrl: string;
@@ -3174,7 +3179,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerSearching(true);
     setPickerError("");
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/pricecharting-cache?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
+      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
       const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
       if (sequence === pickerSequence.current) {
         setPickerCatalogTotal(result.status?.totalEntries ?? priceChartingCache.status.totalEntries);
@@ -3227,7 +3232,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     else set({ condition: form.condition === "GRADED" ? "NM" : form.condition, gradingCompany: "", grade: "", gradingCert: "" });
   };
   const selectCatalogCard = (entry: PriceChartingCacheEntry) => {
-    const priceUsd = entry.loosePriceUsd ?? null;
+    const priceUsd = entry.priceChartingPriceUsd ?? entry.loosePriceUsd ?? null;
+    const priceChartingUrl = entry.priceChartingUrl || entry.canonicalUrl;
     set({
       sku: "",
       name: entry.productName,
@@ -3235,7 +3241,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       number: entry.cardNumber,
       imageUrl: entry.imageUrl,
       priceChartingId: entry.priceChartingId,
-      priceChartingUrl: entry.canonicalUrl,
+      priceChartingUrl,
       language: entry.language || form.language,
       finish: entry.finish || form.finish,
       priceUsd: priceUsd ? roundUsd(fromBlueArs(recommendedSalePriceArs(priceUsd, blueRate), blueRate)) : form.priceUsd,
@@ -6791,7 +6797,7 @@ function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback:
 }
 
 function isTcgCatalogEntry(entry: PriceChartingCacheEntry) {
-  return entry.priceChartingId.startsWith("tcgcsv-") || entry.canonicalUrl.includes("tcgplayer.com");
+  return entry.priceChartingId.startsWith("tcgcsv-") || entry.canonicalUrl.includes("tcgplayer.com") || Boolean(entry.tcgplayerUrl && !entry.priceChartingUrl);
 }
 
 function catalogSourceLabel(entry: PriceChartingCacheEntry) {
@@ -6842,7 +6848,7 @@ function CurrencyToggle({ value, onChange }: { value: "USD" | "ARS"; onChange: (
 }
 
 function CatalogPickerPrices({ entry, blueRate, currency }: { entry: PriceChartingCacheEntry; blueRate: BlueExchangeRate; currency: "USD" | "ARS" }) {
-  const pc = entry.loosePriceUsd ?? null;
+  const pc = entry.priceChartingPriceUsd ?? entry.loosePriceUsd ?? null;
   const tcg = entry.tcgplayerPriceUsd ?? null;
   return (
     <div className="catalog-picker-prices">

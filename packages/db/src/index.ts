@@ -176,7 +176,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -650,6 +650,34 @@ export type PriceChartingCacheEntry = PriceChartingCacheInput & {
   tcgplayerPriceUsd: number | null;
   tcgplayerSubtype: string;
   importedAt: string;
+};
+
+export type UnifiedCatalogEntry = {
+  catalogId: string;
+  priceChartingId: string;
+  tcgplayerProductId: string;
+  canonicalUrl: string;
+  sourceUrl: string;
+  priceChartingUrl: string;
+  tcgplayerUrl: string;
+  productName: string;
+  normalizedName: string;
+  expansionName: string;
+  normalizedExpansion: string;
+  cardNumber: string;
+  languageGroup: LanguageGroup;
+  finish: string;
+  loosePriceUsd: number | null;
+  priceChartingPriceUsd: number | null;
+  tcgplayerPriceUsd: number | null;
+  tcgplayerSubtype: string;
+  imageUrl: string;
+  hasImage: boolean;
+  hasPriceChartingPrice: boolean;
+  hasTcgplayerPrice: boolean;
+  searchKey: string;
+  importedAt: string;
+  updatedAt: string;
 };
 
 export type PriceChartingCacheStatus = {
@@ -1725,6 +1753,72 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
       searchKey: String(row.search_key),
       importedAt: String(row.imported_at)
     })),
+    status: await getPriceChartingCacheStatus(db)
+  };
+}
+
+export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50, languageGroup = "all"): Promise<{
+  entries: UnifiedCatalogEntry[];
+  status: PriceChartingCacheStatus;
+}> {
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  const parsedQuery = parseSearchQuery(query);
+  const safeLanguageGroup = normalizeLanguageGroupFilter(languageGroup);
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  if (safeLanguageGroup !== "all") {
+    params.push(safeLanguageGroup);
+    clauses.push(`language_group = $${params.length}`);
+  }
+  for (const token of parsedQuery.textTokens) {
+    const variantClauses = searchTokenVariants(token).map((variant) => {
+      params.push(`%${variant}%`);
+      const placeholder = `$${params.length}`;
+      return `(search_key like ${placeholder} or lower(pricecharting_id) like ${placeholder} or lower(tcgplayer_product_id) like ${placeholder})`;
+    });
+    clauses.push(`(${variantClauses.join(" or ")})`);
+  }
+  if (parsedQuery.numberTokens.length) {
+    const numberClauses = parsedQuery.numberTokens.map((token) => {
+      params.push(token, `%${token}%`);
+      const exact = `$${params.length - 1}`;
+      const fuzzy = `$${params.length}`;
+      return `(regexp_replace(lower(split_part(card_number, '/', 1)), '^0+', '') = ${exact} or lower(regexp_replace(card_number, '[^a-z0-9]+', '', 'g')) like ${fuzzy} or lower(pricecharting_id) like ${fuzzy} or lower(tcgplayer_product_id) like ${fuzzy})`;
+    });
+    clauses.push(`(${numberClauses.join(" or ")})`);
+  }
+  const whereSql = clauses.length ? `where ${clauses.join(" and ")}` : "";
+  params.push(safeLimit);
+  const limitPlaceholder = `$${params.length}`;
+  const result = await db.query<Record<string, unknown>>(`
+    select *
+    from unified_catalog_cards
+    ${whereSql}
+    order by product_name, expansion_name, card_number
+    limit ${limitPlaceholder}
+  `, params);
+  const rows = result.rows
+    .map((row) => ({
+      row,
+      score: scorePriceChartingSearchRow({
+        product_name: row.product_name,
+        expansion_name: row.expansion_name,
+        card_number: row.card_number,
+        search_key: row.search_key,
+        pricecharting_id: row.pricecharting_id
+      }, parsedQuery)
+    }))
+    .filter((entry) => !parsedQuery.tokens.length || entry.score > 0)
+    .sort((left, right) => {
+      const leftPriced = Boolean(left.row.pricecharting_price_usd);
+      const rightPriced = Boolean(right.row.pricecharting_price_usd);
+      if (leftPriced !== rightPriced) return leftPriced ? -1 : 1;
+      return right.score - left.score || String(left.row.product_name).localeCompare(String(right.row.product_name), "es", { numeric: true });
+    })
+    .slice(0, safeLimit)
+    .map((entry) => entry.row);
+  return {
+    entries: rows.map(mapUnifiedCatalogRow),
     status: await getPriceChartingCacheStatus(db)
   };
 }
@@ -5309,6 +5403,39 @@ function optionalNumber(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const next = Number(value);
   return Number.isFinite(next) ? next : undefined;
+}
+
+function mapUnifiedCatalogRow(row: Record<string, unknown>): UnifiedCatalogEntry {
+  const priceChartingUrl = String(row.pricecharting_url || "");
+  const productName = String(row.product_name || "");
+  const priceChartingPriceUsd = optionalNumber(row.pricecharting_price_usd) ?? null;
+  return {
+    catalogId: String(row.catalog_id || row.pricecharting_id || ""),
+    priceChartingId: String(row.pricecharting_id || ""),
+    tcgplayerProductId: String(row.tcgplayer_product_id || ""),
+    canonicalUrl: priceChartingUrl,
+    sourceUrl: priceChartingUrl,
+    priceChartingUrl,
+    tcgplayerUrl: String(row.tcgplayer_url || ""),
+    productName,
+    normalizedName: String(row.normalized_name || ""),
+    expansionName: String(row.expansion_name || ""),
+    normalizedExpansion: String(row.normalized_expansion || ""),
+    cardNumber: String(row.card_number || ""),
+    languageGroup: inferLanguageGroup(String(row.expansion_name || ""), productName, priceChartingUrl, String(row.language_group || "")),
+    finish: inferFinishFromPriceChartingName(productName, priceChartingUrl),
+    loosePriceUsd: priceChartingPriceUsd,
+    priceChartingPriceUsd,
+    tcgplayerPriceUsd: optionalNumber(row.tcgplayer_price_usd) ?? null,
+    tcgplayerSubtype: String(row.tcgplayer_subtype || ""),
+    imageUrl: String(row.image_url || ""),
+    hasImage: Boolean(row.has_image),
+    hasPriceChartingPrice: Boolean(row.has_pricecharting_price),
+    hasTcgplayerPrice: Boolean(row.has_tcgplayer_price),
+    searchKey: String(row.search_key || ""),
+    importedAt: String(row.imported_at || ""),
+    updatedAt: String(row.updated_at || "")
+  };
 }
 
 function parseSearchQuery(value: string): { raw: string; rawLike: string; tokens: string[]; textTokens: string[]; numberTokens: string[] } {
