@@ -1397,7 +1397,7 @@ export async function listCardIndex(db: PGlite, query = "", limit = 50, filter =
   const parsedQuery = parseSearchQuery(query);
   const safeLanguageGroup = normalizeLanguageGroupFilter(languageGroup);
   const params: unknown[] = [];
-  const clauses: string[] = ["pce.pricecharting_id not like 'tcgcsv-%'"];
+  const clauses: string[] = [];
   if (safeLanguageGroup !== "all") {
     params.push(safeLanguageGroup);
     clauses.push(`language_group = $${params.length}`);
@@ -1666,7 +1666,7 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
   const parsedQuery = parseSearchQuery(query);
   const safeLanguageGroup = normalizeLanguageGroupFilter(languageGroup);
   const params: unknown[] = [];
-  const clauses: string[] = [];
+  const clauses: string[] = ["pce.pricecharting_id not like 'tcgcsv-%'"];
   if (safeLanguageGroup !== "all") {
     params.push(safeLanguageGroup);
     clauses.push(`pce.language_group = $${params.length}`);
