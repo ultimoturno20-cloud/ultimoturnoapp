@@ -19,9 +19,25 @@ Para retomar contexto actualizado, leer primero
 
 ## Continuar desde otra cuenta de Codex
 
-Leer primero `docs/new-platform/HANDOFF_NEXT_ACCOUNT.md`. Contiene el estado
-actual, decisiones del usuario, comandos, riesgos y el siguiente objetivo para
-la carga controlada de stock real.
+IMPORTANTE: abrir el workspace correcto:
+
+```text
+D:\UltimoTurno\Stock
+```
+
+No usar `C:\Users\skype\Documents\Stock` para este proyecto. Esa carpeta es un
+workspace viejo/experimental tipo Next/Sites y puede hacer que Codex diagnostique
+mal la plataforma.
+
+Leer primero:
+
+1. `AGENTS.md`
+2. `docs/PROJECT_STATUS.md`
+3. `docs/NEXT_STEPS.md`
+4. `docs/new-platform/HANDOFF_NEXT_ACCOUNT.md` si hace falta contexto historico
+
+Esos documentos contienen el estado actual, decisiones del usuario, comandos,
+riesgos y siguientes objetivos.
 
 ## Por donde empezar
 
