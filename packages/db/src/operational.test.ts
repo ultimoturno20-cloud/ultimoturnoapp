@@ -581,6 +581,50 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("accepts MonPrice scanner CSV exports with preamble rows", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-monprice-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "test-import-monprice",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "lillie-192",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-ascended-heroes/lillie-s-determination-192",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-ascended-heroes/lillie-s-determination-192",
+        productName: "Lillie's Determination",
+        normalizedName: "lillie s determination",
+        expansionName: "Ascended Heroes",
+        normalizedExpansion: "ascended heroes",
+        cardNumber: "192",
+        loosePriceUsd: 1.13,
+        imageUrl: "https://tcgplayer-cdn.tcgplayer.com/product/676004_in_1000x1000.jpg",
+        languageGroup: "english",
+        searchKey: "lillie s determination ascended heroes 192"
+      }]
+    });
+    const csv = [
+      "MonPrice export",
+      "Generated,2026-09-11",
+      "ID,Name,Number,Set,Count,Language,Finish Type,Reverse Holo,Average Price,Series,Rarity",
+      "mp-1,Lillie's Determination,192,Ascended Heroes,3,English,,FALSE,1.13,Mega Evolution,Uncommon"
+    ].join("\n");
+    const preview = await previewInventorySnapshot(db, csv, user.businessId);
+    assert.equal(preview.summary.creates, 1);
+    assert.equal(preview.rows[0].rowNumber, 4);
+    assert.equal(preview.rows[0].quantityOnHand, 3);
+    assert.equal(preview.rows[0].language, "EN");
+    assert.equal(preview.rows[0].finish, "normal");
+    assert.equal(preview.rows[0].monPriceId, "mp-1");
+    assert.equal(preview.rows[0].priceUsd, 1.13);
+    assert.equal(preview.rows[0].priceChartingId, "lillie-192");
+    assert.equal(preview.rows[0].imageUrl, "https://tcgplayer-cdn.tcgplayer.com/product/676004_in_1000x1000.jpg");
+    assert.match(preview.rows[0].notes || "", /Serie MonPrice/);
+    await db.close();
+  });
+
   it("does not keep same-number PriceCharting matches from other expansions", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-pricecharting-expansion-"));
     const db = await createOperationalDatabase({ dataDir });

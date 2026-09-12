@@ -543,6 +543,20 @@ type PriceChartingCacheEntry = {
   importedAt: string;
 };
 
+type ClaimCsvImportRow = {
+  rowNumber: number;
+  rawId: string;
+  name: string;
+  expansion: string;
+  number: string;
+  quantity: number;
+  priceChartingId: string;
+  match?: PriceChartingCacheEntry;
+  candidates: PriceChartingCacheEntry[];
+  status: "matched" | "review" | "invalid";
+  message: string;
+};
+
 type PriceChartingCacheStatus = {
   totalEntries: number;
   pricedEntries: number;
@@ -1415,11 +1429,11 @@ function App() {
     }
   }
 
-  async function addClaimCards(priceChartingIds: string[], sectionId = "") {
+  async function addClaimCards(priceChartingIds: string[], sectionId = "", cards: Array<{ priceChartingId: string; quantity?: number }> = []) {
     try {
-      const result = await api<ClaimsWorkspace>("/claims/cards/from-pricecharting", { method: "POST", body: { priceChartingIds, sectionId } });
+      const result = await api<ClaimsWorkspace>("/claims/cards/from-pricecharting", { method: "POST", body: { priceChartingIds, sectionId, cards } });
       setClaims(result);
-      showMessage(`${priceChartingIds.length} carta(s) agregada(s) al claim.`);
+      showMessage(`${cards.length || priceChartingIds.length} carta(s) agregada(s) al claim.`);
     } catch (nextError) {
       showError(nextError);
     }
@@ -2190,7 +2204,7 @@ function App() {
         />
       ) : null}
 
-      {view === "claims" ? <ClaimsView workspace={claims} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search) => void searchPriceChartingCache(search)} onAddCards={(ids, sectionId) => void addClaimCards(ids, sectionId)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
+      {view === "claims" ? <ClaimsView workspace={claims} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search) => void searchPriceChartingCache(search)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
       {view === "orders" ? <OrdersView sales={sales} claims={claims} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} /> : null}
       {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
@@ -3901,7 +3915,7 @@ function ClaimsView(props: {
   onCreateClaim: (name: string) => void;
   onUpdateClaimSettings: (patch: { paymentDueAt?: string }) => void;
   onSearchPriceCharting: (search: string) => void;
-  onAddCards: (ids: string[], sectionId?: string) => void;
+  onAddCards: (ids: string[], sectionId?: string, cards?: Array<{ priceChartingId: string; quantity?: number }>) => void;
   onUpdateCard: (cardId: string, patch: Partial<Pick<ClaimCard, "sectionId" | "finalPriceArs" | "finalPriceUsd" | "finalName" | "imageUrl" | "buyer" | "quantity" | "tags" | "status">>) => void;
   onDeleteCard: (cardId: string) => void;
   onSearchCardImage: (cardId: string) => void;
@@ -3922,6 +3936,11 @@ function ClaimsView(props: {
   const [search, setSearch] = useState("");
   const [selectedPriceChartingIds, setSelectedPriceChartingIds] = useState<string[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
+  const [csvSectionId, setCsvSectionId] = useState("");
+  const [claimCsvText, setClaimCsvText] = useState("");
+  const [claimCsvRows, setClaimCsvRows] = useState<ClaimCsvImportRow[]>([]);
+  const [claimCsvLoading, setClaimCsvLoading] = useState(false);
+  const [claimCsvFeedback, setClaimCsvFeedback] = useState("");
   const [newSectionName, setNewSectionName] = useState("");
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
   const [claimSearch, setClaimSearch] = useState("");
@@ -3946,7 +3965,8 @@ function ClaimsView(props: {
   const claimRunCards = useMemo(() => orderedClaimCardsForRun(props.workspace.cards, sections), [props.workspace.cards, sections]);
   useEffect(() => {
     if (selectedSectionId && !sections.some((section) => section.id === selectedSectionId)) setSelectedSectionId("");
-  }, [sections, selectedSectionId]);
+    if (csvSectionId && !sections.some((section) => section.id === csvSectionId)) setCsvSectionId("");
+  }, [sections, selectedSectionId, csvSectionId]);
   const sectionBuckets = [
     ...sections.map((section) => ({ id: section.id, name: section.name, cards: visibleClaimCards.filter((card) => card.sectionId === section.id) })),
     { id: "", name: "Sin seccion", cards: visibleClaimCards.filter((card) => !card.sectionId) }
@@ -3961,6 +3981,48 @@ function ClaimsView(props: {
   const addSelected = () => {
     props.onAddCards(selectedPriceChartingIds, selectedSectionId);
     setSelectedPriceChartingIds([]);
+  };
+  const previewClaimCsv = async (text = claimCsvText) => {
+    setClaimCsvLoading(true);
+    setClaimCsvFeedback("");
+    try {
+      const rows = parseClaimCsvRows(text);
+      if (!rows.length) {
+        setClaimCsvRows([]);
+        setClaimCsvFeedback("No encontre filas con nombre/expansion/numero para previsualizar.");
+        return;
+      }
+      const resolved = await resolveClaimCsvRows(rows);
+      setClaimCsvRows(resolved);
+      const matched = resolved.filter((row) => row.status === "matched").length;
+      setClaimCsvFeedback(`${matched}/${resolved.length} fila(s) listas para cargar.`);
+    } catch (error) {
+      setClaimCsvRows([]);
+      setClaimCsvFeedback(errorMessage(error));
+    } finally {
+      setClaimCsvLoading(false);
+    }
+  };
+  const importClaimCsvMatches = () => {
+    const matchedRows = claimCsvRows.filter((row) => row.status === "matched" && row.match);
+    if (!matchedRows.length) {
+      setClaimCsvFeedback("No hay filas matcheadas para cargar.");
+      return;
+    }
+    props.onAddCards([], csvSectionId, matchedRows.map((row) => ({ priceChartingId: row.match?.priceChartingId || row.priceChartingId, quantity: row.quantity })));
+    setClaimCsvFeedback(`${matchedRows.length} fila(s) enviadas al claim.`);
+  };
+  const loadClaimCsvFile = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      setClaimCsvText(text);
+      setClaimCsvRows([]);
+      setClaimCsvFeedback(`${file.name} cargado. Genera la vista previa antes de importar.`);
+    };
+    reader.onerror = () => setClaimCsvFeedback("No pude leer el archivo CSV.");
+    reader.readAsText(file);
   };
   return (
     <section className="view claims-layout">
@@ -4086,6 +4148,41 @@ function ClaimsView(props: {
                 )) : <p className="muted">Crea secciones para separar cargas.</p>}
                 <button className={`claim-unsectioned-button ${selectedSectionId === "" ? "active" : ""}`} onClick={() => setSelectedSectionId("")}>Sin seccion</button>
               </div>
+            </section>
+            <section className="panel claim-csv-panel">
+              <div className="section-heading compact-heading">
+                <div><h3>CSV por seccion</h3><p>Carga un CSV del scanner y mandalo directo a la seccion.</p></div>
+              </div>
+              <label className="claim-section-select">Seccion destino
+                <select value={csvSectionId} onChange={(event) => setCsvSectionId(event.target.value)}>
+                  <option value="">Sin seccion</option>
+                  {sections.map((section) => <option value={section.id} key={section.id}>{section.name}</option>)}
+                </select>
+              </label>
+              <label className="file-importer claim-csv-file">Archivo CSV<input type="file" accept=".csv,.txt,text/csv" onChange={(event) => loadClaimCsvFile(event.target.files?.[0])} /></label>
+              <label className="claim-csv-editor">Pegar CSV
+                <textarea value={claimCsvText} onChange={(event) => { setClaimCsvText(event.target.value); setClaimCsvRows([]); setClaimCsvFeedback(""); }} placeholder="ID,Name,Number,Set,Count,Language,Finish Type&#10;mp-1,Lillie's Determination,192,Ascended Heroes,3,English," />
+              </label>
+              <div className="claim-csv-actions">
+                <button className="secondary-action" disabled={claimCsvLoading || !claimCsvText.trim()} onClick={() => void previewClaimCsv()}><Icon name="search" />{claimCsvLoading ? "Analizando..." : "Vista previa"}</button>
+                <button className="primary-action" disabled={claimCsvLoading || !claimCsvRows.some((row) => row.status === "matched")} onClick={importClaimCsvMatches}><Icon name="import" />Cargar matches</button>
+              </div>
+              {claimCsvFeedback ? <p className="claim-csv-feedback" role="status">{claimCsvFeedback}</p> : null}
+              {claimCsvRows.length ? (
+                <div className="claim-csv-preview">
+                  {claimCsvRows.slice(0, 8).map((row) => (
+                    <div className={`claim-csv-row ${row.status}`} key={`${row.rowNumber}-${row.rawId}-${row.name}`}>
+                      <span>{row.status === "matched" ? "OK" : row.status === "review" ? "Revisar" : "Error"}</span>
+                      <div>
+                        <strong>{row.name || "Sin nombre"}</strong>
+                        <small>{row.expansion || "-"} {row.number ? `#${row.number}` : ""} / x{row.quantity}</small>
+                        {row.match ? <em>{row.match.productName} - {row.match.expansionName} {row.match.cardNumber ? `#${row.match.cardNumber}` : ""}</em> : <em>{row.message}</em>}
+                      </div>
+                    </div>
+                  ))}
+                  {claimCsvRows.length > 8 ? <small className="claim-csv-more">+{claimCsvRows.length - 8} fila(s) mas en el preview</small> : null}
+                </div>
+              ) : null}
             </section>
             <section className="panel claim-loader">
               <div className="section-heading compact-heading">
@@ -5667,7 +5764,7 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
           <div>
             <p className="eyebrow">Carga inicial</p>
             <h2>Importar stock</h2>
-            <p>Primero carga el archivo, despues revisa problemas, y recien al final se escribe en el inventario.</p>
+            <p>Carga un CSV MonPrice o la plantilla de UltimoTurno, revisa coincidencias, y recien al final se escribe en el inventario.</p>
           </div>
           {rows.length ? <strong>{rows.length} filas analizadas</strong> : null}
         </div>
@@ -5744,15 +5841,15 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
         <div className="import-helper-grid">
           <div>
             <strong>Columnas minimas</strong>
-            <span>name, expansion, number, quantityOnHand, priceArs</span>
+            <span>MonPrice: Name, Set, Number, Count. Plantilla: name, expansion, number, quantityOnHand</span>
           </div>
           <div>
             <strong>Recomendadas</strong>
-            <span>language, condition, finish, gradingCompany, grade, gradingCert, location, priceUsd, sku</span>
+            <span>Language, Finish Type, Average Price, condition, location, priceUsd, sku</span>
           </div>
           <div>
             <strong>Opcionales</strong>
-            <span>priceChartingId, imageUrl, notes</span>
+            <span>ID, priceChartingId, Image URL, Series, Rarity, notes</span>
           </div>
         </div>
         <div className="import-input-grid">
@@ -5768,7 +5865,7 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
         </div>
         <label className="csv-editor-label">
           Pegar CSV
-          <textarea className="csv-input" value={csvText} onChange={(event) => onTextChange(event.target.value)} placeholder="name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,quantityOnHand,priceArs&#10;Abra,Scarlet & Violet 151,63,EN,NM,normal,,,,1,1500&#10;Team Rocket's Mewtwo Ex,Ascended Heroes,281,EN,GRADED,normal,PSA,10,12345678,1,850000" />
+          <textarea className="csv-input" value={csvText} onChange={(event) => onTextChange(event.target.value)} placeholder="ID,Name,Number,Set,Count,Language,Finish Type,Average Price&#10;mp-1,Lillie's Determination,192,Ascended Heroes,3,English,,1.13&#10;&#10;name,expansion,number,language,condition,finish,quantityOnHand,priceArs&#10;Abra,Scarlet & Violet 151,63,EN,NM,normal,1,1500" />
         </label>
         <div className="hero-actions import-main-actions">
           <button className="secondary-action" disabled={applying || !csvText.trim()} onClick={onPreview}><Icon name="search" />Generar vista previa</button>
@@ -6446,6 +6543,156 @@ function matchesClaimSearch(card: ClaimCard, query: ReturnType<typeof parseUiSea
     if (/^[0-9]+[a-z]?$/i.test(token) && cardNumber.includes(numberToken)) return true;
     return haystack.includes(token);
   });
+}
+
+function parseClaimCsvRows(csvText: string): ClaimCsvImportRow[] {
+  const records = parseCsvRecords(csvText);
+  const headerIndex = findClaimCsvHeaderIndex(records);
+  if (headerIndex < 0) throw new Error("No encontre encabezados reconocibles. Necesito Name/Set/Number o priceChartingId.");
+  const headers = records[headerIndex].map(normalizeClaimCsvHeader);
+  const index = new Map(headers.map((header, position) => [header, position]));
+  return records.slice(headerIndex + 1).map((cells, offset) => {
+    const get = (...names: string[]) => getClaimCsvCell(cells, index, names);
+    const name = get("name", "nombre", "cardname", "productname", "card", "title");
+    const expansion = get("expansion", "set", "setname", "edition", "edicion", "coleccion");
+    const number = get("number", "numero", "cardnumber", "numerocarta", "#", "no");
+    const quantity = Math.max(1, Math.floor(Number(get("quantity", "quantityonhand", "count", "cantidad", "owned", "have", "qty")) || 1));
+    const priceChartingId = get("pricechartingid", "pricecharting_id", "pcid", "idpricecharting", "pricechartingproductid");
+    return {
+      rowNumber: headerIndex + offset + 2,
+      rawId: get("id", "monpriceid", "monprice_id", "scannerid", "scanid"),
+      name,
+      expansion,
+      number,
+      quantity,
+      priceChartingId,
+      candidates: [],
+      status: name || priceChartingId ? "review" : "invalid",
+      message: name || priceChartingId ? "Pendiente de resolver" : "Faltan nombre o PriceCharting ID"
+    } satisfies ClaimCsvImportRow;
+  }).filter((row) => row.name || row.expansion || row.number || row.priceChartingId || row.rawId);
+}
+
+async function resolveClaimCsvRows(rows: ClaimCsvImportRow[]): Promise<ClaimCsvImportRow[]> {
+  const cache = new Map<string, PriceChartingCacheEntry[]>();
+  const resolved: ClaimCsvImportRow[] = [];
+  for (const row of rows) {
+    if (row.status === "invalid") {
+      resolved.push(row);
+      continue;
+    }
+    const queries = claimCsvSearchQueries(row);
+    let candidates: PriceChartingCacheEntry[] = [];
+    for (const query of queries) {
+      if (!cache.has(query)) {
+        const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/catalog-cards?query=${encodeURIComponent(query)}&languageGroup=all&limit=80`);
+        cache.set(query, result.entries || []);
+      }
+      candidates = cache.get(query) || [];
+      if (candidates.length) break;
+    }
+    const ranked = candidates
+      .map((entry) => ({ entry, score: scoreClaimCsvCandidate(row, entry) }))
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score || left.entry.productName.localeCompare(right.entry.productName, "es", { numeric: true }));
+    const best = ranked[0];
+    const exactId = row.priceChartingId && best?.entry.priceChartingId === row.priceChartingId;
+    const matched = Boolean(best && (exactId || best.score >= 120));
+    resolved.push({
+      ...row,
+      match: matched ? best?.entry : undefined,
+      candidates: ranked.slice(0, 5).map((item) => item.entry),
+      status: matched ? "matched" : ranked.length ? "review" : "invalid",
+      message: matched ? "Match listo" : ranked.length ? "Hay candidatos, revisa manualmente" : "Sin match en catalogo"
+    });
+  }
+  return resolved;
+}
+
+function claimCsvSearchQueries(row: ClaimCsvImportRow) {
+  const queries = [
+    row.priceChartingId,
+    [row.name, row.expansion, row.number].filter(Boolean).join(" "),
+    [row.name, row.number].filter(Boolean).join(" "),
+    row.name
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  return [...new Set(queries)];
+}
+
+function scoreClaimCsvCandidate(row: ClaimCsvImportRow, entry: PriceChartingCacheEntry) {
+  if (row.priceChartingId && entry.priceChartingId === row.priceChartingId) return 500;
+  const rowName = normalize(row.name);
+  const entryName = normalize(cleanCatalogPickerName(entry));
+  const rowExpansion = normalize(row.expansion);
+  const entryExpansion = normalize(cleanCatalogPickerExpansion(entry));
+  const rowNumber = primaryCardNumber(row.number);
+  const entryNumber = primaryCardNumber(entry.cardNumber || "");
+  let score = 0;
+  if (rowName && entryName && entryName === rowName) score += 85;
+  else if (rowName && entryName && (entryName.includes(rowName) || rowName.includes(entryName))) score += 55;
+  else if (rowName && rowName.split(" ").every((token) => normalizedTextIncludesToken(entryName, token))) score += 36;
+  if (rowExpansion && entryExpansion && entryExpansion === rowExpansion) score += 45;
+  else if (rowExpansion && entryExpansion && (entryExpansion.includes(rowExpansion) || rowExpansion.includes(entryExpansion))) score += 28;
+  if (rowNumber && entryNumber === rowNumber) score += 70;
+  else if (rowNumber && normalize(entry.cardNumber || "").replace(/\s+/g, "").includes(rowNumber)) score += 18;
+  if (!rowName && !row.priceChartingId) return 0;
+  return score;
+}
+
+function parseCsvRecords(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === "\"") {
+      if (quoted && next === "\"") {
+        cell += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows;
+}
+
+function findClaimCsvHeaderIndex(records: string[][]) {
+  return records.findIndex((record) => {
+    const headers = new Set(record.map(normalizeClaimCsvHeader));
+    const hasName = ["name", "nombre", "cardname", "productname", "card", "title"].some((name) => headers.has(name));
+    const hasExpansion = ["expansion", "set", "setname", "edition", "edicion", "coleccion"].some((name) => headers.has(name));
+    const hasNumber = ["number", "numero", "cardnumber", "numerocarta", "#", "no"].some((name) => headers.has(name));
+    const hasPriceChartingId = ["pricechartingid", "pricecharting_id", "pcid", "idpricecharting", "pricechartingproductid"].some((name) => headers.has(name));
+    return hasPriceChartingId || (hasName && (hasExpansion || hasNumber));
+  });
+}
+
+function normalizeClaimCsvHeader(value: string) {
+  return normalize(value).replace(/\s+/g, "");
+}
+
+function getClaimCsvCell(row: string[], index: Map<string, number>, names: string[]) {
+  for (const name of names) {
+    const position = index.get(normalizeClaimCsvHeader(name));
+    if (position !== undefined) return String(row[position] || "").trim();
+  }
+  return "";
 }
 
 async function copyToClipboard(value: string) {

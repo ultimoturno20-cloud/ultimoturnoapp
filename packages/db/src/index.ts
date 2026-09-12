@@ -3682,11 +3682,27 @@ export async function deleteClaimSection(db: PGlite, sectionId: string, actor: A
   return listClaimsWorkspace(db, actor.businessId);
 }
 
-export async function addPriceChartingCardsToClaim(db: PGlite, priceChartingIds: string[], actor: AuthenticatedUser, sectionId = ""): Promise<ClaimsWorkspace> {
+export async function addPriceChartingCardsToClaim(
+  db: PGlite,
+  priceChartingIds: string[],
+  actor: AuthenticatedUser,
+  sectionId = "",
+  cards: Array<{ priceChartingId: string; quantity?: number }> = []
+): Promise<ClaimsWorkspace> {
   const claim = (await listClaimsWorkspace(db, actor.businessId)).activeClaim;
   if (!claim) throw new Error("No hay un claim activo.");
   const targetSectionId = await normalizeClaimSectionId(db, claim.id, actor.businessId, sectionId);
-  const ids = [...new Set((priceChartingIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const quantityById = new Map<string, number>();
+  for (const card of cards || []) {
+    const id = String(card?.priceChartingId || "").trim();
+    if (!id) continue;
+    const quantity = Math.max(1, Math.floor(Number(card.quantity) || 1));
+    quantityById.set(id, (quantityById.get(id) || 0) + quantity);
+  }
+  const ids = [...new Set([
+    ...(priceChartingIds || []).map((id) => String(id || "").trim()).filter(Boolean),
+    ...quantityById.keys()
+  ])];
   if (!ids.length) throw new Error("Elegí al menos una carta de PriceCharting.");
   const orderStart = await db.query<{ next_order: number }>("select coalesce(max(sort_order), 0)::integer + 1 as next_order from claim_cards where claim_id = $1", [claim.id]);
   let nextOrder = Number(orderStart.rows[0]?.next_order || 1);
@@ -3709,9 +3725,9 @@ export async function addPriceChartingCardsToClaim(db: PGlite, priceChartingIds:
       await db.query(`
         insert into claim_cards (
           id, business_id, claim_id, section_id, pricecharting_id, canonical_url, product_name,
-          expansion_name, card_number, image_url, pc_price_usd, suggested_ars, sort_order
+          expansion_name, card_number, image_url, pc_price_usd, suggested_ars, quantity, sort_order
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         on conflict (claim_id, pricecharting_id) do update set
           section_id = excluded.section_id,
           canonical_url = excluded.canonical_url,
@@ -3721,6 +3737,7 @@ export async function addPriceChartingCardsToClaim(db: PGlite, priceChartingIds:
           image_url = excluded.image_url,
           pc_price_usd = excluded.pc_price_usd,
           suggested_ars = excluded.suggested_ars,
+          quantity = case when $15 then excluded.quantity else claim_cards.quantity end,
           updated_at = now()
       `, [
         crypto.randomUUID(),
@@ -3735,10 +3752,12 @@ export async function addPriceChartingCardsToClaim(db: PGlite, priceChartingIds:
         String(row.image_url || ""),
         pcUsd ?? null,
         suggested,
-        nextOrder++
+        quantityById.get(id) || 1,
+        nextOrder++,
+        quantityById.has(id)
       ]);
     }
-    await writeAudit(db, actor, "claim.cards.add", "claim", claim.id, null, { priceChartingIds: ids, sectionId: targetSectionId });
+    await writeAudit(db, actor, "claim.cards.add", "claim", claim.id, null, { priceChartingIds: ids, cards, sectionId: targetSectionId });
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback");
@@ -4405,12 +4424,12 @@ async function recordImportRow(
 async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventoryInput): Promise<SnapshotPreviewRow["priceChartingCandidates"]> {
   if (row.priceChartingId) {
     const selected = await db.query<Record<string, unknown>>(`
-      select pce.pricecharting_id, pce.canonical_url, pce.product_name, pce.normalized_name,
-        pce.expansion_name, pce.normalized_expansion, pce.card_number, pce.loose_price_usd,
-        coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url, pce.search_key
-      from pricecharting_cache_entries pce
-      left join pricecharting_image_cache pic using (pricecharting_id)
-      where pce.pricecharting_id = $1
+      select pricecharting_id, pricecharting_url as canonical_url, product_name, normalized_name,
+        expansion_name, normalized_expansion, card_number,
+        coalesce(pricecharting_price_usd, tcgplayer_price_usd) as loose_price_usd,
+        image_url, search_key
+      from unified_catalog_cards
+      where pricecharting_id = $1
       limit 1
     `, [row.priceChartingId.trim()]);
     return selected.rows.map((candidate) => toPriceChartingImportCandidate(candidate, row, ["ID PriceCharting del CSV"]));
@@ -4424,43 +4443,45 @@ async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventor
   if (!queryName && !queryExpansion && !queryNumber) return [];
 
   const result = await db.query<Record<string, unknown>>(`
-    select pce.pricecharting_id, pce.canonical_url, pce.product_name, pce.normalized_name,
-      pce.expansion_name, pce.normalized_expansion, pce.card_number, pce.loose_price_usd,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url) as image_url, pce.search_key
-    from pricecharting_cache_entries pce
-    left join pricecharting_image_cache pic using (pricecharting_id)
+    select pce.pricecharting_id, pce.pricecharting_url as canonical_url, pce.product_name, pce.normalized_name,
+      pce.expansion_name, pce.normalized_expansion, pce.card_number,
+      coalesce(pce.pricecharting_price_usd, pce.tcgplayer_price_usd) as loose_price_usd,
+      pce.image_url, pce.search_key, pce.language_group
+    from unified_catalog_cards pce
     where
       (
-        $3 <> ''
-        and (
-          lower(pce.card_number) = lower($3)
-          or lower(pce.card_number) = lower($4)
-          or lower(split_part(pce.card_number, '/', 1)) = lower($4)
+        (
+          $3 <> ''
+          and (
+            lower(pce.card_number) = lower($3)
+            or lower(pce.card_number) = lower($4)
+            or lower(split_part(pce.card_number, '/', 1)) = lower($4)
+          )
+          and (
+            $2 = ''
+            or pce.normalized_expansion = $2
+            or pce.normalized_expansion like '%' || $2 || '%'
+            or $2 like '%' || pce.normalized_expansion || '%'
+          )
         )
-        and (
-          $2 = ''
-          or pce.normalized_expansion = $2
-          or pce.normalized_expansion like '%' || $2 || '%'
-          or $2 like '%' || pce.normalized_expansion || '%'
+        or (
+          $1 <> ''
+          and pce.search_key like '%' || $1 || '%'
+          and (
+            $2 = ''
+            or pce.normalized_expansion like '%' || $2 || '%'
+            or $2 like '%' || pce.normalized_expansion || '%'
+            or pce.search_key like '%' || $2 || '%'
+          )
         )
-      )
-      or (
-        $1 <> ''
-        and pce.search_key like '%' || $1 || '%'
-        and (
-          $2 = ''
-          or pce.normalized_expansion like '%' || $2 || '%'
-          or $2 like '%' || pce.normalized_expansion || '%'
-          or pce.search_key like '%' || $2 || '%'
-        )
-      )
-      or (
-        $1 <> '' and $3 <> ''
-        and pce.search_key like '%' || $1 || '%'
-        and (
-          lower(pce.card_number) = lower($3)
-          or lower(pce.card_number) = lower($4)
-          or lower(split_part(pce.card_number, '/', 1)) = lower($4)
+        or (
+          $1 <> '' and $3 <> ''
+          and pce.search_key like '%' || $1 || '%'
+          and (
+            lower(pce.card_number) = lower($3)
+            or lower(pce.card_number) = lower($4)
+            or lower(split_part(pce.card_number, '/', 1)) = lower($4)
+          )
         )
       )
     limit 40
@@ -5322,14 +5343,18 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
     trim: true
   }) as string[][];
   if (records.length < 2) throw new Error("El archivo debe tener encabezados y al menos una fila");
-  const headers = records[0].map(normalizeSnapshotHeader);
+  const headerIndex = findSnapshotHeaderIndex(records);
+  if (headerIndex < 0) throw new Error("No encontre encabezados reconocibles. Para MonPrice necesito Name, Number, Set y Count.");
+  const headers = records[headerIndex].map(normalizeSnapshotHeader);
   const index = new Map(headers.map((header, position) => [header, position]));
-  return records.slice(1).map((cells, indexInFile) => {
+  return records.slice(headerIndex + 1).map((cells, indexInFile) => {
     const get = (...names: string[]) => getSnapshotCell(cells, index, names);
-    const quantity = parseImportNumber(get("quantityonhand", "quantity", "cantidad", "count", "stock", "qty", "cantidadobservada"));
+    const quantity = parseImportNumber(get("quantityonhand", "quantity", "cantidad", "count", "stock", "qty", "cantidadobservada", "owned", "have"));
     const reserved = parseImportNumber(get("quantityreserved", "reserved", "reservadas", "reservado", "cantidadreservada"));
     const priceArs = parseImportNumber(get("pricears", "price_ars", "precioars", "precio", "precioarsfinal", "preciofinalars", "preciofinal"));
-    const presentation = get("type", "tipo", "presentation", "presentacion", "varianttype", "tipoproducto");
+    const presentation = get("type", "tipo", "presentation", "presentacion", "varianttype", "tipoproducto", "producttype");
+    const reverseHolo = get("reverseholo", "reverse_holo", "reverse", "reverso");
+    const rawFinish = get("finish", "acabado", "finishtype", "finish_type", "printing", "variant", "foil", "holo", "foiltype") || reverseHolo;
     const gradingText = [
       get("gradingcompany", "grading_company", "grader", "empresa_grading", "empresagrading", "empresa_certificadora"),
       get("grade", "gradinggrade", "grading_grade", "nota_grading", "notagrading", "calificacion"),
@@ -5340,20 +5365,23 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
     const grade = get("grade", "gradinggrade", "grading_grade", "nota_grading", "notagrading", "calificacion") || inferredGrading.grade;
     const gradingCert = get("gradingcert", "grading_cert", "cert", "certificado", "certificacion", "certnumber", "certificadonumero");
     const tags = get("tags", "categorias", "categoria", "category", "categories");
+    const rawLanguage = get("language", "idioma", "lang");
+    const rawName = get("name", "nombre", "cardname", "nombrecarta", "productname", "nombrepc", "card", "title");
+    const averageUsd = parseImportNumber(get("priceusd", "price_usd", "preciousd", "averageprice", "scanneraverageusd", "scanneravgusd", "avgprice", "avg", "marketprice", "usdprice"));
     return {
-      rowNumber: indexInFile + 2,
+      rowNumber: headerIndex + indexInFile + 2,
       mobileEntryId: get("mobileEntryId"),
       sku: get("sku", "identificador", "idlocal"),
-      name: get("name", "nombre", "cardname", "nombrecarta", "productname", "nombrepc"),
-      expansion: get("expansion", "set", "edition", "edicion", "coleccion", "expansionpc"),
-      number: get("number", "numero", "cardnumber", "numerocarta", "#", "numeropc"),
+      name: rawName,
+      expansion: get("expansion", "set", "setname", "edition", "edicion", "coleccion", "expansionpc"),
+      number: get("number", "numero", "cardnumber", "numerocarta", "#", "numeropc", "no"),
       imageUrl: get("imageurl", "image_url", "imagen", "imagenurl", "photo", "photourl"),
       priceChartingId: get("pricechartingid", "pricecharting_id", "pcid", "idpricecharting", "pricechartingproductid"),
       priceChartingUrl: get("pricechartingurl", "pricecharting_url", "pcurl", "linkpricecharting", "pricechartinglink"),
-      monPriceId: get("monpriceid", "monprice_id", "scannerid", "scanid"),
-      language: get("language", "idioma") || "EN",
+      monPriceId: get("monpriceid", "monprice_id", "scannerid", "scanid", "id"),
+      language: normalizeImportLanguage(rawLanguage, rawName),
       condition: gradingCompany || grade ? "GRADED" : get("condition", "condicion") || "NM",
-      finish: get("finish", "acabado") || "normal",
+      finish: normalizeImportFinish(rawFinish),
       gradingCompany,
       grade,
       gradingCert,
@@ -5363,11 +5391,55 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
       quantityOnHand: quantity ?? 0,
       quantityReserved: reserved ?? 0,
       priceArs: priceArs ?? 0,
-      priceUsd: parseImportNumber(get("priceusd", "price_usd", "preciousd", "averageprice", "scanneraverageusd", "scanneravgusd")) ?? null,
-      notes: get("notes", "notas"),
-      ...(tags ? { tags } : {})
+      priceUsd: averageUsd ?? null,
+      notes: get("notes", "notas") || buildMonPriceNotes({
+        series: get("series", "serie"),
+        rarity: get("rarity", "rareza"),
+        averageUsd
+      }),
+      ...(tags || get("rarity", "rareza") ? { tags: [tags, get("rarity", "rareza")].filter(Boolean).join(", ") } : {})
     };
+  }).filter((row) => row.name || row.expansion || row.number || row.sku);
+}
+
+function findSnapshotHeaderIndex(records: string[][]): number {
+  return records.findIndex((record) => {
+    const headers = new Set(record.map(normalizeSnapshotHeader));
+    const hasName = ["name", "nombre", "cardname", "nombrecarta", "productname", "card", "title"].some((name) => headers.has(name));
+    const hasExpansion = ["expansion", "set", "setname", "edition", "edicion", "coleccion"].some((name) => headers.has(name));
+    const hasNumber = ["number", "numero", "cardnumber", "numerocarta", "#", "no"].some((name) => headers.has(name));
+    const hasQuantity = ["quantityonhand", "quantity", "cantidad", "count", "stock", "qty", "cantidadobservada"].some((name) => headers.has(name));
+    const hasSku = headers.has("sku") || headers.has("identificador") || headers.has("idlocal");
+    return (hasName && hasExpansion && hasQuantity) || (hasName && hasNumber && hasQuantity) || (hasSku && hasQuantity);
   });
+}
+
+function normalizeImportLanguage(value: string, name = ""): string {
+  const normalized = normalizeImportText(value);
+  if (["jp", "jpn", "ja", "japanese", "japon", "japones"].includes(normalized) || /[\u3040-\u30ff]/.test(name)) return "JP";
+  if (["cn", "zh", "chs", "cht", "chinese", "china", "chino"].includes(normalized) || /[\u3400-\u9fff]/.test(name)) return "CN";
+  if (["kr", "kor", "ko", "korean", "coreano"].includes(normalized)) return "JP";
+  if (["en", "eng", "english", "ingles"].includes(normalized)) return "EN";
+  if (["es", "spa", "spanish", "espanol"].includes(normalized)) return "ES";
+  return String(value || "EN").trim().toUpperCase() || "EN";
+}
+
+function normalizeImportFinish(value: string): string {
+  const normalized = normalizeFinishText(value);
+  if (!normalized || ["no", "false", "0", "normal", "regular", "standard", "non holo", "nonholo"].includes(normalized)) return "normal";
+  if (["yes", "true", "1"].includes(normalized)) return "reverse";
+  if (normalized === "masterball") return "master ball";
+  if (normalized === "pokeball") return "poke ball";
+  return String(value || "normal").trim() || "normal";
+}
+
+function buildMonPriceNotes(input: { series: string; rarity: string; averageUsd?: number }): string {
+  const details = [
+    input.series ? `Serie MonPrice: ${input.series}` : "",
+    input.rarity ? `Rareza MonPrice: ${input.rarity}` : "",
+    input.averageUsd ? `Precio promedio scanner USD: ${input.averageUsd}` : ""
+  ].filter(Boolean);
+  return details.join(" | ");
 }
 
 function getSnapshotCell(row: string[], index: Map<string, number>, names: string[]): string {

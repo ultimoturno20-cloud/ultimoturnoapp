@@ -3627,8 +3627,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/claims/cards/from-pricecharting" && request.method === "POST") {
-      const body = await readJson<{ priceChartingIds: string[]; sectionId?: string }>(request);
-      sendJson(response, 201, await addPriceChartingCardsToClaim(db, body.priceChartingIds || [], user, body.sectionId || ""));
+      const body = await readJson<{ priceChartingIds?: string[]; cards?: Array<{ priceChartingId: string; quantity?: number }>; sectionId?: string }>(request);
+      sendJson(response, 201, await addPriceChartingCardsToClaim(db, body.priceChartingIds || [], user, body.sectionId || "", body.cards || []));
       return;
     }
 
