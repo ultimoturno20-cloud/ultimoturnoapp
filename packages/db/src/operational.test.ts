@@ -625,6 +625,47 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("accepts semicolon scanner CSV exports with comma decimal prices", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-monprice-semicolon-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "test-import-monprice-semicolon",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "walking-wake-ex-50",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-temporal-forces/walking-wake-ex-50",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-temporal-forces/walking-wake-ex-50",
+        productName: "Walking Wake ex",
+        normalizedName: "walking wake ex",
+        expansionName: "Temporal Forces",
+        normalizedExpansion: "temporal forces",
+        cardNumber: "50",
+        loosePriceUsd: 0.76,
+        imageUrl: "https://images.example/walking-wake-ex-50.jpg",
+        languageGroup: "english",
+        searchKey: "walking wake ex temporal forces 50"
+      }]
+    });
+    const csv = [
+      "ID;Name;Number;Set;Series;Rarity;HP;Type;Artist;Release Date;Average Price;Count;Finish Type;Reverse Holo;Language",
+      "TEF_int_50;Walking Wake ex;50/218;Temporal Forces;Scarlet & Violet;Double Rare;220;Pokemon;takuyoa;2024-03-22T00:00:00Z;0,76;1;HOLOFOIL;No;EN"
+    ].join("\n");
+    const preview = await previewInventorySnapshot(db, csv, user.businessId);
+    assert.equal(preview.summary.creates, 1);
+    assert.equal(preview.rows[0].monPriceId, "TEF_int_50");
+    assert.equal(preview.rows[0].name, "Walking Wake ex");
+    assert.equal(preview.rows[0].number, "50/218");
+    assert.equal(preview.rows[0].priceUsd, 0.76);
+    assert.equal(preview.rows[0].quantityOnHand, 1);
+    assert.equal(preview.rows[0].finish, "HOLOFOIL");
+    assert.equal(preview.rows[0].priceChartingId, "walking-wake-ex-50");
+    assert.equal(preview.rows[0].imageUrl, "https://images.example/walking-wake-ex-50.jpg");
+    await db.close();
+  });
+
   it("does not keep same-number PriceCharting matches from other expansions", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-pricecharting-expansion-"));
     const db = await createOperationalDatabase({ dataDir });

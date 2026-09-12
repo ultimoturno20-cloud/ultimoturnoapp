@@ -632,6 +632,27 @@ type PriceChartingImageCacheStatus = {
   stockLinkedEntries: number;
 };
 
+type ImageDatabaseQuality = {
+  generatedAt: string;
+  summary: {
+    stockItems: number;
+    stockItemsMissingImage: number;
+    stockItemsMissingImageWithPriceCharting: number;
+    productsUsingLocalImageUrls: number;
+    openClaimCardsMissingImage: number;
+    catalogEntries: number;
+    catalogEntriesWithAnyImage: number;
+    catalogEntriesDownloaded: number;
+    imageCacheFailed: number;
+    imageCachePending: number;
+    imageCacheUrlFound: number;
+  };
+  priorities: Array<{ key: string; label: string; count: number; severity: "ok" | "warn" | "danger"; action: string }>;
+  stockMissingImage: Array<{ inventoryItemId: string; sku: string; name: string; expansion: string; number: string; quantityOnHand: number; priceChartingId: string; cacheStatus: string; candidateImageUrl: string }>;
+  failedImages: Array<{ priceChartingId: string; name: string; expansion: string; number: string; attempts: number; errorMessage: string; canonicalUrl: string }>;
+  localImageRisks: Array<{ productId: string; name: string; expansion: string; number: string; imageUrl: string; stockItems: number }>;
+};
+
 type CardIndexEntry = {
   id: string;
   priceChartingId: string;
@@ -845,6 +866,7 @@ function App() {
   const [imageCatalogLoading, setImageCatalogLoading] = useState(false);
   const [imageCatalogFilter, setImageCatalogFilter] = useState<"all" | "downloaded" | "url_found" | "failed" | "pending">("all");
   const [imageCatalogSearch, setImageCatalogSearch] = useState("");
+  const [imageQuality, setImageQuality] = useState<ImageDatabaseQuality>(() => emptyImageDatabaseQuality());
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
 
   async function fetchOperationalData() {
@@ -854,7 +876,7 @@ function App() {
       api<{ audit: AuditRow[] }>("/audit"),
       api<{ user: { displayName: string }; environment?: AppEnvironment }>("/auth/me")
     ]);
-    const [salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, cardIndexData, cardIndexListData, blueRateData] = await Promise.all([
+    const [salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, cardIndexData, cardIndexListData, priceChartingImageData, imageQualityData, blueRateData] = await Promise.all([
       api<{ sales: SaleRecord[] }>("/sales").catch(() => ({ sales: [] })),
       api<{ purchases: PurchaseRecord[] }>("/purchases").catch(() => ({ purchases: [] })),
       api<{ imports: ImportRunRow[] }>("/imports").catch(() => ({ imports: [] })),
@@ -867,17 +889,18 @@ function App() {
       api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status").catch(() => emptyTcgplayerPriceAutoRefreshStatus()),
       api<CardIndexStatus>("/card-index/status").catch(() => emptyCardIndexStatus()),
       api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>("/card-index?limit=60").catch(() => ({ entries: [], status: emptyCardIndexStatus() })),
+      api<PriceChartingImageCacheStatus>("/pricecharting-images/status").catch(() => emptyPriceChartingImageStatus()),
+      api<ImageDatabaseQuality>("/database-quality/images").catch(() => emptyImageDatabaseQuality()),
       api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate())
     ]);
-    const priceChartingImageData = emptyPriceChartingImageStatus();
-    return { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me };
+    return { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me };
   }
 
   async function refresh(seedExamplesIfEmpty = false) {
-    let { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData();
+    let { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData();
     if (seedExamplesIfEmpty && stockData.items.length === 0 && me.environment?.allowExamples !== false) {
       const result = await api<{ created: number; skipped: number }>("/examples/inventory", { method: "POST" });
-      ({ stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData());
+      ({ stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData());
       if (result.created > 0) showMessage(`Cargue ${result.created} ejemplos para que puedas revisar el flujo.`);
     }
     setStock(stockData);
@@ -893,6 +916,7 @@ function App() {
     setTcgplayerPrices(tcgplayerPriceData);
     setTcgplayerPriceAutoRefresh(tcgplayerPriceAutoRefreshData);
     setPriceChartingImages(priceChartingImageData);
+    setImageQuality(imageQualityData);
     setCardIndexStatus(cardIndexListData.status.totalEntries || cardIndexListData.entries.length ? cardIndexListData.status : cardIndexData);
     setCardIndexEntries(cardIndexListData.entries);
     setBlueRate(blueRateData);
@@ -2297,6 +2321,7 @@ function App() {
           tcgplayerPrices={tcgplayerPrices}
           tcgplayerPriceAutoRefresh={tcgplayerPriceAutoRefresh}
           priceChartingImages={priceChartingImages}
+          imageQuality={imageQuality}
           cardIndexStatus={cardIndexStatus}
           priceChartingSyncing={priceChartingSyncing}
           tcgplayerPriceSyncing={tcgplayerPriceSyncing}
@@ -4470,6 +4495,7 @@ function AdminView(props: {
   tcgplayerPrices: TcgplayerPriceCacheStatus;
   tcgplayerPriceAutoRefresh: TcgplayerPriceAutoRefreshStatus;
   priceChartingImages: PriceChartingImageCacheStatus;
+  imageQuality: ImageDatabaseQuality;
   cardIndexStatus: CardIndexStatus;
   priceChartingSyncing: boolean;
   tcgplayerPriceSyncing: boolean;
@@ -4493,6 +4519,7 @@ function AdminView(props: {
   const imageReady = Math.max(props.priceChartingImages.urlEntries, props.priceChartingImages.downloadedEntries);
   const imageTotal = Math.max(1, props.priceChartingImages.totalEntries);
   const imageProgress = Math.round((imageReady / imageTotal) * 100);
+  const qualityImageCoverage = percent(props.imageQuality.summary.catalogEntriesWithAnyImage, Math.max(1, props.imageQuality.summary.catalogEntries));
   const catalogBusy = props.priceChartingSyncing || props.cardIndexSyncing || props.priceChartingImageProcessing;
   return (
     <section className="view admin-view">
@@ -4525,6 +4552,68 @@ function AdminView(props: {
           <SourceHealthCard label="TCGplayer" status={props.tcgplayerPrices.lastRun?.status === "completed" ? "ok" : "warn"} value={props.tcgplayerPrices.totalEntries.toLocaleString("es-AR")} helper={props.tcgplayerPrices.lastRun ? formatShortDate(props.tcgplayerPrices.lastRun.completedAt) : "Sin corrida"} />
           <SourceHealthCard label="Indice maestro" status={props.cardIndexStatus.totalEntries > 0 ? props.cardIndexStatus.conflictEntries > 0 ? "warn" : "ok" : "bad"} value={props.cardIndexStatus.totalEntries.toLocaleString("es-AR")} helper={`${props.cardIndexStatus.tcgplayerLinkedEntries.toLocaleString("es-AR")} con TCG`} />
           <SourceHealthCard label="Imagenes" status={props.priceChartingImages.failedEntries > 0 ? "warn" : "ok"} value={Math.max(props.priceChartingImages.urlEntries, props.priceChartingImages.downloadedEntries).toLocaleString("es-AR")} helper={`${props.priceChartingImages.failedEntries.toLocaleString("es-AR")} fallidas`} />
+        </div>
+      </section>
+
+      <section className="panel image-quality-panel">
+        <div className="section-heading compact-heading">
+          <div>
+            <h3>Calidad de base: imagenes</h3>
+            <p>Prioriza lo que afecta stock, claims y despliegue online antes de procesar lotes grandes.</p>
+          </div>
+          <strong>{qualityImageCoverage}% catalogo con imagen</strong>
+        </div>
+        <div className="image-quality-priorities">
+          {props.imageQuality.priorities.map((item) => (
+            <div className={`image-quality-priority ${item.severity}`} key={item.key}>
+              <span>{item.label}</span>
+              <strong>{item.key === "catalog_coverage" ? `${item.count}%` : item.count.toLocaleString("es-AR")}</strong>
+              <small>{item.action}</small>
+            </div>
+          ))}
+        </div>
+        <div className="image-quality-grid">
+          <div className="image-quality-list">
+            <div className="image-quality-list-head"><strong>Stock sin imagen con match</strong><span>{props.imageQuality.stockMissingImage.length} muestras</span></div>
+            {props.imageQuality.stockMissingImage.length ? props.imageQuality.stockMissingImage.slice(0, 6).map((item) => (
+              <div className="image-quality-row" key={item.inventoryItemId}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.expansion} {item.number ? `#${item.number}` : ""} / {item.sku}</span>
+                </div>
+                <small>{item.cacheStatus} {item.candidateImageUrl ? "/ imagen candidata" : "/ sin URL"}</small>
+              </div>
+            )) : <p className="muted">No hay stock prioritario sin imagen.</p>}
+          </div>
+          <div className="image-quality-list">
+            <div className="image-quality-list-head"><strong>Fallidas recientes</strong><span>{props.imageQuality.failedImages.length} muestras</span></div>
+            {props.imageQuality.failedImages.length ? props.imageQuality.failedImages.slice(0, 6).map((item) => (
+              <div className="image-quality-row" key={item.priceChartingId}>
+                <div>
+                  <strong>{item.name || item.priceChartingId}</strong>
+                  <span>{item.expansion} {item.number ? `#${item.number}` : ""}</span>
+                </div>
+                <small>{item.attempts} intento(s): {shortError(item.errorMessage || "sin detalle")}</small>
+              </div>
+            )) : <p className="muted">No hay imagenes fallidas.</p>}
+          </div>
+          <div className="image-quality-list">
+            <div className="image-quality-list-head"><strong>Riesgo online</strong><span>{props.imageQuality.localImageRisks.length} muestras</span></div>
+            {props.imageQuality.localImageRisks.length ? props.imageQuality.localImageRisks.slice(0, 6).map((item) => (
+              <div className="image-quality-row" key={item.productId}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.expansion} {item.number ? `#${item.number}` : ""}</span>
+                </div>
+                <small>{item.stockItems} SKU(s) usando URL local</small>
+              </div>
+            )) : <p className="muted">Sin URLs locales riesgosas en productos con stock.</p>}
+          </div>
+        </div>
+        <div className="admin-button-row">
+          <button className="primary-action" disabled={props.priceChartingImageProcessing} onClick={() => props.onPriceChartingImageBatch(false)}><Icon name="image" />Resolver stock primero</button>
+          <button className="secondary-action" disabled={props.priceChartingImageProcessing} onClick={() => props.onPriceChartingImageBatch(true, "auto")}><Icon name="download" />Guardar locales</button>
+          <button className="secondary-action" disabled={catalogBusy} onClick={props.onGoCatalog}><Icon name="palette" />Auditar catalogo</button>
         </div>
       </section>
 
@@ -6421,6 +6510,29 @@ function emptyTcgplayerPriceAutoRefreshStatus(): TcgplayerPriceAutoRefreshStatus
 
 function emptyPriceChartingImageStatus(): PriceChartingImageCacheStatus {
   return { totalEntries: 0, pendingEntries: 0, urlEntries: 0, downloadedEntries: 0, failedEntries: 0, bytesStored: 0, stockLinkedEntries: 0 };
+}
+
+function emptyImageDatabaseQuality(): ImageDatabaseQuality {
+  return {
+    generatedAt: "",
+    summary: {
+      stockItems: 0,
+      stockItemsMissingImage: 0,
+      stockItemsMissingImageWithPriceCharting: 0,
+      productsUsingLocalImageUrls: 0,
+      openClaimCardsMissingImage: 0,
+      catalogEntries: 0,
+      catalogEntriesWithAnyImage: 0,
+      catalogEntriesDownloaded: 0,
+      imageCacheFailed: 0,
+      imageCachePending: 0,
+      imageCacheUrlFound: 0
+    },
+    priorities: [],
+    stockMissingImage: [],
+    failedImages: [],
+    localImageRisks: []
+  };
 }
 
 function emptyCardIndexStatus(): CardIndexStatus {

@@ -737,6 +737,58 @@ export type PriceChartingImageCacheStatus = {
   stockLinkedEntries: number;
 };
 
+export type ImageDatabaseQuality = {
+  generatedAt: string;
+  summary: {
+    stockItems: number;
+    stockItemsMissingImage: number;
+    stockItemsMissingImageWithPriceCharting: number;
+    productsUsingLocalImageUrls: number;
+    openClaimCardsMissingImage: number;
+    catalogEntries: number;
+    catalogEntriesWithAnyImage: number;
+    catalogEntriesDownloaded: number;
+    imageCacheFailed: number;
+    imageCachePending: number;
+    imageCacheUrlFound: number;
+  };
+  priorities: Array<{
+    key: string;
+    label: string;
+    count: number;
+    severity: "ok" | "warn" | "danger";
+    action: string;
+  }>;
+  stockMissingImage: Array<{
+    inventoryItemId: string;
+    sku: string;
+    name: string;
+    expansion: string;
+    number: string;
+    quantityOnHand: number;
+    priceChartingId: string;
+    cacheStatus: string;
+    candidateImageUrl: string;
+  }>;
+  failedImages: Array<{
+    priceChartingId: string;
+    name: string;
+    expansion: string;
+    number: string;
+    attempts: number;
+    errorMessage: string;
+    canonicalUrl: string;
+  }>;
+  localImageRisks: Array<{
+    productId: string;
+    name: string;
+    expansion: string;
+    number: string;
+    imageUrl: string;
+    stockItems: number;
+  }>;
+};
+
 export type CardIndexStatus = {
   totalEntries: number;
   priceChartingEntries: number;
@@ -2042,6 +2094,232 @@ export async function getPriceChartingImageCacheStatus(db: PGlite, businessId = 
     failedEntries: Number(row.failed_entries || 0),
     bytesStored: Number(row.bytes_stored || 0),
     stockLinkedEntries: Number(stockLinked.rows[0]?.stock_linked_entries || 0)
+  };
+}
+
+export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusinessId): Promise<ImageDatabaseQuality> {
+  const summaryResult = await db.query<Record<string, unknown>>(`
+    with active_stock as (
+      select
+        ii.id,
+        ii.sku,
+        ii.quantity_on_hand,
+        p.id as product_id,
+        p.name,
+        p.expansion,
+        coalesce(p.card_number, '') as card_number,
+        coalesce(p.image_url, '') as product_image_url,
+        nullif(ei.external_id, '') as direct_pricecharting_id
+      from inventory_items ii
+      join card_products p on p.id = ii.product_id
+      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source = 'pricecharting'
+      where ii.business_id = $1
+        and ii.active = true
+    ),
+    stock_with_match as (
+      select
+        active_stock.*,
+        coalesce(active_stock.direct_pricecharting_id, pce.pricecharting_id) as pricecharting_id
+      from active_stock
+      left join pricecharting_cache_entries pce on active_stock.direct_pricecharting_id is null
+        and pce.normalized_name = lower(active_stock.name)
+        and pce.normalized_expansion = lower(active_stock.expansion)
+        and coalesce(pce.card_number, '') = active_stock.card_number
+    ),
+    open_claim_missing as (
+      select coalesce(sum(greatest(1, cc.quantity)), 0)::integer as missing
+      from claim_sessions cs
+      join claim_cards cc on cc.claim_id = cs.id
+      where cs.business_id = $1
+        and cs.status = 'open'
+        and cc.business_id = $1
+        and cc.status <> 'ignored'
+        and coalesce(cc.image_url, '') = ''
+    )
+    select
+      (select count(*) from active_stock)::integer as stock_items,
+      (select count(*) from active_stock where product_image_url = '')::integer as stock_items_missing_image,
+      (select count(*) from stock_with_match where product_image_url = '' and coalesce(pricecharting_id, '') <> '')::integer as stock_items_missing_image_with_pricecharting,
+      (select count(distinct product_id) from active_stock where product_image_url like '/pricecharting-images/%')::integer as products_using_local_image_urls,
+      (select missing from open_claim_missing)::integer as open_claim_cards_missing_image,
+      (select count(*) from pricecharting_cache_entries)::integer as catalog_entries,
+      (
+        select count(*)
+        from pricecharting_cache_entries pce
+        left join pricecharting_image_cache pic using (pricecharting_id)
+        where coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> ''
+      )::integer as catalog_entries_with_any_image,
+      (select count(*) from pricecharting_image_cache where status = 'downloaded')::integer as catalog_entries_downloaded,
+      (select count(*) from pricecharting_image_cache where status = 'failed')::integer as image_cache_failed,
+      (select count(*) from pricecharting_image_cache where status = 'pending')::integer as image_cache_pending,
+      (select count(*) from pricecharting_image_cache where status = 'url_found')::integer as image_cache_url_found
+  `, [businessId]);
+  const summaryRow = summaryResult.rows[0] || {};
+  const summary = {
+    stockItems: Number(summaryRow.stock_items || 0),
+    stockItemsMissingImage: Number(summaryRow.stock_items_missing_image || 0),
+    stockItemsMissingImageWithPriceCharting: Number(summaryRow.stock_items_missing_image_with_pricecharting || 0),
+    productsUsingLocalImageUrls: Number(summaryRow.products_using_local_image_urls || 0),
+    openClaimCardsMissingImage: Number(summaryRow.open_claim_cards_missing_image || 0),
+    catalogEntries: Number(summaryRow.catalog_entries || 0),
+    catalogEntriesWithAnyImage: Number(summaryRow.catalog_entries_with_any_image || 0),
+    catalogEntriesDownloaded: Number(summaryRow.catalog_entries_downloaded || 0),
+    imageCacheFailed: Number(summaryRow.image_cache_failed || 0),
+    imageCachePending: Number(summaryRow.image_cache_pending || 0),
+    imageCacheUrlFound: Number(summaryRow.image_cache_url_found || 0)
+  };
+  const stockMissing = await db.query<Record<string, unknown>>(`
+    with active_stock as (
+      select
+        ii.id,
+        ii.sku,
+        ii.quantity_on_hand,
+        p.id as product_id,
+        p.name,
+        p.expansion,
+        coalesce(p.card_number, '') as card_number,
+        nullif(ei.external_id, '') as direct_pricecharting_id
+      from inventory_items ii
+      join card_products p on p.id = ii.product_id
+      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source = 'pricecharting'
+      where ii.business_id = $1
+        and ii.active = true
+        and coalesce(p.image_url, '') = ''
+    ),
+    matched as (
+      select
+        active_stock.*,
+        coalesce(active_stock.direct_pricecharting_id, pce.pricecharting_id) as pricecharting_id
+      from active_stock
+      left join pricecharting_cache_entries pce on active_stock.direct_pricecharting_id is null
+        and pce.normalized_name = lower(active_stock.name)
+        and pce.normalized_expansion = lower(active_stock.expansion)
+        and coalesce(pce.card_number, '') = active_stock.card_number
+    )
+    select distinct on (matched.id)
+      matched.id,
+      matched.sku,
+      matched.name,
+      matched.expansion,
+      matched.card_number,
+      matched.quantity_on_hand,
+      matched.pricecharting_id,
+      coalesce(pic.status, 'sin cache') as cache_status,
+      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), '') as candidate_image_url
+    from matched
+    left join pricecharting_cache_entries pce on pce.pricecharting_id = matched.pricecharting_id
+    left join pricecharting_image_cache pic on pic.pricecharting_id = matched.pricecharting_id
+    where coalesce(matched.pricecharting_id, '') <> ''
+    order by matched.id, case when coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> '' then 0 else 1 end, matched.quantity_on_hand desc
+    limit 20
+  `, [businessId]);
+  const failedImages = await db.query<Record<string, unknown>>(`
+    select
+      pic.pricecharting_id,
+      pce.product_name,
+      pce.expansion_name,
+      pce.card_number,
+      pce.canonical_url,
+      pic.attempts,
+      pic.error_message
+    from pricecharting_image_cache pic
+    left join pricecharting_cache_entries pce using (pricecharting_id)
+    where pic.status = 'failed'
+    order by pic.attempts desc, pic.updated_at desc
+    limit 12
+  `);
+  const localRisks = await db.query<Record<string, unknown>>(`
+    select
+      p.id,
+      p.name,
+      p.expansion,
+      coalesce(p.card_number, '') as card_number,
+      p.image_url,
+      count(ii.id)::integer as stock_items
+    from card_products p
+    join inventory_items ii on ii.product_id = p.id and ii.business_id = $1 and ii.active = true
+    where coalesce(p.image_url, '') like '/pricecharting-images/%'
+    group by p.id, p.name, p.expansion, p.card_number, p.image_url
+    order by count(ii.id) desc, p.name
+    limit 12
+  `, [businessId]);
+  const imageCoverage = summary.catalogEntries ? summary.catalogEntriesWithAnyImage / summary.catalogEntries : 1;
+  const priorities: ImageDatabaseQuality["priorities"] = [
+    {
+      key: "stock_missing_image",
+      label: "Stock sin imagen",
+      count: summary.stockItemsMissingImage,
+      severity: summary.stockItemsMissingImage > 0 ? "danger" : "ok",
+      action: "Completar imagenes del stock"
+    },
+    {
+      key: "stock_missing_image_with_pc",
+      label: "Stock con PC listo para resolver",
+      count: summary.stockItemsMissingImageWithPriceCharting,
+      severity: summary.stockItemsMissingImageWithPriceCharting > 0 ? "warn" : "ok",
+      action: "Procesar cola prioritaria de stock"
+    },
+    {
+      key: "local_image_urls",
+      label: "URLs locales en productos",
+      count: summary.productsUsingLocalImageUrls,
+      severity: summary.productsUsingLocalImageUrls > 0 ? "warn" : "ok",
+      action: "Migrar a URLs publicas de Supabase"
+    },
+    {
+      key: "open_claim_missing",
+      label: "Claim activo sin imagen",
+      count: summary.openClaimCardsMissingImage,
+      severity: summary.openClaimCardsMissingImage > 0 ? "danger" : "ok",
+      action: "Buscar imagenes antes de generar grilla"
+    },
+    {
+      key: "failed_image_cache",
+      label: "Imagenes fallidas",
+      count: summary.imageCacheFailed,
+      severity: summary.imageCacheFailed > 0 ? "warn" : "ok",
+      action: "Reintentar con fuente externa o revisar errores"
+    },
+    {
+      key: "catalog_coverage",
+      label: "Cobertura catalogo",
+      count: Math.round(imageCoverage * 100),
+      severity: imageCoverage >= 0.75 ? "ok" : imageCoverage >= 0.45 ? "warn" : "danger",
+      action: "Procesar imagenes automaticamente"
+    }
+  ];
+  return {
+    generatedAt: new Date().toISOString(),
+    summary,
+    priorities,
+    stockMissingImage: stockMissing.rows.map((row) => ({
+      inventoryItemId: String(row.id),
+      sku: String(row.sku || ""),
+      name: String(row.name || ""),
+      expansion: String(row.expansion || ""),
+      number: String(row.card_number || ""),
+      quantityOnHand: Number(row.quantity_on_hand || 0),
+      priceChartingId: String(row.pricecharting_id || ""),
+      cacheStatus: String(row.cache_status || ""),
+      candidateImageUrl: String(row.candidate_image_url || "")
+    })),
+    failedImages: failedImages.rows.map((row) => ({
+      priceChartingId: String(row.pricecharting_id || ""),
+      name: String(row.product_name || ""),
+      expansion: String(row.expansion_name || ""),
+      number: String(row.card_number || ""),
+      attempts: Number(row.attempts || 0),
+      errorMessage: String(row.error_message || ""),
+      canonicalUrl: String(row.canonical_url || "")
+    })),
+    localImageRisks: localRisks.rows.map((row) => ({
+      productId: String(row.id || ""),
+      name: String(row.name || ""),
+      expansion: String(row.expansion || ""),
+      number: String(row.card_number || ""),
+      imageUrl: String(row.image_url || ""),
+      stockItems: Number(row.stock_items || 0)
+    }))
   };
 }
 
@@ -4221,6 +4499,7 @@ export async function previewInventorySnapshot(db: PGlite, csvText: string, busi
   const rows = parseSnapshotCsv(csvText);
   const stock = await listStockInternal(db, businessId);
   const seen = new Set<string>();
+  const priceChartingCache = new Map<string, SnapshotPreviewRow["priceChartingCandidates"]>();
   const preview: SnapshotPreviewRow[] = [];
   for (const row of rows) {
     const translatedName = translateImportName(row.name);
@@ -4234,7 +4513,12 @@ export async function previewInventorySnapshot(db: PGlite, csvText: string, busi
     const rowWithExistingIdentifier = existingPriceCharting
       ? { ...row, priceChartingId: row.priceChartingId || existingPriceCharting.externalId, priceChartingUrl: row.priceChartingUrl || existingPriceCharting.url || "" }
       : row;
-    const priceChartingCandidates = await findPriceChartingImportCandidates(db, rowWithExistingIdentifier);
+    const priceChartingCacheKey = getPriceChartingImportCandidateCacheKey(rowWithExistingIdentifier);
+    let priceChartingCandidates = priceChartingCache.get(priceChartingCacheKey);
+    if (!priceChartingCandidates) {
+      priceChartingCandidates = await findPriceChartingImportCandidates(db, rowWithExistingIdentifier);
+      priceChartingCache.set(priceChartingCacheKey, priceChartingCandidates);
+    }
     const matchedPriceCharting = priceChartingCandidates.length === 1 ? priceChartingCandidates[0] : undefined;
     if (!row.sku) warnings.push("No tiene SKU: se generara al crear la carta");
     if (candidates.length > 1) warnings.push("Se encontraron varias coincidencias posibles");
@@ -4442,6 +4726,31 @@ async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventor
   const queryNumberPrimary = primaryImportCardNumber(row.number || "");
   if (!queryName && !queryExpansion && !queryNumber) return [];
 
+  if (queryExpansion && queryNumber) {
+    const exactResult = await db.query<Record<string, unknown>>(`
+      select pce.pricecharting_id, pce.pricecharting_url as canonical_url, pce.product_name, pce.normalized_name,
+        pce.expansion_name, pce.normalized_expansion, pce.card_number,
+        coalesce(pce.pricecharting_price_usd, pce.tcgplayer_price_usd) as loose_price_usd,
+        pce.image_url, pce.search_key, pce.language_group
+      from unified_catalog_cards pce
+      where
+        (
+          lower(pce.card_number) = lower($2)
+          or lower(pce.card_number) = lower($3)
+          or lower(split_part(pce.card_number, '/', 1)) = lower($3)
+        )
+        and (
+          pce.normalized_expansion = $1
+          or pce.normalized_expansion like '%' || $1 || '%'
+          or $1 like '%' || pce.normalized_expansion || '%'
+          or pce.search_key like '%' || $1 || '%'
+        )
+      limit 24
+    `, [queryExpansion, row.number || "", queryNumberPrimary]);
+    const exactCandidates = finalizePriceChartingImportCandidates(exactResult.rows, row);
+    if (exactCandidates.length) return exactCandidates;
+  }
+
   const result = await db.query<Record<string, unknown>>(`
     select pce.pricecharting_id, pce.pricecharting_url as canonical_url, pce.product_name, pce.normalized_name,
       pce.expansion_name, pce.normalized_expansion, pce.card_number,
@@ -4487,7 +4796,25 @@ async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventor
     limit 40
   `, [queryName, queryExpansion, row.number || "", queryNumberPrimary]);
 
-  let candidates = result.rows
+  return finalizePriceChartingImportCandidates(result.rows, row);
+}
+
+function getPriceChartingImportCandidateCacheKey(row: UpsertInventoryInput): string {
+  return [
+    row.priceChartingId ? `id:${row.priceChartingId.trim()}` : "",
+    normalizeImportText(translateImportName(row.name)),
+    normalizeImportText(row.expansion),
+    normalizeImportCardNumber(row.number || ""),
+    normalizeImportText(row.finish || "")
+  ].join("|");
+}
+
+function finalizePriceChartingImportCandidates(rows: Record<string, unknown>[], row: UpsertInventoryInput): SnapshotPreviewRow["priceChartingCandidates"] {
+  const translatedName = translateImportName(row.name);
+  const queryName = normalizeImportText(translatedName);
+  const queryExpansion = normalizeImportText(row.expansion);
+  const queryNumber = normalizeImportCardNumber(row.number || "");
+  let candidates = rows
     .map((candidate) => toPriceChartingImportCandidate(candidate, row))
     .filter((candidate) => !queryName || areImportNamesCompatible(translatedName, candidate.productName))
     .filter((candidate) => !queryNumber || areImportCardNumbersCompatible(row.number || "", candidate.cardNumber))
@@ -5336,7 +5663,7 @@ function hashToken(token: string): string {
 function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNumber: number }> {
   const records = parse(csvText, {
     bom: true,
-    delimiter: [",", ";"],
+    delimiter: detectSnapshotCsvDelimiter(csvText),
     skip_empty_lines: true,
     relax_column_count: true,
     relax_quotes: true,
@@ -5400,6 +5727,37 @@ function parseSnapshotCsv(csvText: string): Array<UpsertInventoryInput & { rowNu
       ...(tags || get("rarity", "rareza") ? { tags: [tags, get("rarity", "rareza")].filter(Boolean).join(", ") } : {})
     };
   }).filter((row) => row.name || row.expansion || row.number || row.sku);
+}
+
+function detectSnapshotCsvDelimiter(csvText: string): "," | ";" {
+  const candidateLines = String(csvText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  for (const line of candidateLines) {
+    const semicolons = countCsvDelimiterOutsideQuotes(line, ";");
+    const commas = countCsvDelimiterOutsideQuotes(line, ",");
+    if (semicolons >= 3 || commas >= 3) return semicolons > commas ? ";" : ",";
+  }
+  const semicolonTotal = candidateLines.reduce((sum, line) => sum + countCsvDelimiterOutsideQuotes(line, ";"), 0);
+  const commaTotal = candidateLines.reduce((sum, line) => sum + countCsvDelimiterOutsideQuotes(line, ","), 0);
+  return semicolonTotal > commaTotal ? ";" : ",";
+}
+
+function countCsvDelimiterOutsideQuotes(line: string, delimiter: "," | ";"): number {
+  let count = 0;
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      if (quoted && line[index + 1] === '"') index += 1;
+      else quoted = !quoted;
+    } else if (!quoted && char === delimiter) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function findSnapshotHeaderIndex(records: string[][]): number {

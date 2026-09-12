@@ -171,12 +171,13 @@ async function uploadImage(file: ImageFile, remotePath: string) {
 async function updateImageUrls(fileName: string, publicUrl: string) {
   const localUrl = `/pricecharting-images/files/${fileName}`;
   const updateCardProducts = await patchRows("card_products", `image_url=eq.${encodeURIComponent(localUrl)}`, { image_url: publicUrl });
+  const updateClaimCards = await patchRows("claim_cards", `image_url=eq.${encodeURIComponent(localUrl)}`, { image_url: publicUrl });
   const priceChartingId = fileName.replace(/\.(jpg|jpeg|png|webp)$/i, "");
   const updateCache = await patchRows("pricecharting_image_cache", `pricecharting_id=eq.${encodeURIComponent(priceChartingId)}`, {
     public_url: publicUrl,
     local_path: localUrl
   });
-  return updateCardProducts + updateCache;
+  return updateCardProducts + updateClaimCards + updateCache;
 }
 
 async function patchRows(table: string, filter: string, payload: Record<string, string>) {

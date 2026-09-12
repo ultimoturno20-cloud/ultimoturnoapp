@@ -7011,6 +7011,116 @@ select {
   gap: 10px;
 }
 
+.image-quality-panel {
+  display: grid;
+  gap: 14px;
+  border-color: rgba(34, 197, 94, 0.2);
+  background:
+    linear-gradient(135deg, rgba(34, 197, 94, 0.08), transparent 40%),
+    var(--surface);
+}
+
+.image-quality-priorities {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.image-quality-priority {
+  display: grid;
+  gap: 4px;
+  min-height: 94px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px;
+  background: #0b0b0e;
+}
+
+.image-quality-priority.ok {
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.image-quality-priority.warn {
+  border-color: rgba(245, 197, 66, 0.36);
+}
+
+.image-quality-priority.danger {
+  border-color: rgba(245, 37, 70, 0.44);
+}
+
+.image-quality-priority span,
+.image-quality-priority small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.image-quality-priority strong {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.image-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.image-quality-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px;
+  background: #09090c;
+}
+
+.image-quality-list-head,
+.image-quality-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.image-quality-list-head strong,
+.image-quality-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.image-quality-list-head span,
+.image-quality-row span,
+.image-quality-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.image-quality-row {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 7px;
+}
+
+.image-quality-row div {
+  min-width: 0;
+}
+
+.image-quality-row strong,
+.image-quality-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-quality-row small {
+  flex: 0 0 112px;
+  text-align: right;
+  line-height: 1.25;
+}
+
 .source-health-card {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
@@ -9360,11 +9470,31 @@ h2 {
   .source-health-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .image-quality-priorities {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .image-quality-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
   .source-health-grid {
     grid-template-columns: 1fr;
+  }
+
+  .image-quality-priorities {
+    grid-template-columns: 1fr;
+  }
+
+  .image-quality-row {
+    display: grid;
+  }
+
+  .image-quality-row small {
+    text-align: left;
   }
 }
 

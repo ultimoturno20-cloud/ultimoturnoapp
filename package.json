@@ -16,6 +16,7 @@
     "card-index:images": "tsx tools/card-index-image-worker.ts",
     "images:worker": "tsx tools/pricecharting-image-worker.ts",
     "images-worker": "tsx tools/pricecharting-image-worker.ts",
+    "images:quality:daemon": "tsx tools/image-quality-daemon.ts",
     "db:postgres:check": "tsx scripts/check-postgres-connection.mts",
     "db:postgres:init": "tsx scripts/init-postgres-schema.mts",
     "db:migrate:pglite-to-postgres": "tsx scripts/migrate-pglite-to-postgres.mts",

@@ -38,6 +38,7 @@ import {
   getDefaultOperationalUser,
   getHealth,
   getInventoryItem,
+  getImageDatabaseQuality,
   getPriceChartingCacheStatus,
   getPriceChartingImageCacheStatus,
   getLatestTcgplayerPriceSourceVersion,
@@ -3864,6 +3865,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/pricecharting-images/status" && request.method === "GET") {
       sendJson(response, 200, await getPriceChartingImageCacheStatus(db, user.businessId));
+      return;
+    }
+
+    if (url.pathname === "/database-quality/images" && request.method === "GET") {
+      sendJson(response, 200, await getImageDatabaseQuality(db, user.businessId));
       return;
     }
 
