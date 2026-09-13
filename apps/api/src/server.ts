@@ -125,6 +125,8 @@ const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "poke
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
 const priceChartingImageDir = process.env.PRICECHARTING_IMAGE_DIR
   ? path.resolve(process.env.PRICECHARTING_IMAGE_DIR)
+  : productionMode
+    ? path.resolve("/tmp", "ultimoturno-pricecharting-images")
   : path.resolve(dataDir, "..", "pricecharting-images");
 const priceChartingImageReadDirs = [...new Set([
   priceChartingImageDir,

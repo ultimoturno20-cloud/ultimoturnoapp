@@ -2112,7 +2112,8 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
         nullif(ei.external_id, '') as direct_pricecharting_id
       from inventory_items ii
       join card_products p on p.id = ii.product_id
-      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source = 'pricecharting'
+      left join external_sources es on es.name = 'pricecharting'
+      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source_id = es.id
       where ii.business_id = $1
         and ii.active = true
     ),
@@ -2181,7 +2182,8 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
         nullif(ei.external_id, '') as direct_pricecharting_id
       from inventory_items ii
       join card_products p on p.id = ii.product_id
-      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source = 'pricecharting'
+      left join external_sources es on es.name = 'pricecharting'
+      left join external_identifiers ei on ei.product_id = p.id and ei.business_id = ii.business_id and ei.source_id = es.id
       where ii.business_id = $1
         and ii.active = true
         and coalesce(p.image_url, '') = ''
