@@ -11,6 +11,14 @@ type ClaimCardRow = {
   image_url?: string;
 };
 
+type ImageCacheRow = {
+  pricecharting_id: string;
+  source_image_url?: string;
+  public_url?: string;
+  content_type?: string;
+  byte_size?: number;
+};
+
 type ImageFile = {
   fileName: string;
   fullPath?: string;
@@ -42,8 +50,9 @@ async function main() {
   if (!activeClaim) throw new Error("No hay claim activo en Supabase.");
 
   const cards = await listActiveClaimCards(activeClaim.id);
-  const missing = cards.filter((card) => String(card.pricecharting_id || "").trim() && !String(card.image_url || "").trim());
+  const missing = cards.filter((card) => String(card.pricecharting_id || "").trim() && isBrokenClaimImageUrl(card.image_url));
   const files = await mapLocalImages(imageDir);
+  const cache = await mapImageCache(missing.map((card) => String(card.pricecharting_id || "").trim()));
   const cardsToRepair = limit > 0 ? missing.slice(0, limit) : missing;
   const selected: Array<{ card: ClaimCardRow; file: ImageFile }> = [];
   let localMatches = 0;
@@ -54,6 +63,21 @@ async function main() {
     if (local) {
       selected.push({ card, file: local });
       localMatches += 1;
+      continue;
+    }
+    const cached = cache.get(priceChartingId);
+    const cachedSourceUrl = usableAbsoluteImageUrl(cached?.public_url) || usableAbsoluteImageUrl(cached?.source_image_url);
+    if (cachedSourceUrl) {
+      selected.push({
+        card,
+        file: {
+          fileName: fileNameForRemoteImage(priceChartingId, cachedSourceUrl, cached?.content_type),
+          sourceUrl: cachedSourceUrl,
+          contentType: cached?.content_type || contentTypeFor(cachedSourceUrl),
+          size: Number(cached?.byte_size || 0)
+        }
+      });
+      externalMatches += 1;
       continue;
     }
     if (!allowExternal) continue;
@@ -132,6 +156,18 @@ async function mapLocalImages(dir: string) {
   return map;
 }
 
+async function mapImageCache(priceChartingIds: string[]) {
+  const map = new Map<string, ImageCacheRow>();
+  const ids = [...new Set(priceChartingIds.filter(Boolean))];
+  for (let index = 0; index < ids.length; index += 100) {
+    const chunk = ids.slice(index, index + 100);
+    if (!chunk.length) continue;
+    const rows = await getJson<ImageCacheRow[]>(`pricecharting_image_cache?select=pricecharting_id,source_image_url,public_url,content_type,byte_size&pricecharting_id=in.(${chunk.map(encodeURIComponent).join(",")})&limit=100`);
+    for (const row of rows) map.set(String(row.pricecharting_id), row);
+  }
+  return map;
+}
+
 async function assertSupabaseReachable() {
   const response = await fetch(`${storageBaseUrl}/bucket`, { headers: authHeaders() });
   if (!response.ok) throw new Error(`Supabase Storage no respondio OK (${response.status}): ${await response.text()}`);
@@ -143,13 +179,20 @@ async function uploadImageIfNeeded(file: ImageFile) {
     headers: authHeaders()
   });
   if (info.ok) return false;
-  const body = file.fullPath
-    ? createReadStream(file.fullPath) as unknown as BodyInit
-    : Buffer.from(await (await fetch(file.sourceUrl || "", {
-        headers: { "User-Agent": "Mozilla/5.0 UltimoTurnoClaimImageRepair/1.0" },
-        redirect: "follow",
-        signal: AbortSignal.timeout(30000)
-      })).arrayBuffer()) as unknown as BodyInit;
+  let body: BodyInit;
+  if (file.fullPath) {
+    body = createReadStream(file.fullPath) as unknown as BodyInit;
+  } else {
+    const sourceResponse = await fetch(file.sourceUrl || "", {
+      headers: { "User-Agent": "Mozilla/5.0 UltimoTurnoClaimImageRepair/1.0" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!sourceResponse.ok) throw new Error(`fuente remota HTTP ${sourceResponse.status}: ${file.sourceUrl}`);
+    const sourceContentType = sourceResponse.headers.get("content-type") || file.contentType;
+    if (!sourceContentType.toLowerCase().startsWith("image/")) throw new Error(`fuente remota no es imagen: ${sourceContentType}`);
+    body = Buffer.from(await sourceResponse.arrayBuffer()) as unknown as BodyInit;
+  }
   const response = await fetch(`${storageBaseUrl}/object/${encodeURIComponent(bucket)}/${encodeURIComponent(file.fileName)}`, {
     method: "POST",
     headers: {
@@ -349,4 +392,27 @@ function contentTypeFor(fileName: string) {
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
   return "image/jpeg";
+}
+
+function isBrokenClaimImageUrl(value?: string) {
+  const clean = String(value || "").trim();
+  return !clean || clean.startsWith("/pricecharting-images/");
+}
+
+function usableAbsoluteImageUrl(value?: string) {
+  const clean = String(value || "").trim();
+  return /^https?:\/\//i.test(clean) ? clean : "";
+}
+
+function fileNameForRemoteImage(priceChartingId: string, url: string, contentType?: string) {
+  const parsedExtension = (() => {
+    try {
+      const ext = path.extname(new URL(url).pathname).replace(".", "").toLowerCase();
+      return ["jpg", "jpeg", "png", "webp"].includes(ext) ? (ext === "jpeg" ? "jpg" : ext) : "";
+    } catch {
+      return "";
+    }
+  })();
+  const extension = parsedExtension || extensionForContentType(contentType || "");
+  return `${priceChartingId}.${extension}`;
 }

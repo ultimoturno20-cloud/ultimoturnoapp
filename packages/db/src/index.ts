@@ -3992,7 +3992,13 @@ export async function addPriceChartingCardsToClaim(
     for (const id of ids) {
       const entry = await db.query<Record<string, unknown>>(`
         select pce.pricecharting_id, pce.canonical_url, pce.product_name, pce.expansion_name, pce.card_number,
-          pce.loose_price_usd, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), pce.image_url, '') as image_url
+          pce.loose_price_usd,
+          coalesce(
+            nullif(case when pic.public_url like '/%' then '' else pic.public_url end, ''),
+            nullif(case when pic.source_image_url like '/%' then '' else pic.source_image_url end, ''),
+            nullif(case when pce.image_url like '/%' then '' else pce.image_url end, ''),
+            ''
+          ) as image_url
         from pricecharting_cache_entries pce
         left join pricecharting_image_cache pic using (pricecharting_id)
         where pce.pricecharting_id = $1
@@ -5209,7 +5215,12 @@ function summarizeDbStock(items: DbStockRow[]): DbStockSummary {
 async function listClaimCards(db: PGlite, claimId: string, businessId: string): Promise<ClaimCard[]> {
   const result = await db.query<Record<string, unknown>>(`
     select cc.id, cc.claim_id, cc.section_id, cc.pricecharting_id, cc.canonical_url, cc.product_name, cc.expansion_name,
-      cc.card_number, coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), cc.image_url) as image_url,
+      cc.card_number,
+      coalesce(
+        nullif(case when pic.public_url like '/%' then '' else pic.public_url end, ''),
+        nullif(case when pic.source_image_url like '/%' then '' else pic.source_image_url end, ''),
+        cc.image_url
+      ) as image_url,
       cc.pc_price_usd, cc.suggested_ars, cc.final_price_ars,
       cc.final_price_usd, cc.final_name, cc.buyer, cc.quantity, cc.tags, cc.status, cc.grid_batch, cc.sort_order
     from claim_cards cc
