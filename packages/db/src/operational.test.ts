@@ -14,8 +14,10 @@ import {
   createPurchase,
   createSale,
   createOperationalDatabase,
+  ensurePriceChartingImageQueueForActiveClaim,
   ensurePriceChartingImageQueueForAll,
   getDefaultOperationalUser,
+  getImageDatabaseQuality,
   enrichCardIndexFromTcgCsv,
   getCardIndexStatus,
   getPriceChartingImageCacheStatus,
@@ -278,7 +280,57 @@ describe("operational inventory database", () => {
     const sales = await listSales(db, user.businessId);
     assert.equal(sales.sales.length, 1);
     assert.equal(sales.sales[0].lines[0].inventoryItemId, "");
-    assert.equal(sales.sales[0].lines[0].imageUrl, "/pricecharting-images/files/7980043.jpg");
+    assert.equal(sales.sales[0].lines[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/7980043/1600.jpg");
+    await db.close();
+  });
+
+  it("does not expose protected local claim image URLs", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-web-images-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "claim-web-image",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "956909",
+        canonicalUrl: "https://www.pricecharting.com/game/plasma-storm/watchog-112",
+        sourceUrl: "https://www.pricecharting.com/game/plasma-storm/watchog-112",
+        productName: "Watchog",
+        normalizedName: "watchog",
+        expansionName: "Plasma Storm",
+        normalizedExpansion: "plasma storm",
+        cardNumber: "112",
+        loosePriceUsd: 0.51,
+        imageUrl: "",
+        searchKey: "watchog plasma storm 112"
+      }]
+    });
+    await recordPriceChartingImageSuccess(db, {
+      priceChartingId: "956909",
+      sourceImageUrl: "https://storage.googleapis.com/images.pricecharting.com/watchog/1600.jpg",
+      localPath: path.join(dataDir, "pricecharting-images", "956909.jpg"),
+      publicUrl: "/pricecharting-images/files/956909.jpg",
+      contentType: "image/jpeg",
+      byteSize: 146337,
+      contentHash: "watchog-hash"
+    });
+    let workspace = await createClaimSession(db, { name: "Claim imagenes web" }, user);
+    workspace = await addPriceChartingCardsToClaim(db, ["956909"], user);
+    assert.equal(workspace.cards[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/watchog/1600.jpg");
+
+    await db.query("update claim_cards set image_url = '/pricecharting-images/files/956909.jpg' where pricecharting_id = '956909'");
+    await db.query("update pricecharting_image_cache set public_url = '/pricecharting-images/files/956909.jpg' where pricecharting_id = '956909'");
+    workspace = await listClaimsWorkspace(db, user.businessId);
+    assert.equal(workspace.cards[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/watchog/1600.jpg");
+    assert.equal((await ensurePriceChartingImageQueueForActiveClaim(db, user.businessId)).missing, 0);
+
+    await db.query("update pricecharting_image_cache set source_image_url = '/pricecharting-images/files/956909.jpg' where pricecharting_id = '956909'");
+    workspace = await listClaimsWorkspace(db, user.businessId);
+    assert.equal(workspace.cards[0].imageUrl, "");
+    assert.equal((await ensurePriceChartingImageQueueForActiveClaim(db, user.businessId)).missing, 1);
+    assert.equal((await getImageDatabaseQuality(db, user.businessId)).summary.openClaimCardsMissingImage, 1);
     await db.close();
   });
 
@@ -1268,7 +1320,7 @@ describe("operational inventory database", () => {
     assert.equal(status.downloadedEntries, 1);
     assert.equal(status.bytesStored, 120000);
     const cache = await listPriceChartingCache(db, "pikachu", 10);
-    assert.equal(cache.entries[0].imageUrl, "/pricecharting-images/files/123.jpg");
+    assert.equal(cache.entries[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/test/1600.jpg");
     await db.close();
   });
 

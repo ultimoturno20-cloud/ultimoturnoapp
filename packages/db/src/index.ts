@@ -2012,7 +2012,12 @@ export async function ensurePriceChartingImageQueueForActiveClaim(db: PGlite, bu
         and (
           pic.pricecharting_id is null
           or pic.status = 'failed'
-          or coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(cc.image_url, ''), '') = ''
+          or coalesce(
+            nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+            nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+            nullif(case when cc.image_url like 'http://%' or cc.image_url like 'https://%' then cc.image_url else '' end, ''),
+            ''
+          ) = ''
         )
     ),
     upserted as (
@@ -2135,7 +2140,7 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
         and cs.status = 'open'
         and cc.business_id = $1
         and cc.status <> 'ignored'
-        and coalesce(cc.image_url, '') = ''
+        and coalesce(case when cc.image_url like 'http://%' or cc.image_url like 'https://%' then cc.image_url else '' end, '') = ''
     )
     select
       (select count(*) from active_stock)::integer as stock_items,
@@ -2148,7 +2153,12 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
         select count(*)
         from pricecharting_cache_entries pce
         left join pricecharting_image_cache pic using (pricecharting_id)
-        where coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> ''
+        where coalesce(
+          nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+          nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+          nullif(case when pce.image_url like 'http://%' or pce.image_url like 'https://%' then pce.image_url else '' end, ''),
+          ''
+        ) <> ''
       )::integer as catalog_entries_with_any_image,
       (select count(*) from pricecharting_image_cache where status = 'downloaded')::integer as catalog_entries_downloaded,
       (select count(*) from pricecharting_image_cache where status = 'failed')::integer as image_cache_failed,
@@ -2207,12 +2217,22 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
       matched.quantity_on_hand,
       matched.pricecharting_id,
       coalesce(pic.status, 'sin cache') as cache_status,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), '') as candidate_image_url
+      coalesce(
+        nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+        nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+        nullif(case when pce.image_url like 'http://%' or pce.image_url like 'https://%' then pce.image_url else '' end, ''),
+        ''
+      ) as candidate_image_url
     from matched
     left join pricecharting_cache_entries pce on pce.pricecharting_id = matched.pricecharting_id
     left join pricecharting_image_cache pic on pic.pricecharting_id = matched.pricecharting_id
     where coalesce(matched.pricecharting_id, '') <> ''
-    order by matched.id, case when coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> '' then 0 else 1 end, matched.quantity_on_hand desc
+    order by matched.id, case when coalesce(
+      nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+      nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+      nullif(case when pce.image_url like 'http://%' or pce.image_url like 'https://%' then pce.image_url else '' end, ''),
+      ''
+    ) <> '' then 0 else 1 end, matched.quantity_on_hand desc
     limit 20
   `, [businessId]);
   const failedImages = await db.query<Record<string, unknown>>(`
@@ -2350,7 +2370,12 @@ export async function claimPriceChartingImageQueue(db: PGlite, limit = 5, option
           and cc.status <> 'ignored'
           and cc.pricecharting_id = pce.pricecharting_id
           and coalesce(cc.pricecharting_id, '') <> ''
-          and coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(cc.image_url, ''), '') = ''
+          and coalesce(
+            nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+            nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+            nullif(case when cc.image_url like 'http://%' or cc.image_url like 'https://%' then cc.image_url else '' end, ''),
+            ''
+          ) = ''
       )`
     : "";
   if (options.activeClaimBusinessId) params.push(options.activeClaimBusinessId);
@@ -2414,7 +2439,12 @@ export async function listActiveClaimMissingPriceChartingImages(db: PGlite, busi
     where cc.business_id = $1
       and cc.status <> 'ignored'
       and coalesce(cc.pricecharting_id, '') <> ''
-      and coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(cc.image_url, ''), '') = ''
+      and coalesce(
+        nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+        nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+        nullif(case when cc.image_url like 'http://%' or cc.image_url like 'https://%' then cc.image_url else '' end, ''),
+        ''
+      ) = ''
     order by cc.pricecharting_id, section_sort_order, cc.sort_order, cc.created_at
     limit $2
   `, [businessId, safeLimit]);
@@ -2435,7 +2465,7 @@ export async function recordPriceChartingImageUrlDiscovered(db: PGlite, input: {
   sourceImageUrl: string;
   publicUrl?: string;
 }): Promise<void> {
-  const publicUrl = input.publicUrl || input.sourceImageUrl;
+  const publicUrl = firstWebImageUrl(input.publicUrl, input.sourceImageUrl);
   await db.query(`
     update pricecharting_image_cache
     set status = case when status = 'downloaded' then status else 'url_found' end,
@@ -2454,6 +2484,7 @@ export async function recordPriceChartingImageUrlDiscovered(db: PGlite, input: {
     set image_url = $2
     where pricecharting_id = $1
       and coalesce(image_url, '') = ''
+      and $2 <> ''
   `, [input.priceChartingId, publicUrl]);
 
   await db.query(`
@@ -2462,6 +2493,7 @@ export async function recordPriceChartingImageUrlDiscovered(db: PGlite, input: {
       updated_at = now()
     from pricecharting_cache_entries pce
     where pce.pricecharting_id = $1
+      and $2 <> ''
       and coalesce(p.image_url, '') = ''
       and (
         exists (
@@ -2498,6 +2530,7 @@ export async function deferPriceChartingImageQueueEntry(db: PGlite, input: {
 }
 
 export async function recordPriceChartingImageSuccess(db: PGlite, input: PriceChartingImageDownloadSuccess): Promise<void> {
+  const publicUrl = firstWebImageUrl(input.publicUrl, input.sourceImageUrl);
   await db.query(`
     insert into pricecharting_image_cache (
       pricecharting_id, status, source_image_url, local_path, public_url,
@@ -2519,13 +2552,14 @@ export async function recordPriceChartingImageSuccess(db: PGlite, input: PriceCh
       next_attempt_at = now(),
       downloaded_at = now(),
       updated_at = now()
-  `, [input.priceChartingId, input.sourceImageUrl, input.localPath, input.publicUrl, input.contentType, input.byteSize, input.contentHash]);
+  `, [input.priceChartingId, input.sourceImageUrl, input.localPath, publicUrl, input.contentType, input.byteSize, input.contentHash]);
 
   await db.query(`
     update pricecharting_cache_entries
     set image_url = $2
     where pricecharting_id = $1
-  `, [input.priceChartingId, input.publicUrl]);
+      and $2 <> ''
+  `, [input.priceChartingId, publicUrl]);
 
   await db.query(`
     update card_products p
@@ -2533,6 +2567,7 @@ export async function recordPriceChartingImageSuccess(db: PGlite, input: PriceCh
       updated_at = now()
     from pricecharting_cache_entries pce
     where pce.pricecharting_id = $1
+      and $2 <> ''
       and coalesce(p.image_url, '') = ''
       and (
         exists (
@@ -2547,7 +2582,15 @@ export async function recordPriceChartingImageSuccess(db: PGlite, input: PriceCh
           and coalesce(nullif(pce.card_number, ''), '') = coalesce(p.card_number, '')
         )
       )
-  `, [input.priceChartingId, input.publicUrl]);
+  `, [input.priceChartingId, publicUrl]);
+}
+
+function firstWebImageUrl(...values: Array<string | undefined | null>): string {
+  for (const value of values) {
+    const clean = String(value || "").trim();
+    if (clean.startsWith("http://") || clean.startsWith("https://")) return clean;
+  }
+  return "";
 }
 
 export async function recordPriceChartingImageFailure(db: PGlite, input: {
@@ -3994,9 +4037,9 @@ export async function addPriceChartingCardsToClaim(
         select pce.pricecharting_id, pce.canonical_url, pce.product_name, pce.expansion_name, pce.card_number,
           pce.loose_price_usd,
           coalesce(
-            nullif(case when pic.public_url like '/%' then '' else pic.public_url end, ''),
-            nullif(case when pic.source_image_url like '/%' then '' else pic.source_image_url end, ''),
-            nullif(case when pce.image_url like '/%' then '' else pce.image_url end, ''),
+            nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+            nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+            nullif(case when pce.image_url like 'http://%' or pce.image_url like 'https://%' then pce.image_url else '' end, ''),
             ''
           ) as image_url
         from pricecharting_cache_entries pce
@@ -5217,9 +5260,9 @@ async function listClaimCards(db: PGlite, claimId: string, businessId: string): 
     select cc.id, cc.claim_id, cc.section_id, cc.pricecharting_id, cc.canonical_url, cc.product_name, cc.expansion_name,
       cc.card_number,
       coalesce(
-        nullif(case when pic.public_url like '/%' then '' else pic.public_url end, ''),
-        nullif(case when pic.source_image_url like '/%' then '' else pic.source_image_url end, ''),
-        cc.image_url
+        nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+        nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+        nullif(case when cc.image_url like 'http://%' or cc.image_url like 'https://%' then cc.image_url else '' end, '')
       ) as image_url,
       cc.pc_price_usd, cc.suggested_ars, cc.final_price_ars,
       cc.final_price_usd, cc.final_name, cc.buyer, cc.quantity, cc.tags, cc.status, cc.grid_batch, cc.sort_order
