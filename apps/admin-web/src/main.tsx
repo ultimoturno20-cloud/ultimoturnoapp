@@ -649,7 +649,7 @@ type ImageDatabaseQuality = {
   };
   priorities: Array<{ key: string; label: string; count: number; severity: "ok" | "warn" | "danger"; action: string }>;
   stockMissingImage: Array<{ inventoryItemId: string; sku: string; name: string; expansion: string; number: string; quantityOnHand: number; priceChartingId: string; cacheStatus: string; candidateImageUrl: string }>;
-  failedImages: Array<{ priceChartingId: string; name: string; expansion: string; number: string; attempts: number; errorMessage: string; canonicalUrl: string }>;
+  failedImages: Array<{ priceChartingId: string; name: string; expansion: string; number: string; candidateImageUrl: string; attempts: number; errorMessage: string; canonicalUrl: string }>;
   localImageRisks: Array<{ productId: string; name: string; expansion: string; number: string; imageUrl: string; stockItems: number }>;
 };
 
@@ -814,6 +814,7 @@ function App() {
   const [cardIndexRebuildAfterId, setCardIndexRebuildAfterId] = useState("");
   const [priceChartingSyncing, setPriceChartingSyncing] = useState(false);
   const [priceChartingImageProcessing, setPriceChartingImageProcessing] = useState(false);
+  const [imageRepairingId, setImageRepairingId] = useState("");
   const [claimImageSearching, setClaimImageSearching] = useState(false);
   const [claimCardImageSearching, setClaimCardImageSearching] = useState("");
   const [claimPriceRefreshing, setClaimPriceRefreshing] = useState(false);
@@ -1838,6 +1839,76 @@ function App() {
     }
   }
 
+  async function repairStockQualityImage(item: ImageDatabaseQuality["stockMissingImage"][number], manualUrl = "") {
+    if (!item.inventoryItemId) return;
+    const repairId = `stock:${item.inventoryItemId}`;
+    setImageRepairingId(repairId);
+    try {
+      const result = await api<{ item: StockRow; imageUrl: string; source: string; message: string }>(`/inventory/${item.inventoryItemId}/image/force`, {
+        method: "POST",
+        body: { manualUrl, mode: "auto" }
+      });
+      setStock((current) => {
+        const items = current.items.map((row) => row.id === result.item.id ? result.item : row);
+        return { items, summary: summarizeStockRows(items) };
+      });
+      const [status, qualityData, claimsData] = await Promise.all([
+        api<PriceChartingImageCacheStatus>("/pricecharting-images/status").catch(() => priceChartingImages),
+        api<ImageDatabaseQuality>("/database-quality/images").catch(() => imageQuality),
+        api<ClaimsWorkspace>("/claims").catch(() => claims)
+      ]);
+      setPriceChartingImages(status);
+      setImageQuality(qualityData);
+      setClaims(claimsData);
+      showMessage(result.message || `Imagen reparada para ${item.name}.`);
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setImageRepairingId("");
+    }
+  }
+
+  async function repairPriceChartingQualityImage(priceChartingId: string, manualUrl = "") {
+    const cleanId = priceChartingId.trim();
+    if (!cleanId) return;
+    const repairId = `pc:${cleanId}`;
+    setImageRepairingId(repairId);
+    try {
+      const result = await api<{
+        imageUrl: string;
+        localUrl: string;
+        source: string;
+        status: PriceChartingImageCacheStatus;
+        imageQuality: ImageDatabaseQuality;
+        workspace: ClaimsWorkspace;
+      }>(`/pricecharting-images/${encodeURIComponent(cleanId)}/repair`, {
+        method: "POST",
+        body: { manualUrl, mode: "auto" }
+      });
+      setPriceChartingImages(result.status);
+      setImageQuality(result.imageQuality);
+      setClaims(result.workspace);
+      await searchCardIndex("").catch(() => undefined);
+      showMessage(`Imagen reparada para PriceCharting ${cleanId}${result.source ? ` desde ${result.source}` : ""}.`);
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setImageRepairingId("");
+    }
+  }
+
+  function promptStockQualityImageUrl(item: ImageDatabaseQuality["stockMissingImage"][number]) {
+    const manualUrl = window.prompt(`URL publica de imagen para ${item.name}`, item.candidateImageUrl || "");
+    if (manualUrl === null) return;
+    void repairStockQualityImage(item, manualUrl.trim());
+  }
+
+  function promptPriceChartingQualityImageUrl(item: ImageDatabaseQuality["failedImages"][number]) {
+    const manualUrl = window.prompt(`URL publica de imagen para ${item.name || item.priceChartingId}`, item.candidateImageUrl || item.canonicalUrl || "");
+    if (manualUrl === null) return;
+    void repairPriceChartingQualityImage(item.priceChartingId, manualUrl.trim());
+  }
+
   async function previewSnapshot(nextCsvText = csvText) {
     if (importRequest.current) return;
     try {
@@ -2327,6 +2398,7 @@ function App() {
           tcgplayerPriceSyncing={tcgplayerPriceSyncing}
           cardIndexSyncing={cardIndexSyncing}
           priceChartingImageProcessing={priceChartingImageProcessing}
+          imageRepairingId={imageRepairingId}
           priceChartingImageBackfillRunning={priceChartingImageBackfillRunning}
           priceChartingImageResumeAt={priceChartingImageResumeAt}
           lastBatch={priceChartingImageLastBatch}
@@ -2338,6 +2410,10 @@ function App() {
           onCardIndexRebuild={() => void rebuildCardIndex()}
           onCardIndexTcgCsvSync={() => void syncCardIndexTcgCsv()}
           onPriceChartingImageBatch={(includeAll, mode) => void processPriceChartingImages(includeAll, mode)}
+          onRepairStockImage={(item) => void repairStockQualityImage(item)}
+          onRepairStockImageManual={promptStockQualityImageUrl}
+          onRepairPriceChartingImage={(priceChartingId) => void repairPriceChartingQualityImage(priceChartingId)}
+          onRepairPriceChartingImageManual={promptPriceChartingQualityImageUrl}
           onPriceChartingBackfillChange={setPriceChartingImageBackfillRunning}
           onResetInventoryStock={() => void resetInventoryStockFromAdmin()}
         />
@@ -4501,6 +4577,7 @@ function AdminView(props: {
   tcgplayerPriceSyncing: boolean;
   cardIndexSyncing: boolean;
   priceChartingImageProcessing: boolean;
+  imageRepairingId: string;
   priceChartingImageBackfillRunning: boolean;
   priceChartingImageResumeAt: string;
   lastBatch: ImageBatchResult | null;
@@ -4512,6 +4589,10 @@ function AdminView(props: {
   onCardIndexRebuild: () => void;
   onCardIndexTcgCsvSync: () => void;
   onPriceChartingImageBatch: (includeAll: boolean, mode?: ImageResolverMode) => void;
+  onRepairStockImage: (item: ImageDatabaseQuality["stockMissingImage"][number]) => void;
+  onRepairStockImageManual: (item: ImageDatabaseQuality["stockMissingImage"][number]) => void;
+  onRepairPriceChartingImage: (priceChartingId: string) => void;
+  onRepairPriceChartingImageManual: (item: ImageDatabaseQuality["failedImages"][number]) => void;
   onPriceChartingBackfillChange: (running: boolean) => void;
   onResetInventoryStock: () => void;
 }) {
@@ -4576,24 +4657,34 @@ function AdminView(props: {
           <div className="image-quality-list">
             <div className="image-quality-list-head"><strong>Stock sin imagen con match</strong><span>{props.imageQuality.stockMissingImage.length} muestras</span></div>
             {props.imageQuality.stockMissingImage.length ? props.imageQuality.stockMissingImage.slice(0, 6).map((item) => (
-              <div className="image-quality-row" key={item.inventoryItemId}>
-                <div>
+              <div className="image-quality-row image-quality-repair-row" key={item.inventoryItemId}>
+                <CardArt src={item.candidateImageUrl} alt={item.name} label={item.name} className="image-quality-thumb" fallbackClassName="image-quality-thumb image-placeholder" />
+                <div className="image-quality-row-main">
                   <strong>{item.name}</strong>
                   <span>{item.expansion} {item.number ? `#${item.number}` : ""} / {item.sku}</span>
+                  <small>{item.cacheStatus} {item.candidateImageUrl ? "/ imagen candidata" : "/ sin URL"}</small>
                 </div>
-                <small>{item.cacheStatus} {item.candidateImageUrl ? "/ imagen candidata" : "/ sin URL"}</small>
+                <div className="image-quality-actions">
+                  <button className="secondary-action" disabled={props.imageRepairingId === `stock:${item.inventoryItemId}`} onClick={() => props.onRepairStockImage(item)}><Icon name="refresh" />{props.imageRepairingId === `stock:${item.inventoryItemId}` ? "..." : "Reparar"}</button>
+                  <button className="secondary-action" disabled={props.imageRepairingId === `stock:${item.inventoryItemId}`} onClick={() => props.onRepairStockImageManual(item)}><Icon name="edit" />URL</button>
+                </div>
               </div>
             )) : <p className="muted">No hay stock prioritario sin imagen.</p>}
           </div>
           <div className="image-quality-list">
             <div className="image-quality-list-head"><strong>Fallidas recientes</strong><span>{props.imageQuality.failedImages.length} muestras</span></div>
             {props.imageQuality.failedImages.length ? props.imageQuality.failedImages.slice(0, 6).map((item) => (
-              <div className="image-quality-row" key={item.priceChartingId}>
-                <div>
+              <div className="image-quality-row image-quality-repair-row" key={item.priceChartingId}>
+                <CardArt src={item.candidateImageUrl} alt={item.name || item.priceChartingId} label={item.name || item.priceChartingId} className="image-quality-thumb" fallbackClassName="image-quality-thumb image-placeholder" />
+                <div className="image-quality-row-main">
                   <strong>{item.name || item.priceChartingId}</strong>
                   <span>{item.expansion} {item.number ? `#${item.number}` : ""}</span>
+                  <small>{item.attempts} intento(s): {shortError(item.errorMessage || "sin detalle")}</small>
                 </div>
-                <small>{item.attempts} intento(s): {shortError(item.errorMessage || "sin detalle")}</small>
+                <div className="image-quality-actions">
+                  <button className="secondary-action" disabled={props.imageRepairingId === `pc:${item.priceChartingId}`} onClick={() => props.onRepairPriceChartingImage(item.priceChartingId)}><Icon name="refresh" />{props.imageRepairingId === `pc:${item.priceChartingId}` ? "..." : "Reintentar"}</button>
+                  <button className="secondary-action" disabled={props.imageRepairingId === `pc:${item.priceChartingId}`} onClick={() => props.onRepairPriceChartingImageManual(item)}><Icon name="edit" />URL</button>
+                </div>
               </div>
             )) : <p className="muted">No hay imagenes fallidas.</p>}
           </div>

@@ -775,6 +775,7 @@ export type ImageDatabaseQuality = {
     name: string;
     expansion: string;
     number: string;
+    candidateImageUrl: string;
     attempts: number;
     errorMessage: string;
     canonicalUrl: string;
@@ -2242,6 +2243,12 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
       pce.expansion_name,
       pce.card_number,
       pce.canonical_url,
+      coalesce(
+        nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''),
+        nullif(case when pic.source_image_url like 'http://%' or pic.source_image_url like 'https://%' then pic.source_image_url else '' end, ''),
+        nullif(case when pce.image_url like 'http://%' or pce.image_url like 'https://%' then pce.image_url else '' end, ''),
+        ''
+      ) as candidate_image_url,
       pic.attempts,
       pic.error_message
     from pricecharting_image_cache pic
@@ -2330,6 +2337,7 @@ export async function getImageDatabaseQuality(db: PGlite, businessId = demoBusin
       name: String(row.product_name || ""),
       expansion: String(row.expansion_name || ""),
       number: String(row.card_number || ""),
+      candidateImageUrl: String(row.candidate_image_url || ""),
       attempts: Number(row.attempts || 0),
       errorMessage: String(row.error_message || ""),
       canonicalUrl: String(row.canonical_url || "")
@@ -2509,6 +2517,19 @@ export async function recordPriceChartingImageUrlDiscovered(db: PGlite, input: {
         )
       )
   `, [input.priceChartingId, publicUrl]);
+
+  await db.query(`
+    update claim_cards
+    set image_url = $2,
+      updated_at = now()
+    where pricecharting_id = $1
+      and $2 <> ''
+      and status <> 'ignored'
+      and (
+        coalesce(image_url, '') = ''
+        or image_url like '/pricecharting-images/%'
+      )
+  `, [input.priceChartingId, publicUrl]);
 }
 
 export async function deferPriceChartingImageQueueEntry(db: PGlite, input: {
@@ -2581,6 +2602,19 @@ export async function recordPriceChartingImageSuccess(db: PGlite, input: PriceCh
           and pce.normalized_expansion = lower(p.expansion)
           and coalesce(nullif(pce.card_number, ''), '') = coalesce(p.card_number, '')
         )
+      )
+  `, [input.priceChartingId, publicUrl]);
+
+  await db.query(`
+    update claim_cards
+    set image_url = $2,
+      updated_at = now()
+    where pricecharting_id = $1
+      and $2 <> ''
+      and status <> 'ignored'
+      and (
+        coalesce(image_url, '') = ''
+        or image_url like '/pricecharting-images/%'
       )
   `, [input.priceChartingId, publicUrl]);
 }

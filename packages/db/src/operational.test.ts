@@ -334,6 +334,45 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("updates open claim cards when a PriceCharting image URL is discovered later", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-late-image-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "claim-late-image",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "late-956909",
+        canonicalUrl: "https://www.pricecharting.com/game/plasma-storm/watchog-112",
+        sourceUrl: "https://www.pricecharting.com/game/plasma-storm/watchog-112",
+        productName: "Watchog",
+        normalizedName: "watchog",
+        expansionName: "Plasma Storm",
+        normalizedExpansion: "plasma storm",
+        cardNumber: "112",
+        loosePriceUsd: 0.51,
+        imageUrl: "",
+        searchKey: "watchog plasma storm 112"
+      }]
+    });
+    await createClaimSession(db, { name: "Claim imagen tardia" }, user);
+    let workspace = await addPriceChartingCardsToClaim(db, ["late-956909"], user);
+    assert.equal(workspace.cards[0].imageUrl, "");
+    assert.equal((await ensurePriceChartingImageQueueForActiveClaim(db, user.businessId)).missing, 1);
+
+    await recordPriceChartingImageUrlDiscovered(db, {
+      priceChartingId: "late-956909",
+      sourceImageUrl: "https://storage.googleapis.com/images.pricecharting.com/late-956909/1600.jpg"
+    });
+
+    workspace = await listClaimsWorkspace(db, user.businessId);
+    assert.equal(workspace.cards[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/late-956909/1600.jpg");
+    assert.equal((await getImageDatabaseQuality(db, user.businessId)).summary.openClaimCardsMissingImage, 0);
+    await db.close();
+  });
+
   it("refreshes only active claim price fields from PriceCharting", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-prices-"));
     const db = await createOperationalDatabase({ dataDir });

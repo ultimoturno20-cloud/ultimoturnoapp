@@ -1951,6 +1951,105 @@ async function forceInventoryProductImage(
   };
 }
 
+async function forcePriceChartingCatalogImage(
+  db: Awaited<typeof dbPromise>,
+  priceChartingId: string,
+  input: { manualUrl?: string; mode?: ImageResolverMode },
+  user: AuthenticatedUser
+) {
+  const cleanId = String(priceChartingId || "").trim();
+  if (!cleanId) throw new Error("Falta el ID de PriceCharting.");
+  const targetResult = await db.query<Record<string, unknown>>(`
+    select
+      pce.pricecharting_id,
+      pce.product_name,
+      pce.expansion_name,
+      pce.card_number,
+      pce.canonical_url,
+      coalesce(nullif(pic.source_image_url, ''), nullif(pic.public_url, ''), nullif(pce.image_url, '')) as cached_image_url
+    from pricecharting_cache_entries pce
+    left join pricecharting_image_cache pic using (pricecharting_id)
+    where pce.pricecharting_id = $1
+    limit 1
+  `, [cleanId]);
+  const target = targetResult.rows[0];
+  if (!target) throw new Error("No encontre esa carta en el cache de PriceCharting.");
+
+  const manualUrl = String(input.manualUrl || "").trim();
+  const mode: ImageResolverMode = input.mode === "pokemon-tcg" ? "pokemon-tcg" : "auto";
+  let result: Awaited<ReturnType<typeof downloadImageUrl>>;
+  let source = "";
+
+  if (manualUrl) {
+    if (manualUrl.startsWith("/")) throw new Error("Usa una URL publica http/https, no una ruta local.");
+    const parsed = parseHttpUrl(manualUrl);
+    if (!parsed) throw new Error("La URL manual no parece valida.");
+    let sourceImageUrl = manualUrl;
+    if (isPriceChartingProductPageUrl(parsed)) {
+      const html = await fetchPriceChartingPageHtml(manualUrl);
+      sourceImageUrl = extractPriceChartingImageUrl(html);
+      if (!sourceImageUrl) throw new Error("No pude extraer una imagen desde ese link de PriceCharting.");
+    }
+    result = await downloadImageUrl(sourceImageUrl, cleanId, imageDownloadSourceLabel(sourceImageUrl));
+    source = imageDownloadSourceLabel(sourceImageUrl);
+  } else {
+    const fallbackCanonicalUrl = priceChartingCardUrlCandidates({
+      canonicalUrl: String(target.canonical_url || ""),
+      productName: String(target.product_name || ""),
+      expansionName: String(target.expansion_name || ""),
+      cardNumber: String(target.card_number || "")
+    })[0] || String(target.canonical_url || "");
+    result = await downloadPriceChartingImage({
+      priceChartingId: cleanId,
+      canonicalUrl: fallbackCanonicalUrl,
+      sourceImageUrl: extractRemoteImageUrl(String(target.cached_image_url || "")),
+      productName: String(target.product_name || ""),
+      expansionName: String(target.expansion_name || ""),
+      cardNumber: String(target.card_number || ""),
+      allowPriceCharting: mode === "auto",
+      mode
+    });
+    source = imageDownloadSourceLabel(result.sourceImageUrl);
+  }
+
+  await recordPriceChartingImageSuccess(db, {
+    priceChartingId: cleanId,
+    ...result
+  });
+  const webImageUrl = extractRemoteImageUrl(result.sourceImageUrl) || result.publicUrl;
+  await db.query(`
+    update card_index_entries
+    set image_url = $2,
+      image_source = $3,
+      updated_at = now(),
+      last_verified_at = now()
+    where pricecharting_id = $1
+  `, [cleanId, webImageUrl, source || "manual"]);
+  await db.query(`
+    update claim_cards
+    set image_url = $2,
+      updated_at = now()
+    where business_id = $3
+      and pricecharting_id = $1
+      and status <> 'ignored'
+      and (
+        coalesce(image_url, '') = ''
+        or image_url like '/pricecharting-images/%'
+      )
+  `, [cleanId, webImageUrl, user.businessId]);
+
+  return {
+    ok: true,
+    priceChartingId: cleanId,
+    imageUrl: webImageUrl,
+    localUrl: result.publicUrl,
+    source,
+    status: await getPriceChartingImageCacheStatus(db, user.businessId),
+    imageQuality: await getImageDatabaseQuality(db, user.businessId),
+    workspace: await listClaimsWorkspace(db, user.businessId)
+  };
+}
+
 async function getBlueExchangeRate(): Promise<BlueExchangeRate> {
   if (!useLiveBlueRate) {
     return {
@@ -3898,6 +3997,24 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const limit = Math.max(1, Math.min(2000, Number(body.limit || 500)));
       const result = await reindexLocalPriceChartingImages(limit);
       sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      return;
+    }
+
+    const imageRepairPath = url.pathname.match(/^\/pricecharting-images\/([^/]+)\/repair$/);
+    if (imageRepairPath && request.method === "POST") {
+      const body = await readJson<{ manualUrl?: string; mode?: ImageResolverMode }>(request).catch(() => ({}));
+      try {
+        const result = await forcePriceChartingCatalogImage(db, decodeURIComponent(imageRepairPath[1]), body, user);
+        sendJson(response, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await recordPriceChartingImageFailure(db, {
+          priceChartingId: decodeURIComponent(imageRepairPath[1]),
+          errorMessage: message,
+          retryAfterMinutes: 60
+        }).catch(() => undefined);
+        sendJson(response, 422, { ok: false, error: message, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      }
       return;
     }
 

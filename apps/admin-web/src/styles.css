@@ -7121,6 +7121,48 @@ select {
   line-height: 1.25;
 }
 
+.image-quality-repair-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.image-quality-thumb {
+  width: 42px;
+  height: 58px;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: #111217;
+}
+
+.image-quality-row-main {
+  min-width: 0;
+}
+
+.image-quality-row-main small {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-quality-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.image-quality-actions .secondary-action {
+  min-height: 30px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
 .source-health-card {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
@@ -9491,6 +9533,19 @@ h2 {
 
   .image-quality-row {
     display: grid;
+  }
+
+  .image-quality-repair-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .image-quality-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .image-quality-actions .secondary-action {
+    flex: 1 1 120px;
   }
 
   .image-quality-row small {
