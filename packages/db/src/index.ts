@@ -4571,6 +4571,7 @@ export async function previewInventorySnapshot(db: PGlite, csvText: string, busi
       priceChartingCache.set(priceChartingCacheKey, priceChartingCandidates);
     }
     const matchedPriceCharting = priceChartingCandidates.length === 1 ? priceChartingCandidates[0] : undefined;
+    const resolvedName = resolveSnapshotImportName(row, translatedName, matchedPriceCharting);
     if (!row.sku) warnings.push("No tiene SKU: se generara al crear la carta");
     if (candidates.length > 1) warnings.push("Se encontraron varias coincidencias posibles");
     else if (candidates.length === 1) warnings.push("Existe una carta similar: confirma si corresponde actualizarla");
@@ -4589,7 +4590,7 @@ export async function previewInventorySnapshot(db: PGlite, csvText: string, busi
           : "create";
     preview.push({
       ...rowWithExistingIdentifier,
-      name: translatedName || row.name,
+      name: resolvedName,
       imageUrl: row.imageUrl || matchedPriceCharting?.imageUrl || "",
       priceChartingId: rowWithExistingIdentifier.priceChartingId || matchedPriceCharting?.priceChartingId || "",
       priceChartingUrl: rowWithExistingIdentifier.priceChartingUrl || matchedPriceCharting?.canonicalUrl || "",
@@ -4770,8 +4771,7 @@ async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventor
     return selected.rows.map((candidate) => toPriceChartingImportCandidate(candidate, row, ["ID PriceCharting del CSV"]));
   }
 
-  const translatedName = translateImportName(row.name);
-  const queryName = normalizeImportText(translatedName);
+  const queryName = normalizeImportNameForCatalogSearch(row.name);
   const queryExpansion = normalizeImportText(row.expansion);
   const queryNumber = normalizeImportCardNumber(row.number || "");
   const queryNumberPrimary = primaryImportCardNumber(row.number || "");
@@ -4853,7 +4853,7 @@ async function findPriceChartingImportCandidates(db: PGlite, row: UpsertInventor
 function getPriceChartingImportCandidateCacheKey(row: UpsertInventoryInput): string {
   return [
     row.priceChartingId ? `id:${row.priceChartingId.trim()}` : "",
-    normalizeImportText(translateImportName(row.name)),
+    normalizeImportNameForCatalogSearch(row.name),
     normalizeImportText(row.expansion),
     normalizeImportCardNumber(row.number || ""),
     normalizeImportText(row.finish || "")
@@ -4862,7 +4862,7 @@ function getPriceChartingImportCandidateCacheKey(row: UpsertInventoryInput): str
 
 function finalizePriceChartingImportCandidates(rows: Record<string, unknown>[], row: UpsertInventoryInput): SnapshotPreviewRow["priceChartingCandidates"] {
   const translatedName = translateImportName(row.name);
-  const queryName = normalizeImportText(translatedName);
+  const queryName = normalizeImportNameForCatalogSearch(row.name);
   const queryExpansion = normalizeImportText(row.expansion);
   const queryNumber = normalizeImportCardNumber(row.number || "");
   let candidates = rows
@@ -4889,7 +4889,7 @@ function finalizePriceChartingImportCandidates(rows: Record<string, unknown>[], 
 
 function toPriceChartingImportCandidate(row: Record<string, unknown>, input: UpsertInventoryInput, forcedReasons: string[] = []): SnapshotPreviewRow["priceChartingCandidates"][number] {
   const translatedName = translateImportName(input.name);
-  const queryName = normalizeImportText(translatedName);
+  const queryName = normalizeImportNameForCatalogSearch(input.name);
   const queryExpansion = normalizeImportText(input.expansion);
   const queryNumber = normalizeImportCardNumber(input.number || "");
   const candidateName = normalizeImportText(String(row.normalized_name || row.product_name || ""));
@@ -4944,7 +4944,7 @@ function dedupePriceChartingCandidates(candidates: SnapshotPreviewRow["priceChar
 
 function findImportCandidates(row: UpsertInventoryInput, items: DbStockRow[]): SnapshotPreviewRow["candidates"] {
   const translatedName = translateImportName(row.name);
-  const queryName = normalizeImportText(translatedName);
+  const queryName = normalizeImportNameForCatalogSearch(row.name);
   return items.map((item) => {
     const name = normalizeImportText(item.product.name);
     let confidence = 0;
@@ -4989,7 +4989,20 @@ function hasFatalImportWarning(warnings: string[]): boolean {
     && !warning.startsWith("Precio no informado"));
 }
 
+function resolveSnapshotImportName(
+  row: UpsertInventoryInput,
+  translatedName: string,
+  matchedPriceCharting?: SnapshotPreviewRow["priceChartingCandidates"][number]
+): string {
+  const clean = translatedName.trim() || row.name.trim();
+  if (matchedPriceCharting && hasCjkText(row.name) && (!normalizeImportNameForCatalogSearch(row.name) || clean === row.name.trim())) {
+    return matchedPriceCharting.productName;
+  }
+  return clean;
+}
+
 function translateImportName(value: string): string {
+  const raw = String(value || "").trim();
   const names: Record<string, string> = {
     "ナゾノクサ": "Oddish",
     "プクリン": "Wigglytuff",
@@ -5013,7 +5026,28 @@ function translateImportName(value: string): string {
     "伊布": "Eevee",
     "喷火龙": "Charizard"
   };
-  return names[value.trim()] || value;
+  if (names[raw]) return names[raw];
+  const variantDetail = raw.match(/\s*(\[[^\]]+\])\s*$/)?.[1] || "";
+  const baseName = raw.replace(/\[[^\]]+\]/g, " ").trim();
+  return names[baseName] ? [names[baseName], variantDetail].filter(Boolean).join(" ") : raw;
+}
+
+function normalizeImportNameForCatalogSearch(value: string): string {
+  const translated = translateImportName(value);
+  if (hasCjkText(value)) {
+    const normalizedBase = normalizeImportBaseProductName(translated);
+    if (!normalizedBase || isWeakCjkImportSearchName(normalizedBase)) return "";
+  }
+  return normalizeImportText(translated);
+}
+
+function hasCjkText(value: string): boolean {
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(String(value || ""));
+}
+
+function isWeakCjkImportSearchName(value: string): boolean {
+  const normalized = normalizeImportText(value);
+  return normalized.length <= 2 || ["ex", "gx", "v", "vstar", "vmax"].includes(normalized);
 }
 
 function normalizeImportText(value: string): string {

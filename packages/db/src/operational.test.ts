@@ -718,6 +718,59 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("matches MonPrice rows with Japanese names by expansion and number", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-monprice-japanese-name-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "test-import-monprice-japanese-name",
+      rowsReceived: 2,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "terapagos-normal-88",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-japanese-stellar-miracle/terapagos-ex-88",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-stellar-miracle/terapagos-ex-88",
+        productName: "Terapagos ex",
+        normalizedName: "terapagos ex",
+        expansionName: "Japanese Stellar Miracle",
+        normalizedExpansion: "japanese stellar miracle",
+        cardNumber: "88",
+        loosePriceUsd: 1.11,
+        imageUrl: "https://images.example/terapagos-ex-88.jpg",
+        languageGroup: "japanese",
+        searchKey: "terapagos ex japanese stellar miracle 88"
+      }, {
+        priceChartingId: "terapagos-reverse-88",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-japanese-stellar-miracle/terapagos-ex-reverse-holo-88",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-stellar-miracle/terapagos-ex-reverse-holo-88",
+        productName: "Terapagos ex [Reverse Holo]",
+        normalizedName: "terapagos ex reverse holo",
+        expansionName: "Japanese Stellar Miracle",
+        normalizedExpansion: "japanese stellar miracle",
+        cardNumber: "88",
+        loosePriceUsd: 1.35,
+        imageUrl: "https://images.example/terapagos-ex-reverse-88.jpg",
+        languageGroup: "japanese",
+        searchKey: "terapagos ex reverse holo japanese stellar miracle 88"
+      }]
+    });
+    const csv = [
+      "ID;Name;Number;Set;Series;Rarity;Average Price;Count;Finish Type;Reverse Holo;Language",
+      "JPN_svm_88;テラパゴスex [Reverse Holo];88/102;Stellar Miracle;Scarlet & Violet;Rare;1,35;2;HOLOFOIL;Yes;JA"
+    ].join("\n");
+    const preview = await previewInventorySnapshot(db, csv, user.businessId);
+    assert.equal(preview.summary.creates, 1);
+    assert.equal(preview.summary.review, 0);
+    assert.equal(preview.rows[0].name, "Terapagos ex [Reverse Holo]");
+    assert.equal(preview.rows[0].language, "JP");
+    assert.equal(preview.rows[0].quantityOnHand, 2);
+    assert.equal(preview.rows[0].priceUsd, 1.35);
+    assert.equal(preview.rows[0].priceChartingId, "terapagos-reverse-88");
+    assert.equal(preview.rows[0].imageUrl, "https://images.example/terapagos-ex-reverse-88.jpg");
+    await db.close();
+  });
+
   it("does not keep same-number PriceCharting matches from other expansions", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-import-pricecharting-expansion-"));
     const db = await createOperationalDatabase({ dataDir });
