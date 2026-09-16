@@ -132,25 +132,42 @@ function authHeaders(options: Options) {
   };
 }
 
+function isLocalApiBase(value: string) {
+  try {
+    const url = new URL(value);
+    return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname.toLowerCase());
+  } catch {
+    return value === "/api";
+  }
+}
+
+function buildApiUrl(options: Options, route: string) {
+  const requestRoute = route.startsWith("/") ? route : `/${route}`;
+  if (isLocalApiBase(options.apiBaseUrl)) return `${options.apiBaseUrl}${requestRoute}`;
+  return `${options.apiBaseUrl}/dispatch?path=${encodeURIComponent(requestRoute)}`;
+}
+
 async function getJson<T>(options: Options, route: string): Promise<T> {
-  const response = await fetch(`${options.apiBaseUrl}${route}`, {
+  const requestUrl = buildApiUrl(options, route);
+  const response = await fetch(requestUrl, {
     headers: authHeaders(options),
     signal: AbortSignal.timeout(30000)
   });
   const payload = await response.json().catch(() => ({})) as T;
-  if (!response.ok) throw new Error(`GET ${route} -> HTTP ${response.status}: ${JSON.stringify(payload)}`);
+  if (!response.ok) throw new Error(`GET ${requestUrl} -> HTTP ${response.status}: ${JSON.stringify(payload)}`);
   return payload;
 }
 
 async function postJson<T>(options: Options, route: string, body: unknown): Promise<T> {
-  const response = await fetch(`${options.apiBaseUrl}${route}`, {
+  const requestUrl = buildApiUrl(options, route);
+  const response = await fetch(requestUrl, {
     method: "POST",
     headers: authHeaders(options),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(20 * 60 * 1000)
   });
   const payload = await response.json().catch(() => ({})) as T;
-  if (!response.ok) throw new Error(`POST ${route} -> HTTP ${response.status}: ${JSON.stringify(payload)}`);
+  if (!response.ok) throw new Error(`POST ${requestUrl} -> HTTP ${response.status}: ${JSON.stringify(payload)}`);
   return payload;
 }
 
@@ -269,11 +286,18 @@ async function runCycle(options: Options) {
   const quality = await getJson<ImageQuality>(options, "/database-quality/images");
   console.log(`[${new Date().toLocaleTimeString("es-AR", { hour12: false })}] ${formatQuality(quality)}`);
 
-  const discover = await postJson<{ processed: number; urlFound?: number; skipped?: number; failed: number }>(options, "/pricecharting-images/external-index", {
-    batchSize: options.urlBatch,
-    includeAll: options.includeAll
-  });
-  console.log(`URLs: procesadas=${discover.processed} encontradas=${discover.urlFound || 0} omitidas=${discover.skipped || 0} fallidas=${discover.failed}`);
+  let discovered = 0;
+  try {
+    const discover = await postJson<{ processed: number; urlFound?: number; skipped?: number; failed: number }>(options, "/pricecharting-images/external-index", {
+      batchSize: options.urlBatch,
+      includeAll: options.includeAll
+    });
+    discovered = discover.processed;
+    console.log(`URLs: procesadas=${discover.processed} encontradas=${discover.urlFound || 0} omitidas=${discover.skipped || 0} fallidas=${discover.failed}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`URLs: no se pudo completar la busqueda externa en este ciclo (${message}). Sigo con candidatos ya descubiertos.`);
+  }
 
   const candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
   let downloaded = 0;
@@ -293,7 +317,7 @@ async function runCycle(options: Options) {
     }
   });
   console.log(`Storage: candidatas=${candidates.entries.length} descargadas=${downloaded} subidas=${uploaded} enlazadas=${linked} fallidas=${failed}`);
-  return discover.processed + candidates.entries.length;
+  return discovered + candidates.entries.length;
 }
 
 function sleep(ms: number) {
