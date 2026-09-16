@@ -2,6 +2,9 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "outputDirectory": "apps/admin-web/dist",
+  "crons": [
+    { "path": "/api/cron/pricecharting-refresh", "schedule": "0 9 * * *" }
+  ],
   "rewrites": [
     { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
     { "source": "/api/auth/:path*", "destination": "/api/dispatch?path=/auth/:path*" },

@@ -168,6 +168,7 @@ const tcgplayerPriceAutoRefreshTime = normalizeDailyTime(process.env.TCGPLAYER_P
 const configuredBlueRateSell = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1540);
 const useLiveBlueRate = String(process.env.ULTIMOTURNO_BLUE_RATE_MODE || "manual").toLowerCase() === "auto";
 const sharedAccessKey = String(process.env.ULTIMOTURNO_ACCESS_KEY || "").trim();
+const cronSecret = String(process.env.CRON_SECRET || "").trim();
 let priceChartingImageCooldownUntil = 0;
 let priceChartingAutoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let priceChartingAutoRefreshRunning = false;
@@ -2658,6 +2659,13 @@ function requestHasAccess(request: IncomingMessage) {
   return accessKeyMatches(parseCookies(request.headers.cookie).ultimoturno_access_key || "");
 }
 
+function requestHasCronAccess(request: IncomingMessage) {
+  const authValue = request.headers.authorization || "";
+  const authHeader = Array.isArray(authValue) ? authValue[0] : authValue;
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
+  return requestHasAccess(request);
+}
+
 function normalizeDispatchTarget(url: URL) {
   const targetPath = url.searchParams.get("path") || "/";
   if (!targetPath.startsWith("/") || targetPath.startsWith("//")) return "/";
@@ -3390,6 +3398,28 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         },
         data
       });
+      return;
+    }
+
+    if (url.pathname === "/cron/pricecharting-refresh" && request.method === "GET") {
+      if (!requestHasCronAccess(request)) {
+        sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
+        return;
+      }
+      try {
+        const db = await dbPromise;
+        const status = await refreshPriceChartingCacheFromConfiguredToken(db);
+        sendJson(response, 200, {
+          ok: true,
+          job: "pricecharting-refresh",
+          status
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const db = await dbPromise.catch(() => null);
+        if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message }).catch(() => undefined);
+        sendJson(response, 502, { ok: false, job: "pricecharting-refresh", error: message });
+      }
       return;
     }
 
