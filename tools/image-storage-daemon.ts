@@ -286,20 +286,25 @@ async function runCycle(options: Options) {
   const quality = await getJson<ImageQuality>(options, "/database-quality/images");
   console.log(`[${new Date().toLocaleTimeString("es-AR", { hour12: false })}] ${formatQuality(quality)}`);
 
+  let candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
   let discovered = 0;
-  try {
-    const discover = await postJson<{ processed: number; urlFound?: number; skipped?: number; failed: number }>(options, "/pricecharting-images/external-index", {
-      batchSize: options.urlBatch,
-      includeAll: options.includeAll
-    });
-    discovered = discover.processed;
-    console.log(`URLs: procesadas=${discover.processed} encontradas=${discover.urlFound || 0} omitidas=${discover.skipped || 0} fallidas=${discover.failed}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`URLs: no se pudo completar la busqueda externa en este ciclo (${message}). Sigo con candidatos ya descubiertos.`);
+  if (candidates.entries.length >= options.candidateBatch) {
+    console.log(`URLs: salteo busqueda externa; ya hay ${candidates.entries.length} candidatas listas.`);
+  } else {
+    try {
+      const discover = await postJson<{ processed: number; urlFound?: number; skipped?: number; failed: number }>(options, "/pricecharting-images/external-index", {
+        batchSize: options.urlBatch,
+        includeAll: options.includeAll
+      });
+      discovered = discover.processed;
+      console.log(`URLs: procesadas=${discover.processed} encontradas=${discover.urlFound || 0} omitidas=${discover.skipped || 0} fallidas=${discover.failed}`);
+      candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`URLs: no se pudo completar la busqueda externa en este ciclo (${message}). Sigo con candidatos ya descubiertos.`);
+    }
   }
 
-  const candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
   let downloaded = 0;
   let uploaded = 0;
   let linked = 0;
