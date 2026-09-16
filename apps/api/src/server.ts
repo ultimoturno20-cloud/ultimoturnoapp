@@ -2057,6 +2057,47 @@ async function forcePriceChartingCatalogImage(
   };
 }
 
+async function listPriceChartingImageDownloadCandidates(db: Awaited<typeof dbPromise>, limit: number) {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit || 100)));
+  const result = await db.query<Record<string, unknown>>(`
+    select
+      pce.pricecharting_id,
+      pce.product_name,
+      pce.expansion_name,
+      pce.card_number,
+      pce.canonical_url,
+      coalesce(nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as source_image_url,
+      coalesce(pic.public_url, '') as public_url,
+      coalesce(pic.status, 'pending') as status,
+      coalesce(pic.attempts, 0)::integer as attempts
+    from pricecharting_cache_entries pce
+    left join pricecharting_image_cache pic using (pricecharting_id)
+    where coalesce(nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> ''
+      and coalesce(nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''), '') = ''
+    order by
+      case
+        when coalesce(pic.status, '') = 'url_found' then 0
+        when coalesce(pic.status, '') = 'pending' then 1
+        else 2
+      end,
+      coalesce(pic.priority, 100),
+      coalesce(pic.updated_at, pce.imported_at),
+      pce.product_name
+    limit $1
+  `, [safeLimit]);
+  return result.rows.map((row) => ({
+    priceChartingId: String(row.pricecharting_id || ""),
+    productName: String(row.product_name || ""),
+    expansionName: String(row.expansion_name || ""),
+    cardNumber: String(row.card_number || ""),
+    canonicalUrl: String(row.canonical_url || ""),
+    sourceImageUrl: String(row.source_image_url || ""),
+    publicUrl: String(row.public_url || ""),
+    status: String(row.status || ""),
+    attempts: Number(row.attempts || 0)
+  })).filter((row) => row.priceChartingId && row.sourceImageUrl);
+}
+
 async function getBlueExchangeRate(): Promise<BlueExchangeRate> {
   if (!useLiveBlueRate) {
     return {
@@ -4033,6 +4074,45 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const limit = Math.max(1, Math.min(2000, Number(body.limit || 500)));
       const result = await reindexLocalPriceChartingImages(limit);
       sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      return;
+    }
+
+    if (url.pathname === "/pricecharting-images/download-candidates" && request.method === "GET") {
+      const limit = Number(url.searchParams.get("limit") || 100);
+      sendJson(response, 200, {
+        ok: true,
+        entries: await listPriceChartingImageDownloadCandidates(db, limit)
+      });
+      return;
+    }
+
+    const imageLinkPublicPath = url.pathname.match(/^\/pricecharting-images\/([^/]+)\/link-public$/);
+    if (imageLinkPublicPath && request.method === "POST") {
+      const body: { publicUrl?: string; sourceImageUrl?: string; localPath?: string; contentType?: string; byteSize?: number; contentHash?: string } =
+        await readJson<{ publicUrl?: string; sourceImageUrl?: string; localPath?: string; contentType?: string; byteSize?: number; contentHash?: string }>(request).catch(() => ({}));
+      const priceChartingId = decodeURIComponent(imageLinkPublicPath[1]);
+      const publicUrl = String(body.publicUrl || "").trim();
+      if (!parseHttpUrl(publicUrl)) {
+        sendJson(response, 400, { ok: false, error: "publicUrl debe ser http/https." });
+        return;
+      }
+      await recordPriceChartingImageSuccess(db, {
+        priceChartingId,
+        sourceImageUrl: String(body.sourceImageUrl || publicUrl).trim(),
+        localPath: String(body.localPath || "").trim(),
+        publicUrl,
+        contentType: String(body.contentType || "image/jpeg").trim(),
+        byteSize: Math.max(0, Math.floor(Number(body.byteSize || 0))),
+        contentHash: String(body.contentHash || "").trim()
+      });
+      sendJson(response, 200, {
+        ok: true,
+        priceChartingId,
+        publicUrl,
+        status: await getPriceChartingImageCacheStatus(db, user.businessId),
+        imageQuality: await getImageDatabaseQuality(db, user.businessId),
+        workspace: await listClaimsWorkspace(db, user.businessId)
+      });
       return;
     }
 
