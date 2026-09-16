@@ -2131,7 +2131,7 @@ function App() {
   }
 
   return (
-    <main className={`shell ${view === "mobile-intake" ? "mobile-mode" : ""}`}>
+    <main className={`shell ${view === "mobile-intake" ? "mobile-mode" : ""} ${view === "orders" ? "orders-mode" : ""}`}>
       <header className="app-header">
         <div className="brand-lockup">
           <img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" />

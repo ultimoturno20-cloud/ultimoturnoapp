@@ -10890,6 +10890,182 @@ main:has(.trello-orders) .operations-dock { display:none; }
   --order-state-tint: rgba(255, 106, 127, 0.1);
 }
 
+.shell.orders-mode {
+  padding: 10px 16px 0;
+}
+
+.orders-mode .app-header {
+  max-width: 1760px;
+  gap: 10px;
+  padding: 3px 0 7px;
+}
+
+.orders-mode .brand-lockup {
+  gap: 10px;
+}
+
+.orders-mode .brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.orders-mode h1 {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.orders-mode .subtitle {
+  margin-top: 1px;
+  font-size: 13px;
+}
+
+.orders-mode .profile-badge {
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 11px;
+}
+
+.orders-mode .header-refresh {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.orders-mode .nav {
+  top: 52px;
+  max-width: 1760px;
+  gap: 6px;
+  padding: 6px 0 8px;
+}
+
+.orders-mode .nav button,
+.orders-mode .more-nav summary {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+
+.orders-mode .nav button .ui-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.orders-mode.view,
+.orders-mode .view {
+  margin-top: 10px;
+}
+
+.orders-mode .trello-toolbar {
+  top: 94px;
+  padding: 9px 12px 10px;
+  margin-bottom: 10px;
+}
+
+.orders-mode .trello-heading {
+  grid-template-columns: minmax(160px, 0.28fr) minmax(300px, 1fr) auto auto;
+  gap: 8px;
+}
+
+.orders-mode .trello-heading h2 {
+  font-size: 22px;
+}
+
+.orders-mode .trello-title-block span {
+  font-size: 11px;
+}
+
+.orders-mode .trello-search {
+  min-height: 34px;
+  border-radius: 7px;
+}
+
+.orders-mode .trello-search input {
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.orders-mode .trello-history {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.orders-mode .trello-heading > .secondary-action {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.orders-mode .trello-tabs {
+  margin-top: 7px;
+  gap: 6px;
+}
+
+.orders-mode .trello-tabs button {
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 0 11px;
+  font-size: 13px;
+}
+
+.orders-mode .trello-tabs span {
+  margin-left: 6px;
+}
+
+.orders-mode .trello-work-summary {
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.orders-mode .trello-work-summary span {
+  min-height: 33px;
+  border-radius: 7px;
+  padding: 5px 9px;
+}
+
+.orders-mode .trello-work-summary small {
+  font-size: 10px;
+}
+
+.orders-mode .trello-work-summary strong {
+  font-size: 14px;
+}
+
+.orders-mode .trello-board-tools {
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 7px;
+}
+
+.orders-mode .trello-board-tools > span {
+  margin-right: auto;
+  font-size: 11px;
+}
+
+.orders-mode .trello-board-tools button {
+  min-height: 32px;
+  border-radius: 7px;
+  padding: 0 10px;
+}
+
+.orders-mode .trello-board {
+  height: calc(100dvh - 292px);
+  min-height: 430px;
+  gap: 12px;
+}
+
+.orders-mode .trello-column {
+  flex-basis: 286px;
+  padding: 9px;
+}
+
+.orders-mode .trello-card {
+  padding: 10px;
+}
+
 @media (max-width: 980px) {
   .trello-heading {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -10902,6 +11078,10 @@ main:has(.trello-orders) .operations-dock { display:none; }
 
   .trello-work-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .orders-mode .trello-board {
+    height: calc(100dvh - 310px);
   }
 }
 
@@ -10920,8 +11100,37 @@ main:has(.trello-orders) .operations-dock { display:none; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .orders-mode .app-header {
+    align-items: flex-start;
+  }
+
+  .orders-mode .header-actions {
+    gap: 6px;
+  }
+
+  .orders-mode .nav {
+    top: 0;
+  }
+
+  .orders-mode .trello-toolbar {
+    top: 48px;
+  }
+
+  .orders-mode .trello-work-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .trello-work-summary span {
     min-height: 42px;
+  }
+
+  .orders-mode .trello-work-summary span {
+    min-height: 36px;
+  }
+
+  .orders-mode .trello-board {
+    height: calc(100dvh - 330px);
+    min-height: 360px;
   }
 
   .trello-board-tools {
