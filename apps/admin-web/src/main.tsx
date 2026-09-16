@@ -3582,6 +3582,25 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const allOrders = props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(selectedBoard,s));
   const orders = allOrders.filter(s=>normalize([s.customerName,s.internalNote,...s.lines.map(l=>l.name+" "+l.sku)].join(" ")).includes(normalize(query)));
   const openOrder = props.sales.find(s=>s.id===openId);
+  const boardDebtArs = allOrders.reduce((sum, order) => sum + Math.max(0, order.totalArs - (order.amountPaidArs || 0)), 0);
+  const boardNoMessage = allOrders.filter((order) => !order.messageSentAt && order.status !== "delivered").length;
+  const boardPacked = allOrders.filter((order) => order.status === "packed").length;
+  const boardReady = allOrders.filter((order) => order.status === "paid").length;
+  const boardOverdue = allOrders.filter((order) => {
+    const debt = Math.max(0, order.totalArs - (order.amountPaidArs || 0));
+    return debt > 0 && Boolean(order.paymentDueAt) && new Date(order.paymentDueAt!).getTime() < Date.now();
+  }).length;
+  const orderTone = (order: SaleRecord) => {
+    const debt = Math.max(0, order.totalArs - (order.amountPaidArs || 0));
+    const overdue = debt > 0 && order.paymentDueAt && new Date(order.paymentDueAt).getTime() < Date.now();
+    if (order.status === "delivered") return "delivered";
+    if (order.status === "paid") return "ready";
+    if (overdue) return "overdue";
+    if (order.status === "packed") return "packed";
+    if (!order.messageSentAt) return "contact";
+    if (debt > 0) return "debt";
+    return "pending";
+  };
   const refreshBoards = () => window.setTimeout(load, 120);
   function moveCardLocally(current: OrderWorkspace, saleId: string, columnId: string, beforeSaleId?: string): OrderWorkspace {
     const targetIds = current.cards
@@ -3638,13 +3657,14 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   if(list) return <><button className="secondary-action" onClick={()=>setList(false)}>Volver a tableros</button><OrdersListView {...props}/></>;
   return <section className="view trello-orders">
     <header className="panel trello-toolbar">
-      <div className="trello-heading"><h2>Ordenes</h2><input aria-label="Buscar ordenes" placeholder="Buscar comprador, carta o nota" value={query} onChange={e=>setQuery(e.target.value)}/><label className="trello-history"><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Entregadas</label><button className="secondary-action" onClick={()=>setList(true)}>Vista de lista</button></div>
+      <div className="trello-heading"><div className="trello-title-block"><h2>Ordenes</h2><span>{selectedBoard?.name || "Tablero"} · {orders.length}/{allOrders.length} visibles</span></div><label className="trello-search"><Icon name="search" /><input aria-label="Buscar ordenes" placeholder="Buscar comprador, carta o nota" value={query} onChange={e=>setQuery(e.target.value)}/></label><label className="trello-history"><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Entregadas</label><button className="secondary-action" onClick={()=>setList(true)}>Vista de lista</button></div>
       <nav className="trello-tabs" aria-label="Tableros de ordenes">{workspace?.boards.map(board=>{
         const first=workspace.columns.find(c=>c.boardId===board.id);
         const count=props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(board,s) && workspace.columns.some(c=>c.boardId===board.id && c.id===columnOf(s.id))).length;
         return <button key={board.id} className={selectedBoard?.id===board.id?"active":""} onClick={()=>setBoardId(board.id)} onDragEnter={e=>{e.preventDefault();}} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";}} onDrop={e=>{if(first){drop(e,first.id);setBoardId(board.id);}}}>{board.name}<span>{count}</span></button>;
       })}<button onClick={()=>setEditor({action:"createBoard",name:""})}>+ Crear tablero</button></nav>
-      <div className="trello-board-tools"><span>Arrastra una tarjeta a una columna o a otro tablero.</span>{selectedBoard && <><button className="secondary-action" onClick={()=>setEditor({action:"renameBoard",id:selectedBoard.id,name:selectedBoard.name})}>Renombrar tablero</button><button className="secondary-action" onClick={()=>setEditor({action:"createColumn",id:selectedBoard.id,name:""})}>+ Columna</button></>}</div>
+      <div className="trello-work-summary"><span className={boardNoMessage ? "attention" : ""}><small>Contactar</small><strong>{boardNoMessage}</strong></span><span className={boardOverdue ? "danger" : ""}><small>Vencidas</small><strong>{boardOverdue}</strong></span><span><small>Cobrar</small><strong>{formatArs(boardDebtArs)}</strong></span><span><small>Embaladas</small><strong>{boardPacked}</strong></span><span className="ready"><small>Entregar</small><strong>{boardReady}</strong></span></div>
+      <div className="trello-board-tools"><span>{selectedBoard?.name || "Ordenes"} · {columns.length} columna(s)</span>{selectedBoard && <><button className="secondary-action" onClick={()=>setEditor({action:"renameBoard",id:selectedBoard.id,name:selectedBoard.name})}>Renombrar tablero</button><button className="secondary-action" onClick={()=>setEditor({action:"createColumn",id:selectedBoard.id,name:""})}>+ Columna</button></>}</div>
       {editor && <form className="trello-name-form" onSubmit={async e=>{e.preventDefault();if(await change({action:editor.action,name:editor.name,...(editor.action==="renameColumn"?{columnId:editor.id!}:editor.id?{boardId:editor.id}:{})}))setEditor(null);}}><label>{editor.action==="createBoard"?"Nombre del nuevo tablero":editor.action==="createColumn"?"Nombre de la nueva columna":"Nuevo nombre"}<input autoFocus required maxLength={80} value={editor.name} onChange={e=>setEditor({...editor,name:e.target.value})}/></label><button className="primary-action" disabled={busy || !editor.name.trim()}>Guardar</button><button type="button" className="secondary-action" onClick={()=>setEditor(null)}>Cancelar</button></form>}
       {error && <div role="alert">{error}<button className="secondary-action" onClick={load}>Reintentar carga</button></div>}
       <span className="trello-save-status" role="status">{busy?"Guardando...":notice}</span>
@@ -3658,10 +3678,12 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
           const total=order.lines.reduce((n,l)=>n+l.quantity,0),packed=order.lines.reduce((n,l)=>n+(l.packed?l.quantity:0),0);
           const debt=order.status==="paid" || order.status==="delivered" ? 0 : Math.max(0,order.totalArs-(order.amountPaidArs || 0));
           const overdue=debt>0 && order.paymentDueAt && new Date(order.paymentDueAt).getTime()<Date.now();
-          return <button key={order.id} className={`trello-card ${dragId===order.id?"dragging":""}`} draggable={!busy} onDragStart={e=>{e.dataTransfer.setData("text/ultimoturno-order",order.id);e.dataTransfer.effectAllowed="move";setDragId(order.id);}} onDragEnd={()=>{setDragId("");setOver("");}} onDrop={e=>{if(!busy)drop(e,column.id,order.id);}} onClick={()=>open(order.id)}>
-            <strong>{order.customerName || "Sin nombre"}</strong><span className="trello-card-total">{order.totalArs > 0 || !order.totalUsd ? formatArs(order.totalArs) : ""}{order.totalArs > 0 && order.totalUsd > 0 ? " + " : ""}{order.totalUsd > 0 ? `${formatUsd(order.totalUsd)} USD` : ""}</span><span className="trello-card-meta"><span>{packed}/{total} embaladas</span><span>{order.status === "paid" || order.status === "delivered" ? "Pagada" : debt > 0 ? `Resta ${formatArs(debt)}` : order.totalUsd > 0 ? "Pago pendiente" : "Sin saldo en pesos"}</span></span>{overdue && <span className="trello-overdue">Vencida · {formatShortDate(order.paymentDueAt!)}</span>}{order.internalNote && <span className="trello-note">Nota: {order.internalNote}</span>}
+          const progress = total ? Math.round((packed / total) * 100) : 0;
+          const preview = order.lines.slice(0, 2).map((line) => `${line.quantity}x ${line.name}`).join(" · ");
+          return <button key={order.id} className={`trello-card ${orderTone(order)} ${dragId===order.id?"dragging":""}`} draggable={!busy} onDragStart={e=>{e.dataTransfer.setData("text/ultimoturno-order",order.id);e.dataTransfer.effectAllowed="move";setDragId(order.id);}} onDragEnd={()=>{setDragId("");setOver("");}} onDrop={e=>{if(!busy)drop(e,column.id,order.id);}} onClick={()=>open(order.id)}>
+            <span className="trello-card-top"><strong>{order.customerName || "Sin nombre"}</strong><i>{saleStatusLabel(order.status)}</i></span><span className="trello-card-total">{order.totalArs > 0 || !order.totalUsd ? formatArs(order.totalArs) : ""}{order.totalArs > 0 && order.totalUsd > 0 ? " + " : ""}{order.totalUsd > 0 ? `${formatUsd(order.totalUsd)} USD` : ""}</span><span className="trello-card-preview">{preview || "Sin cartas"}</span><span className="trello-card-meta"><span>{packed}/{total} embaladas</span><span>{order.messageSentAt ? "Mensaje enviado" : "Sin mensaje"}</span><span>{order.status === "paid" || order.status === "delivered" ? "Pagada" : debt > 0 ? `Resta ${formatArs(debt)}` : order.totalUsd > 0 ? "Pago pendiente" : "Sin saldo en pesos"}</span></span><span className="trello-pack-progress" aria-hidden="true"><i style={{ width: `${progress}%` }} /></span>{overdue && <span className="trello-overdue">Vencida · {formatShortDate(order.paymentDueAt!)}</span>}{order.internalNote && <span className="trello-note">Nota: {order.internalNote}</span>}
           </button>;
-        })}{!cards.length && <p className="trello-empty">{query?"Sin coincidencias":"Arrastra ordenes aqui"}</p>}</div>
+        })}{!cards.length && <p className="trello-empty">{query?"Sin coincidencias":"Sin ordenes"}</p>}</div>
       </section>;
     })}</div>
     <dialog aria-label="Detalle de orden" className="trello-order-dialog" ref={dialog} onCancel={()=>setOpenId("")} onClose={()=>setOpenId("")}>
@@ -3845,6 +3867,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
   const nextPaid = Math.min(order.totalArs, (order.amountPaidArs || 0) + paymentToAdd);
   const remaining = Math.max(0, order.totalArs - (order.amountPaidArs || 0));
   const nextRemaining = Math.max(0, order.totalArs - nextPaid);
+  const overdue = remaining > 0 && Boolean(order.paymentDueAt) && new Date(order.paymentDueAt!).getTime() < Date.now();
   const messageSent = Boolean(order.messageSentAt);
   const currentDue = order.paymentDueAt ? order.paymentDueAt.slice(0, 10) : "";
   const dueChanged = dueDraft !== currentDue;
@@ -3873,7 +3896,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
     setQuickPaymentOpen(false);
   };
   return (
-    <article className={`order-card ${open ? "open" : ""} ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${order.status === "cancelled" ? "cancelled" : ""} ${messageSent && order.status !== "paid" && !allPacked && !isDelivered ? "message-sent" : ""} ${order.status === "paid" ? "paid-complete" : ""} ${isDelivered ? "delivered-complete" : ""} ${order.status !== "paid" && !isDelivered && allPacked ? "packed-complete" : ""}`}>
+    <article className={`order-card ${open ? "open" : ""} ${focused ? "focused" : ""} ${selected ? "selected" : ""} ${overdue ? "overdue" : ""} ${order.status === "cancelled" ? "cancelled" : ""} ${messageSent && order.status !== "paid" && !allPacked && !isDelivered ? "message-sent" : ""} ${order.status === "paid" ? "paid-complete" : ""} ${isDelivered ? "delivered-complete" : ""} ${order.status !== "paid" && !isDelivered && allPacked ? "packed-complete" : ""}`}>
       <div className="order-row-main" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onToggle(); } }}>
         <label className="order-select-cell" onClick={stopClick}><input type="checkbox" disabled={!canBatchSelect} checked={selected} onChange={onSelectedChange} /></label>
         <div className="order-summary-main"><div className="order-title-line"><h3>{order.customerName}</h3>{open ? <span className="order-work-badge active">Abierta</span> : focused ? <span className="order-work-badge">Ultima trabajada</span> : null}</div><p>{boardLabel} - {formatDate(order.createdAt)} - {channelLabel(order.channel)}</p></div>
@@ -3882,7 +3905,7 @@ function OrderCard({ order, boardLabel, blueRate, open, focused, selected, copie
           <label className={`order-row-check ${messageSent ? "checked" : ""}`}><input type="checkbox" disabled={order.status === "cancelled" || isDelivered} checked={messageSent} onChange={(event) => onMessageSent(event.target.checked)} /><span>{messageSent ? "Enviado" : "Pendiente"}</span></label>
         </div>
         <div className="order-pack-cell"><strong>{packedUnits}/{units}</strong><span>embaladas</span></div>
-        <div className="order-summary-meta"><span className={`pill ${statusPillClass}`}>{saleStatusLabel(order.status)}</span>{order.paymentDueAt ? <span className="pill neutral">Vence {formatShortDate(order.paymentDueAt)}</span> : null}{order.internalNote ? <span className="pill neutral">Nota</span> : null}</div>
+        <div className="order-summary-meta"><span className={`pill ${statusPillClass}`}>{saleStatusLabel(order.status)}</span>{order.paymentDueAt ? <span className={`pill ${overdue ? "warning" : "neutral"}`}>{overdue ? "Vencida" : "Vence"} {formatShortDate(order.paymentDueAt)}</span> : null}{order.internalNote ? <span className="pill neutral">Nota</span> : null}</div>
         <div className="order-row-actions" onClick={stopClick}>
           {!isDelivered ? <button className="secondary-action" disabled={order.status === "cancelled"} onClick={onCopy}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Mensaje"}</button> : null}
           {canEdit ? <button className="secondary-action" onClick={(event) => openQuickPayment(event, "full")}><Icon name="sales" />Pago</button> : null}
