@@ -1733,13 +1733,19 @@ async function downloadPriceChartingImage(input: { priceChartingId: string; cano
     throw new Error(`No se encontro imagen fuerte con ${input.mode === "pokemon-tcg" ? "Pokemon TCG API" : "APIs externas"}.${directHint}`);
   }
 
-  const html = await fetchPriceChartingPageHtml(input.canonicalUrl);
-  const sourceImageUrl = extractPriceChartingImageUrl(html);
-  if (!sourceImageUrl) {
-    const directHint = directErrors.length ? ` Intentos directos: ${directErrors.slice(0, 2).join(" / ")}.` : "";
-    throw new Error(`La pagina de PriceCharting no contiene una imagen principal.${directHint}`);
+  const pageUrls = await expandedPriceChartingCardUrlCandidates(input);
+  for (const pageUrl of pageUrls) {
+    try {
+      const html = await fetchPriceChartingPageHtml(pageUrl);
+      const sourceImageUrl = extractPriceChartingImageUrl(html);
+      if (sourceImageUrl) return downloadImageUrl(sourceImageUrl, input.priceChartingId, "PriceCharting imagen");
+      directErrors.push(`${pageUrl}: sin imagen principal`);
+    } catch (error) {
+      directErrors.push(error instanceof Error ? error.message : String(error));
+    }
   }
-  return downloadImageUrl(sourceImageUrl, input.priceChartingId, "PriceCharting imagen");
+  const directHint = directErrors.length ? ` Intentos: ${directErrors.slice(0, 3).join(" / ")}.` : "";
+  throw new Error(`No se encontro imagen usable para esta carta.${directHint}`);
 }
 
 function imageDownloadSourceLabel(sourceImageUrl: string): string {
