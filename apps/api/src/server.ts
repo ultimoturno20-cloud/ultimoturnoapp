@@ -2073,6 +2073,8 @@ async function listPriceChartingImageDownloadCandidates(db: Awaited<typeof dbPro
     from pricecharting_cache_entries pce
     left join pricecharting_image_cache pic using (pricecharting_id)
     where coalesce(nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) <> ''
+      and coalesce(pic.status, 'pending') <> 'failed'
+      and coalesce(pic.next_attempt_at, now()) <= now()
       and coalesce(nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''), '') = ''
     order by
       case
@@ -4112,6 +4114,24 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         status: await getPriceChartingImageCacheStatus(db, user.businessId),
         imageQuality: await getImageDatabaseQuality(db, user.businessId),
         workspace: await listClaimsWorkspace(db, user.businessId)
+      });
+      return;
+    }
+
+    const imageDownloadFailedPath = url.pathname.match(/^\/pricecharting-images\/([^/]+)\/download-failed$/);
+    if (imageDownloadFailedPath && request.method === "POST") {
+      const body: { errorMessage?: string; retryAfterMinutes?: number } =
+        await readJson<{ errorMessage?: string; retryAfterMinutes?: number }>(request).catch(() => ({}));
+      const priceChartingId = decodeURIComponent(imageDownloadFailedPath[1]);
+      await recordPriceChartingImageFailure(db, {
+        priceChartingId,
+        errorMessage: String(body.errorMessage || "No se pudo descargar la imagen.").trim(),
+        retryAfterMinutes: Math.max(15, Math.min(24 * 60, Math.floor(Number(body.retryAfterMinutes || 120))))
+      });
+      sendJson(response, 200, {
+        ok: true,
+        priceChartingId,
+        status: await getPriceChartingImageCacheStatus(db, user.businessId)
       });
       return;
     }

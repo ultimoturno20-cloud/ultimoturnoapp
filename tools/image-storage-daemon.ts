@@ -48,6 +48,16 @@ type DownloadedImage = {
   contentHash: string;
 };
 
+class ImageDownloadError extends Error {
+  statusCode?: number;
+
+  constructor(message: string, statusCode?: number) {
+    super(message);
+    this.name = "ImageDownloadError";
+    this.statusCode = statusCode;
+  }
+}
+
 function parseOptions(argv: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set<string>();
@@ -197,11 +207,15 @@ function extensionFor(contentType: string) {
 async function downloadCandidate(options: Options, candidate: Candidate): Promise<DownloadedImage> {
   const sourceUrl = unwrapImageSourceUrl(candidate.sourceImageUrl);
   const response = await fetch(sourceUrl, {
-    headers: { "User-Agent": "UltimoTurnoImageStorageDaemon/1.0" },
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 UltimoTurnoImageStorageDaemon/1.0",
+      Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      Referer: "https://www.tcgplayer.com/"
+    },
     redirect: "follow",
     signal: AbortSignal.timeout(30000)
   });
-  if (!response.ok) throw new Error(`${candidate.priceChartingId}: imagen HTTP ${response.status}`);
+  if (!response.ok) throw new ImageDownloadError(`${candidate.priceChartingId}: imagen HTTP ${response.status}`, response.status);
   const contentType = response.headers.get("content-type") || "image/jpeg";
   if (!contentType.toLowerCase().startsWith("image/")) throw new Error(`${candidate.priceChartingId}: no es imagen (${contentType})`);
   const bytes = Buffer.from(await response.arrayBuffer());
@@ -220,6 +234,26 @@ async function downloadCandidate(options: Options, candidate: Candidate): Promis
     byteSize: bytes.length,
     contentHash: crypto.createHash("sha256").update(bytes).digest("hex")
   };
+}
+
+function retryAfterForDownloadError(error: unknown) {
+  if (error instanceof ImageDownloadError && (error.statusCode === 403 || error.statusCode === 404 || error.statusCode === 410)) return 24 * 60;
+  if (error instanceof ImageDownloadError && error.statusCode && error.statusCode >= 500) return 180;
+  return 120;
+}
+
+async function reportDownloadFailure(options: Options, candidate: Candidate, error: unknown) {
+  if (options.skipUpload) return;
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    await postJson(options, `/pricecharting-images/${encodeURIComponent(candidate.priceChartingId)}/download-failed`, {
+      errorMessage: message,
+      retryAfterMinutes: retryAfterForDownloadError(error)
+    });
+  } catch (reportError) {
+    const reportMessage = reportError instanceof Error ? reportError.message : String(reportError);
+    console.warn(`${candidate.priceChartingId}: no pude registrar el fallo de descarga (${reportMessage})`);
+  }
 }
 
 async function uploadToSupabase(options: Options, image: DownloadedImage) {
@@ -318,6 +352,7 @@ async function runCycle(options: Options) {
       linked++;
     } catch (error) {
       failed++;
+      await reportDownloadFailure(options, candidate, error);
       console.error(`${candidate.priceChartingId}: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
