@@ -4016,7 +4016,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const query = url.searchParams.get("query") || "";
       const limit = Number(url.searchParams.get("limit") || 50);
       const languageGroup = url.searchParams.get("languageGroup") || "all";
-      sendJson(response, 200, await listUnifiedCatalogCards(db, query, limit, languageGroup));
+      const includeStatus = url.searchParams.get("includeStatus") !== "false";
+      sendJson(response, 200, await listUnifiedCatalogCards(db, query, limit, languageGroup, includeStatus));
       return;
     }
 

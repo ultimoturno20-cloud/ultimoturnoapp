@@ -3387,10 +3387,10 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerSearching(true);
     setPickerError("");
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`, { signal: controller.signal });
-      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
+      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=30&includeStatus=false`, { signal: controller.signal });
+      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 30);
       if (sequence === pickerSequence.current) {
-        const entries = mergeCatalogPickerEntries(result.entries, fallbackEntries, 60);
+        const entries = mergeCatalogPickerEntries(result.entries, fallbackEntries, 30);
         const totalEntries = result.status?.totalEntries ?? priceChartingCache.status.totalEntries;
         if (catalogPickerSearchCache.size >= 100) catalogPickerSearchCache.delete(catalogPickerSearchCache.keys().next().value || "");
         catalogPickerSearchCache.set(cacheKey, { expiresAt: Date.now() + catalogPickerSearchCacheTtlMs, entries, totalEntries });
@@ -6933,7 +6933,7 @@ async function resolveClaimCsvRows(rows: ClaimCsvImportRow[]): Promise<ClaimCsvI
     let candidates: PriceChartingCacheEntry[] = [];
     for (const query of queries) {
       if (!cache.has(query)) {
-        const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/catalog-cards?query=${encodeURIComponent(query)}&languageGroup=all&limit=80`);
+        const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/catalog-cards?query=${encodeURIComponent(query)}&languageGroup=all&limit=80&includeStatus=false`);
         cache.set(query, result.entries || []);
       }
       candidates = cache.get(query) || [];

@@ -1813,9 +1813,9 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
   };
 }
 
-export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50, languageGroup = "all"): Promise<{
+export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50, languageGroup = "all", includeStatus = true): Promise<{
   entries: UnifiedCatalogEntry[];
-  status: PriceChartingCacheStatus;
+  status?: PriceChartingCacheStatus;
 }> {
   const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const parsedQuery = parseSearchQuery(query);
@@ -1924,7 +1924,7 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
     .map((entry) => entry.row);
   return {
     entries: rows.map(mapUnifiedCatalogRow),
-    status: await getPriceChartingCacheStatus(db)
+    ...(includeStatus ? { status: await getPriceChartingCacheStatus(db) } : {})
   };
 }
 
