@@ -1847,6 +1847,13 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
   params.push(safeLimit);
   const limitPlaceholder = `$${params.length}`;
   const result = await db.query<Record<string, unknown>>(`
+    with candidates as materialized (
+      select pce.*
+      from pricecharting_cache_entries pce
+      ${whereSql}
+      order by pce.product_name, pce.expansion_name, pce.card_number
+      limit ${limitPlaceholder}
+    )
     select pce.pricecharting_id as catalog_id,
       pce.pricecharting_id,
       coalesce(nullif(direct_cie.tcgplayer_product_id, ''), nullif(tcg_match.tcgplayer_product_id, ''), '') as tcgplayer_product_id,
@@ -1868,7 +1875,7 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
       pce.search_key,
       pce.imported_at,
       greatest(coalesce(pce.imported_at, timestamp with time zone 'epoch'), coalesce(direct_cie.updated_at, timestamp with time zone 'epoch'), coalesce(tcg_match.updated_at, timestamp with time zone 'epoch')) as updated_at
-    from pricecharting_cache_entries pce
+    from candidates pce
     left join pricecharting_image_cache pic using (pricecharting_id)
     left join card_index_entries direct_cie on direct_cie.pricecharting_id = pce.pricecharting_id
     left join lateral (
@@ -1893,9 +1900,7 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
         tpce.market_price_usd desc nulls last
       limit 1
     ) tcg_price on true
-    ${whereSql}
     order by pce.product_name, pce.expansion_name, pce.card_number
-    limit ${limitPlaceholder}
   `, params);
   const rows = result.rows
     .map((row) => ({

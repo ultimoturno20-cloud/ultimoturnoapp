@@ -773,6 +773,8 @@ const mobileBatchStorageKey = "ultimoturno_mobile_default_batch";
 const mobileConditionStorageKey = "ultimoturno_mobile_default_condition";
 const fallbackBlueRateSell = 1540;
 const minimumSalePriceArs = 800;
+const catalogPickerSearchCache = new Map<string, { expiresAt: number; entries: PriceChartingCacheEntry[]; totalEntries: number }>();
+const catalogPickerSearchCacheTtlMs = 5 * 60 * 1000;
 const exampleSnapshotCsv = `sku,name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,location,quantityOnHand,quantityReserved,priceArs,priceUsd
 UT-CSV-HORSEA-AQ-EN-NM,Horsea,Aquapolis,85,EN,NM,normal,,,,Caja agua C,2,0,4500,3.6
 ,Flareon EX,Generations,RC28,EN,NM,normal,,,,Caja fuego A,1,0,180000,117
@@ -3359,18 +3361,44 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const [pickerError, setPickerError] = useState("");
   const [pickerCurrency, setPickerCurrency] = useState<"USD" | "ARS">("USD");
   const pickerSequence = useRef(0);
+  const pickerAbortController = useRef<AbortController | null>(null);
   async function searchPicker(search: string) {
+    const normalizedSearch = search.trim().toLocaleLowerCase("es");
+    if (normalizedSearch.length < 2) {
+      pickerAbortController.current?.abort();
+      setPickerEntries([]);
+      setPickerSearching(false);
+      setPickerError(normalizedSearch ? "Escribi al menos 2 caracteres." : "");
+      return;
+    }
     const sequence = ++pickerSequence.current;
+    const cacheKey = `${pickerLanguageGroup}\n${normalizedSearch}`;
+    const cached = catalogPickerSearchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      setPickerCatalogTotal(cached.totalEntries);
+      setPickerEntries(cached.entries);
+      setPickerSearching(false);
+      setPickerError("");
+      return;
+    }
+    pickerAbortController.current?.abort();
+    const controller = new AbortController();
+    pickerAbortController.current = controller;
     setPickerSearching(true);
     setPickerError("");
     try {
-      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`);
+      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=60`, { signal: controller.signal });
       const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
       if (sequence === pickerSequence.current) {
-        setPickerCatalogTotal(result.status?.totalEntries ?? priceChartingCache.status.totalEntries);
-        setPickerEntries(mergeCatalogPickerEntries(result.entries, fallbackEntries, 60));
+        const entries = mergeCatalogPickerEntries(result.entries, fallbackEntries, 60);
+        const totalEntries = result.status?.totalEntries ?? priceChartingCache.status.totalEntries;
+        if (catalogPickerSearchCache.size >= 100) catalogPickerSearchCache.delete(catalogPickerSearchCache.keys().next().value || "");
+        catalogPickerSearchCache.set(cacheKey, { expiresAt: Date.now() + catalogPickerSearchCacheTtlMs, entries, totalEntries });
+        setPickerCatalogTotal(totalEntries);
+        setPickerEntries(entries);
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
       if (sequence === pickerSequence.current) {
         setPickerEntries(fallbackEntries);
@@ -3380,10 +3408,11 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   }
   useEffect(() => {
     ++pickerSequence.current;
-    if (!catalogSearch.trim()) { setPickerEntries([]); setPickerSearching(false); return; }
+    pickerAbortController.current?.abort();
+    if (catalogSearch.trim().length < 2) { setPickerEntries([]); setPickerSearching(false); setPickerError(catalogSearch.trim() ? "Escribi al menos 2 caracteres." : ""); return; }
     setPickerSearching(true);
-    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 300);
-    return () => { window.clearTimeout(timer); ++pickerSequence.current; };
+    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 400);
+    return () => { window.clearTimeout(timer); pickerAbortController.current?.abort(); ++pickerSequence.current; };
   }, [allItems, catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
   const [showDetails, setShowDetails] = useState(editing || fullPage);
@@ -6527,7 +6556,7 @@ function buildApiRequestUrl(path: string) {
   return `${apiBase}/dispatch?path=${encodeURIComponent(requestPath)}`;
 }
 
-async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown } = {}): Promise<T> {
+async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const accessKey = getStoredAccessKey();
   const requestUrl = buildApiRequestUrl(path);
   const method = options.method || "GET";
@@ -6538,7 +6567,8 @@ async function api<T>(path: string, options: { token?: string; method?: string; 
       ...(accessKey ? { "X-UltimoTurno-Access-Key": accessKey } : {}),
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {})
     },
-    body: options.body ? JSON.stringify(options.body) : undefined
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
