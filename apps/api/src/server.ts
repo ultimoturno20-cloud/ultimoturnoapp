@@ -2606,6 +2606,54 @@ function sendBuffer(response: ServerResponse, statusCode: number, body: Buffer, 
   response.end(omitBody ? undefined : body);
 }
 
+async function proxyAllowedImage(response: ServerResponse, rawImageUrl: string) {
+  let sourceUrl: URL;
+  try {
+    sourceUrl = new URL(rawImageUrl);
+  } catch {
+    sendJson(response, 400, { ok: false, error: "URL de imagen invalida." });
+    return;
+  }
+
+  if (!["http:", "https:"].includes(sourceUrl.protocol) || !imageProxyAllowedHosts.has(sourceUrl.hostname.toLowerCase())) {
+    sendJson(response, 400, { ok: false, error: "Host de imagen no permitido." });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const imageResponse = await fetch(sourceUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "UltimoTurnoImageProxy/1.0" }
+    });
+    if (!imageResponse.ok) {
+      sendJson(response, imageResponse.status, { ok: false, error: `No se pudo descargar la imagen (${imageResponse.status}).` });
+      return;
+    }
+    const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      sendJson(response, 415, { ok: false, error: "La URL no devolvio una imagen." });
+      return;
+    }
+    const declaredSize = Number(imageResponse.headers.get("content-length") || 0);
+    if (declaredSize > 10 * 1024 * 1024) {
+      sendJson(response, 413, { ok: false, error: "La imagen supera el limite permitido." });
+      return;
+    }
+    const body = Buffer.from(await imageResponse.arrayBuffer());
+    if (body.length > 10 * 1024 * 1024) {
+      sendJson(response, 413, { ok: false, error: "La imagen supera el limite permitido." });
+      return;
+    }
+    sendBuffer(response, 200, body, contentType);
+  } catch (error) {
+    sendJson(response, 502, { ok: false, error: `No se pudo descargar la imagen: ${error instanceof Error ? error.message : String(error)}` });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function imageContentTypeForFile(fileName: string, fallback = "image/jpeg") {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -3450,6 +3498,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/image-proxy" && request.method === "GET") {
+      await proxyAllowedImage(response, url.searchParams.get("url") || "");
+      return;
+    }
+
     if (url.pathname === "/cron/pricecharting-refresh" && request.method === "GET") {
       if (!requestHasCronAccess(request)) {
         sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
@@ -3499,49 +3552,6 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const db = await dbPromise;
-
-    if (url.pathname === "/image-proxy" && request.method === "GET") {
-      const rawImageUrl = url.searchParams.get("url") || "";
-      let sourceUrl: URL;
-      try {
-        sourceUrl = new URL(rawImageUrl);
-      } catch {
-        sendJson(response, 400, { ok: false, error: "URL de imagen invalida." });
-        return;
-      }
-
-      if (!["http:", "https:"].includes(sourceUrl.protocol) || !imageProxyAllowedHosts.has(sourceUrl.hostname.toLowerCase())) {
-        sendJson(response, 400, { ok: false, error: "Host de imagen no permitido." });
-        return;
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-      try {
-        const imageResponse = await fetch(sourceUrl, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "UltimoTurnoImageProxy/1.0"
-          }
-        });
-        if (!imageResponse.ok) {
-          sendJson(response, imageResponse.status, { ok: false, error: `No se pudo descargar la imagen (${imageResponse.status}).` });
-          return;
-        }
-        const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
-        if (!contentType.toLowerCase().startsWith("image/")) {
-          sendJson(response, 415, { ok: false, error: "La URL no devolvio una imagen." });
-          return;
-        }
-        const body = Buffer.from(await imageResponse.arrayBuffer());
-        sendBuffer(response, 200, body, contentType);
-      } catch (error) {
-        sendJson(response, 502, { ok: false, error: `No se pudo descargar la imagen: ${error instanceof Error ? error.message : String(error)}` });
-      } finally {
-        clearTimeout(timeout);
-      }
-      return;
-    }
 
     if (url.pathname === "/health") {
       sendJson(response, 200, { ...(await getHealth(db)), environment: { runtimeEnv, dbDriver, databaseUrlConfigured: Boolean(databaseUrl), allowDatabaseSsl: databaseSslEnabled, dataProfile, allowExamples, dataDir, priceChartingImageDir, priceChartingImageReadDirs, allowedOrigins } });
