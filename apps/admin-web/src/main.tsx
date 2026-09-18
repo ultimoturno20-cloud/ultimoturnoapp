@@ -3046,6 +3046,7 @@ function InventoryView(props: {
             <div className={`inventory-card-grid ${props.density === "compact" ? "compact" : ""}`}>
               {items.slice(0, renderLimit).map((item) => {
                 const displayPrice = inventoryPriceDisplay(item, filters.priceSource, props.blueRate);
+                const itemTags = inventoryTags(item.tags).slice(0, 3);
                 return (
                   <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""}`} key={item.id}>
                     <button className="inventory-card-main" onClick={() => setIntakeId(item.id)}>
@@ -3057,7 +3058,7 @@ function InventoryView(props: {
                         <strong>{item.product.name}</strong>
                         <span>{item.product.expansion} #{item.product.number || "-"}</span>
                         <small>{inventoryVariantLabel(item)}</small>
-                        {inventoryTags(item.tags).length ? <div className="inventory-tag-list compact">{inventoryTags(item.tags).slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
+                        <div className={`inventory-tag-list compact ${itemTags.length ? "" : "empty"}`}>{itemTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
                         <div className={`inventory-big-price ${displayPrice.hasPrice ? "" : "missing"}`}>
                           <span>{displayPrice.label}</span>
                           <strong>{displayPrice.hasPrice ? formatArs(displayPrice.ars || 0) : "Sin precio"}</strong>
