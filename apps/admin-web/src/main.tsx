@@ -1121,7 +1121,7 @@ function App() {
       showMessage(receipt);
       setProductReceipt(receipt);
       if (editingId) { setEditingId(""); setProductModalOpen(false); }
-      else { setForm({ ...blankForm(), quantityOnHand: 1 }); setProductModalOpen(true); }
+      else { setForm({ ...blankForm(), quantityOnHand: 1 }); setProductModalOpen(false); }
       void refresh().catch(() => undefined);
     } catch (nextError) {
       showError(nextError);
