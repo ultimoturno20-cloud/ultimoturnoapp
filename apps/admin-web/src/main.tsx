@@ -540,6 +540,7 @@ type PriceChartingCacheEntry = {
   tcgplayerPriceUsd?: number | null;
   tcgplayerSubtype?: string;
   imageUrl: string;
+  imageFallbackUrl?: string;
   importedAt: string;
 };
 
@@ -2686,14 +2687,15 @@ function InventoryBar({ summary }: { summary: StockSummary }) {
   );
 }
 
-function CardArt({ src, alt, label, className, fallbackClassName }: { src?: string; alt: string; label: string; className: string; fallbackClassName: string }) {
-  const [failed, setFailed] = useState(false);
-  const resolved = src ? assetUrl(src) : "";
+function CardArt({ src, fallbackSrc, alt, label, className, fallbackClassName }: { src?: string; fallbackSrc?: string; alt: string; label: string; className: string; fallbackClassName: string }) {
+  const sourceKey = [src, fallbackSrc].filter(Boolean).join("\n");
+  const sources = [...new Set([src, fallbackSrc].filter((value): value is string => Boolean(value)).map(assetUrl))];
+  const [sourceIndex, setSourceIndex] = useState(0);
   useEffect(() => {
-    setFailed(false);
-  }, [resolved]);
-  if (!resolved || failed) return <span className={fallbackClassName}>{label.slice(0, 2).toUpperCase()}</span>;
-  return <img className={className} src={resolved} alt={alt} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+    setSourceIndex(0);
+  }, [sourceKey]);
+  if (!sources[sourceIndex]) return <span className={fallbackClassName}>{label.slice(0, 2).toUpperCase()}</span>;
+  return <img className={className} src={sources[sourceIndex]} alt={alt} loading="lazy" decoding="async" onError={() => setSourceIndex((current) => current + 1)} />;
 }
 
 function StockQualityPanel({ quality, onIssue }: { quality: StockQualitySummary; onIssue?: (issue: IssueFilter) => void }) {
@@ -3415,7 +3417,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             </div>
             {!pickerSearching && pickerEntries.length ? <div className="catalog-picker-results">
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
-                {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
+                <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="PC" className="" fallbackClassName="image-placeholder compact-placeholder" />
                 <div className="catalog-picker-card-copy">
                   <strong>{cleanCatalogPickerName(entry)}</strong>
                   <span>{cleanCatalogPickerExpansion(entry) || "Sin expansion"}{entry.cardNumber ? ` #${entry.cardNumber}` : ""}</span>
@@ -4361,7 +4363,7 @@ function ClaimsView(props: {
               <div className="claim-pc-results">
                 {claimCatalogEntries.slice(0, 12).map((entry) => (
                   <button className={`claim-pc-row ${selectedPriceChartingIds.includes(entry.priceChartingId) ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => togglePriceCharting(entry.priceChartingId)}>
-                    {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
+                    <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="PC" className="" fallbackClassName="image-placeholder compact-placeholder" />
                     <div>
                       <strong>{entry.productName}</strong>
                       <span>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""}</span>
@@ -4440,11 +4442,7 @@ function ClaimCardRow({ card, sections, blueRate, imageSearching, onUpdate, onDe
   return (
     <article className={`claim-card-row ${card.status === "ignored" ? "ignored" : ""}`} key={card.id}>
       <div className="claim-card-media">
-        {card.imageUrl ? (
-          <img src={assetUrl(card.imageUrl)} alt="" />
-        ) : (
-          <div className="image-placeholder compact-placeholder">CL</div>
-        )}
+        <CardArt src={card.imageUrl} alt={card.productName} label="CL" className="" fallbackClassName="image-placeholder compact-placeholder" />
       </div>
       <div className="claim-card-info">
         <strong>{card.productName}</strong>
@@ -4582,7 +4580,7 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
         </header>
         <div className="claim-run-body">
           <div className="claim-run-image-stage">
-            {card.imageUrl ? <img src={assetUrl(card.imageUrl)} alt={card.productName} /> : <div className="image-placeholder claim-run-placeholder">Sin imagen</div>}
+            <CardArt src={card.imageUrl} alt={card.productName} label="Sin imagen" className="" fallbackClassName="image-placeholder claim-run-placeholder" />
           </div>
           <div className="claim-run-info">
             <div>
@@ -7500,9 +7498,25 @@ function shortError(value: string) {
   return value.replace(/\s+/g, " ").trim().slice(0, 120) || "Sin detalle";
 }
 
+const proxiedImageHosts = new Set([
+  "images.pokemontcg.io",
+  "images.pricecharting.com",
+  "storage.googleapis.com",
+  "assets.tcgdex.net",
+  "tcgplayer-cdn.tcgplayer.com"
+]);
+
 function assetUrl(value: string) {
-  if (!value.startsWith("/pricecharting-images/")) return value;
-  return buildApiRequestUrl(value);
+  if (value.startsWith("/pricecharting-images/")) return buildApiRequestUrl(value);
+  try {
+    const parsed = new URL(value);
+    if (proxiedImageHosts.has(parsed.hostname.toLowerCase())) {
+      return buildApiRequestUrl(`/image-proxy?url=${encodeURIComponent(parsed.toString())}`);
+    }
+  } catch {
+    return value;
+  }
+  return value;
 }
 
 function canvasAssetUrl(value: string) {

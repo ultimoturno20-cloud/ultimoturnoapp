@@ -649,6 +649,7 @@ export type PriceChartingCacheEntry = PriceChartingCacheInput & {
   finish: string;
   tcgplayerPriceUsd: number | null;
   tcgplayerSubtype: string;
+  imageFallbackUrl?: string;
   importedAt: string;
 };
 
@@ -1307,7 +1308,7 @@ export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options
         pce.card_number,
         pce.language_group,
         pce.canonical_url,
-        coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_image.image_url, '')) as image_url
+        coalesce(nullif(pic.public_url, ''), nullif(tcg_image.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as image_url
       from pricecharting_cache_entries pce
       left join pricecharting_image_cache pic using (pricecharting_id)
       left join lateral (
@@ -1748,7 +1749,8 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
       pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
       pce.language_group, loose_price_usd,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_match.image_url, '')) as image_url,
+      coalesce(nullif(pic.public_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as image_url,
+      coalesce(nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as fallback_image_url,
       tcg_price.tcgplayer_price_usd,
       tcg_price.tcgplayer_subtype,
       pce.search_key, pce.imported_at
@@ -1802,6 +1804,7 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
       tcgplayerPriceUsd: optionalNumber(row.tcgplayer_price_usd) ?? null,
       tcgplayerSubtype: String(row.tcgplayer_subtype || ""),
       imageUrl: String(row.image_url || ""),
+      imageFallbackUrl: String(row.fallback_image_url || ""),
       languageGroup: inferLanguageGroup(String(row.expansion_name || ""), String(row.product_name || ""), String(row.canonical_url || ""), String(row.language_group || "")),
       searchKey: String(row.search_key),
       importedAt: String(row.imported_at)
@@ -1858,8 +1861,8 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
       pce.loose_price_usd as pricecharting_price_usd,
       tcg_price.tcgplayer_price_usd,
       tcg_price.tcgplayer_subtype,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), '') as image_url,
-      case when coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), '') <> '' then true else false end as has_image,
+      coalesce(nullif(pic.public_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), '') as image_url,
+      case when coalesce(nullif(pic.public_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), '') <> '' then true else false end as has_image,
       case when pce.loose_price_usd is not null then true else false end as has_pricecharting_price,
       case when tcg_price.tcgplayer_price_usd is not null then true else false end as has_tcgplayer_price,
       pce.search_key,
@@ -3781,7 +3784,7 @@ async function getPriceChartingCacheEntry(db: PGlite, priceChartingId: string): 
     select pce.pricecharting_id, pce.canonical_url, pce.source_url, pce.product_name,
       pce.normalized_name, pce.expansion_name, pce.normalized_expansion, pce.card_number,
       pce.language_group, pce.loose_price_usd,
-      coalesce(nullif(pic.public_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), nullif(tcg_match.image_url, ''), '') as image_url,
+      coalesce(nullif(pic.public_url, ''), nullif(direct_cie.image_url, ''), nullif(tcg_match.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, ''), '') as image_url,
       tcg_price.tcgplayer_price_usd,
       tcg_price.tcgplayer_subtype,
       pce.search_key, pce.imported_at
