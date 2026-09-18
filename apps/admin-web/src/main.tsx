@@ -2711,7 +2711,12 @@ function InventoryBar({ summary }: { summary: StockSummary }) {
 
 function CardArt({ src, fallbackSrc, alt, label, className, fallbackClassName }: { src?: string; fallbackSrc?: string; alt: string; label: string; className: string; fallbackClassName: string }) {
   const sourceKey = [src, fallbackSrc].filter(Boolean).join("\n");
-  const sources = [...new Set([src, fallbackSrc].filter((value): value is string => Boolean(value)).map(assetUrl))];
+  const sources = [...new Set([src, fallbackSrc]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => {
+      const proxied = assetUrl(value);
+      return /^https?:\/\//i.test(value) && proxied !== value ? [value, proxied] : [proxied];
+    }))];
   const [sourceIndex, setSourceIndex] = useState(0);
   useEffect(() => {
     setSourceIndex(0);
