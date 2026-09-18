@@ -182,6 +182,9 @@ describe("operational inventory database", () => {
     assert.equal(workspace.activeClaim?.name, "Claim Test");
     workspace = await addPriceChartingCardsToClaim(db, ["claim-pika-25", "claim-zard-usd"], user);
     assert.equal(workspace.cards.length, 2);
+    let claimStock = await listStockForBusiness(db, user.businessId);
+    assert.equal(claimStock.items.find((item) => item.product.name === "Pikachu")?.quantityOnHand, 1);
+    assert.equal(claimStock.items.find((item) => item.product.name === "Charizard")?.quantityOnHand, 1);
     const pika = workspace.cards.find((card) => card.priceChartingId === "claim-pika-25")!;
     const zard = workspace.cards.find((card) => card.priceChartingId === "claim-zard-usd")!;
     assert.equal(pika.suggestedArs, 8000);
@@ -197,6 +200,8 @@ describe("operational inventory database", () => {
       buyer: "Ana,Ana",
       tags: "@ana"
     }, user);
+    claimStock = await listStockForBusiness(db, user.businessId);
+    assert.equal(claimStock.items.find((item) => item.product.name === "Charizard")?.quantityOnHand, 3);
     assert.equal(workspace.summary.buyers, 2);
     assert.equal(workspace.summary.totalArs, 9000);
     assert.equal(workspace.summary.totalUsd, 300);

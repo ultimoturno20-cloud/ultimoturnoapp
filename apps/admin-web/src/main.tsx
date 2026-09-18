@@ -926,6 +926,10 @@ function App() {
     setSelectedId((current) => current || stockData.items[0]?.id || "");
   }
 
+  async function refreshStock() {
+    setStock(await api<{ summary: StockSummary; items: StockRow[] }>("/stock"));
+  }
+
   async function refreshPriceChartingImageStatus() {
     setPriceChartingImages(await api<PriceChartingImageCacheStatus>("/pricecharting-images/status"));
   }
@@ -1458,6 +1462,7 @@ function App() {
     try {
       const result = await api<ClaimsWorkspace>("/claims/cards/from-pricecharting", { method: "POST", body: { priceChartingIds, sectionId, cards } });
       setClaims(result);
+      await refreshStock();
       showMessage(`${cards.length || priceChartingIds.length} carta(s) agregada(s) al claim.`);
     } catch (nextError) {
       showError(nextError);
@@ -1468,6 +1473,7 @@ function App() {
     try {
       const result = await api<ClaimsWorkspace>(`/claims/cards/${cardId}`, { method: "PUT", body: patch });
       setClaims(result);
+      await refreshStock();
     } catch (nextError) {
       showError(nextError);
     }
@@ -1477,6 +1483,7 @@ function App() {
     try {
       const result = await api<ClaimsWorkspace>(`/claims/cards/${cardId}`, { method: "DELETE" });
       setClaims(result);
+      await refreshStock();
       showMessage("Carta eliminada del claim.");
     } catch (nextError) {
       showError(nextError);
@@ -1549,6 +1556,7 @@ function App() {
     try {
       const result = await api<ClaimsWorkspace>("/claims/archive", { method: "POST" });
       setClaims(result);
+      await refreshStock();
       showMessage("Claim cancelado y archivado.");
     } catch (nextError) {
       showError(nextError);
@@ -2299,7 +2307,7 @@ function App() {
         />
       ) : null}
 
-      {view === "claims" ? <ClaimsView workspace={claims} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search) => void searchPriceChartingCache(search)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
+      {view === "claims" ? <ClaimsView workspace={claims} stockItems={stock.items} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search, languageGroup) => void searchPriceChartingCache(search, languageGroup)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
       {view === "orders" ? <OrdersView sales={sales} claims={claims} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} /> : null}
       {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
@@ -4031,6 +4039,7 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
 
 function ClaimsView(props: {
   workspace: ClaimsWorkspace;
+  stockItems: StockRow[];
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
   blueRate: BlueExchangeRate;
   claimImageSearching: boolean;
@@ -4038,7 +4047,7 @@ function ClaimsView(props: {
   claimPriceRefreshing: boolean;
   onCreateClaim: (name: string) => void;
   onUpdateClaimSettings: (patch: { paymentDueAt?: string }) => void;
-  onSearchPriceCharting: (search: string) => void;
+  onSearchPriceCharting: (search: string, languageGroup: LanguageGroupFilter) => void;
   onAddCards: (ids: string[], sectionId?: string, cards?: Array<{ priceChartingId: string; quantity?: number }>) => void;
   onUpdateCard: (cardId: string, patch: Partial<Pick<ClaimCard, "sectionId" | "finalPriceArs" | "finalPriceUsd" | "finalName" | "imageUrl" | "buyer" | "quantity" | "tags" | "status">>) => void;
   onDeleteCard: (cardId: string) => void;
@@ -4058,6 +4067,7 @@ function ClaimsView(props: {
 }) {
   const [claimName, setClaimName] = useState("");
   const [search, setSearch] = useState("");
+  const [claimCatalogLanguageGroup, setClaimCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
   const [selectedPriceChartingIds, setSelectedPriceChartingIds] = useState<string[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const [csvSectionId, setCsvSectionId] = useState("");
@@ -4073,6 +4083,21 @@ function ClaimsView(props: {
   const active = props.workspace.activeClaim;
   const summary = props.workspace.summary;
   const sections = props.workspace.sections;
+  const claimCatalogStock = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const item of props.stockItems) {
+      const priceChartingId = item.priceReferences?.priceCharting.priceChartingId
+        || item.product.identifiers.find((identifier) => identifier.source === "pricecharting")?.externalId
+        || "";
+      if (!priceChartingId || item.availableQuantity <= 0) continue;
+      quantities.set(priceChartingId, (quantities.get(priceChartingId) || 0) + item.availableQuantity);
+    }
+    return quantities;
+  }, [props.stockItems]);
+  const claimCatalogEntries = useMemo(() => [...props.priceChartingCache.entries].sort((left, right) => {
+    const stockDifference = (claimCatalogStock.get(right.priceChartingId) || 0) - (claimCatalogStock.get(left.priceChartingId) || 0);
+    return stockDifference || left.productName.localeCompare(right.productName, "es", { numeric: true });
+  }), [claimCatalogStock, props.priceChartingCache.entries]);
   const claimSearchQuery = parseUiSearchQuery(claimSearch);
   const sectionNames = useMemo(() => new Map(sections.map((section) => [section.id, section.name])), [sections]);
   const visibleClaimCards = props.workspace.cards.filter((card) => {
@@ -4319,7 +4344,12 @@ function ClaimsView(props: {
                   {sections.map((section) => <option value={section.id} key={section.id}>{section.name}</option>)}
                 </select>
               </label>
-              <form className="cache-search" onSubmit={(event) => { event.preventDefault(); props.onSearchPriceCharting(search); }}>
+              <LanguageGroupSelector value={claimCatalogLanguageGroup} onChange={(languageGroup) => {
+                setClaimCatalogLanguageGroup(languageGroup);
+                setSelectedPriceChartingIds([]);
+                props.onSearchPriceCharting(search, languageGroup);
+              }} />
+              <form className="cache-search" onSubmit={(event) => { event.preventDefault(); props.onSearchPriceCharting(search, claimCatalogLanguageGroup); }}>
                 <label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, expansion, numero o ID" /></label>
                 <button className="primary-action" type="submit"><Icon name="search" />Buscar</button>
               </form>
@@ -4329,12 +4359,13 @@ function ClaimsView(props: {
                 </button>
               )}
               <div className="claim-pc-results">
-                {props.priceChartingCache.entries.slice(0, 12).map((entry) => (
+                {claimCatalogEntries.slice(0, 12).map((entry) => (
                   <button className={`claim-pc-row ${selectedPriceChartingIds.includes(entry.priceChartingId) ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => togglePriceCharting(entry.priceChartingId)}>
                     {entry.imageUrl ? <img src={assetUrl(entry.imageUrl)} alt="" /> : <div className="image-placeholder compact-placeholder">PC</div>}
                     <div>
                       <strong>{entry.productName}</strong>
                       <span>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""}</span>
+                      <small>{languageGroupOptions.find((option) => option.value === entry.languageGroup)?.label || "Ingles"}{claimCatalogStock.get(entry.priceChartingId) ? ` / ${claimCatalogStock.get(entry.priceChartingId)} en stock` : ""}</small>
                       <MoneyStack usd={entry.loosePriceUsd} blueRate={props.blueRate} compact />
                     </div>
                   </button>
@@ -4496,7 +4527,9 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
   const cards = useMemo(() => orderedClaimCardsForRun(workspace.cards, workspace.sections), [workspace.cards, workspace.sections]);
   const sectionNames = useMemo(() => new Map(workspace.sections.map((section) => [section.id, section.name])), [workspace.sections]);
   const card = cards[index] || cards[0];
-  const finalName = card ? card.finalName || claimFinalName(card, card.finalPriceArs, card.finalPriceUsd) : "";
+  const finalName = card
+    ? claimDisplayNameWithQuantity(card.finalName || claimFinalName(card, card.finalPriceArs, card.finalPriceUsd), card.quantity)
+    : "";
   const tags = card?.tags?.trim() || "";
   const tagList = tags.split(/[,\s]+/).map((tag) => tag.trim()).filter(Boolean).slice(0, 12);
   const copyRunText = async (kind: "name" | "tags", value: string) => {
@@ -6731,19 +6764,14 @@ function orderedClaimCardsForRun(cards: ClaimCard[], sections: ClaimSection[]) {
   const used = new Set<string>();
   for (const section of sections) {
     for (const card of availableCards.filter((item) => item.sectionId === section.id)) {
-      ordered.push(...expandClaimCardUnits(card));
+      ordered.push(card);
       used.add(card.id);
     }
   }
   for (const card of availableCards.filter((item) => !item.sectionId || !used.has(item.id))) {
-    if (!used.has(card.id)) ordered.push(...expandClaimCardUnits(card));
+    if (!used.has(card.id)) ordered.push(card);
   }
   return ordered;
-}
-
-function expandClaimCardUnits(card: ClaimCard) {
-  const quantity = Math.max(1, Math.floor(Number(card.quantity) || 1));
-  return Array.from({ length: quantity }, () => card);
 }
 
 function matchesClaimSearch(card: ClaimCard, query: ReturnType<typeof parseUiSearchQuery>, sectionName: string) {
