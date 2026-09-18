@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type View = "dashboard" | "inventory" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "admin";
+type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "admin";
 type AvailabilityFilter = "all" | "available" | "reserved" | "out";
 type LanguageGroupFilter = "all" | "english" | "japanese" | "chinese";
 type SortMode = "name" | "expansion" | "number" | "price" | "quantity";
@@ -1061,15 +1061,16 @@ function App() {
     setProductReceipt("");
     setEditingId("");
     setForm({ ...blankForm(), quantityOnHand: 1 });
-    setView("inventory");
-    setProductModalOpen(true);
+    setProductModalOpen(false);
+    setView("stock-intake");
   }
 
   function startRestock(item: StockRow) {
     setEditingId("");
     setProductReceipt("");
     setForm({ ...formFromItem(item), quantityOnHand: 1, quantityReserved: 0 });
-    setProductModalOpen(true);
+    setProductModalOpen(false);
+    setView("stock-intake");
   }
 
   function startEdit(item: StockRow) {
@@ -1087,6 +1088,12 @@ function App() {
     setProductSaving(false);
     setProductImageForcing("");
     setForm(blankForm());
+  }
+
+  function closeStockIntake() {
+    if (productRequest.current) return;
+    closeProductModal();
+    setView("inventory");
   }
 
   const productRequest = useRef(false);
@@ -2160,7 +2167,7 @@ function App() {
 
       <nav className="nav" aria-label="Navegacion principal">
         <NavButton icon="home" active={view === "dashboard"} onClick={() => setView("dashboard")}>Inicio</NavButton>
-        <NavButton icon="inventory" active={view === "inventory"} onClick={() => setView("inventory")}>Inventario</NavButton>
+        <NavButton icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>
         <NavButton icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
         <NavButton icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
         <NavButton icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
@@ -2305,6 +2312,21 @@ function App() {
           onSaleChannelChange={setSaleChannel}
           onSubmitCart={submitCart}
           blueRate={blueRate}
+        />
+      ) : null}
+
+      {view === "stock-intake" ? (
+        <StockIntakeView
+          form={form}
+          onChange={setForm}
+          receipt={productReceipt}
+          onSubmit={saveProduct}
+          onClose={closeStockIntake}
+          blueRate={blueRate}
+          saving={productSaving}
+          priceChartingCache={priceChartingCache}
+          allItems={stock.items}
+          onSearchPriceCharting={(search) => void searchPriceChartingCache(search)}
         />
       ) : null}
 
@@ -3275,7 +3297,38 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
   );
 }
 
-function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, onSearchPriceCharting }: {
+function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, blueRate, saving, priceChartingCache, allItems, onSearchPriceCharting }: {
+  receipt: string;
+  form: InventoryFormState;
+  onChange: (form: InventoryFormState) => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onClose: () => void;
+  blueRate: BlueExchangeRate;
+  saving: boolean;
+  priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
+  allItems: StockRow[];
+  onSearchPriceCharting: (search: string) => void;
+}) {
+  return (
+    <section className="view stock-intake-view">
+      <datalist id="inventory-tag-suggestions">
+        {inventoryTagSuggestions.map((tag) => <option value={tag} key={tag} />)}
+      </datalist>
+      <header className="stock-intake-header">
+        <div>
+          <span className="eyebrow">Inventario</span>
+          <h2>Cargar stock</h2>
+          <p>Busca una carta, registra sus datos y continua con la siguiente.</p>
+        </div>
+        <button className="secondary-action" type="button" onClick={onClose}><Icon name="close" />Volver al inventario</button>
+      </header>
+      {receipt ? <p className="intake-feedback stock-intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
+      <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} onSearchPriceCharting={onSearchPriceCharting} />
+    </section>
+  );
+}
+
+function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, fullPage = false, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, onSearchPriceCharting }: {
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -3284,6 +3337,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   blueRate: BlueExchangeRate;
   saving: boolean;
   editing: boolean;
+  fullPage?: boolean;
   imageForcing: "" | "auto" | "manual";
   onForceImage: () => void;
   onForceManualImage: () => void;
@@ -3326,7 +3380,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     return () => { window.clearTimeout(timer); ++pickerSequence.current; };
   }, [allItems, catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
-  const [showDetails, setShowDetails] = useState(editing);
+  const [showDetails, setShowDetails] = useState(editing || fullPage);
   useEffect(() => { if (!editing && !form.name) setCatalogPickerOpen(true); }, [editing, form.name]);
   const set = (patch: Partial<InventoryFormState>) => onChange({ ...form, ...patch });
   const isGraded = Boolean(form.gradingCompany || form.grade || form.condition === "GRADED");
@@ -3447,11 +3501,13 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <div className="price-helper recommended-price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
               <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
               <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
-              <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
-              <label>Condicion<input required value={form.condition} onChange={(event) => set({ condition: event.target.value.toUpperCase() })} /></label>
-              <label>Acabado<input required value={form.finish} onChange={(event) => set({ finish: event.target.value })} /></label>
+              {!fullPage ? <>
+                <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
+                <label>Condicion<input required value={form.condition} onChange={(event) => set({ condition: event.target.value.toUpperCase() })} /></label>
+                <label>Acabado<input required value={form.finish} onChange={(event) => set({ finish: event.target.value })} /></label>
+              </> : null}
             </div>
-            <button type="button" className="secondary-action" onClick={() => setShowDetails(!showDetails)}>{showDetails ? "Ocultar detalles" : "Mas datos: ubicacion, graded, notas"}</button>
+            {!fullPage ? <button type="button" className="secondary-action" onClick={() => setShowDetails(!showDetails)}>{showDetails ? "Ocultar detalles" : "Mas datos: ubicacion, graded, notas"}</button> : null}
           </section> : null}
           {showDetails ? <>
           <section className="edit-section">
@@ -3480,22 +3536,26 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
           </section>
 
           <section className="edit-section">
-            <div className="edit-section-heading"><h3>Stock y precio</h3><span>{available} disponible(s)</span></div>
+            <div className="edit-section-heading"><h3>{fullPage && !editing ? "Organizacion" : "Stock y precio"}</h3><span>{available} disponible(s)</span></div>
             <div className="edit-field-grid">
-              <label>Total<input type="number" min={0} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
-              <label>Reservadas<input type="number" min={0} value={form.quantityReserved} onChange={(event) => set({ quantityReserved: Number(event.target.value) })} /></label>
+              {!fullPage || editing ? <>
+                <label>Total<input type="number" min={0} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
+                <label>Reservadas<input type="number" min={0} value={form.quantityReserved} onChange={(event) => set({ quantityReserved: Number(event.target.value) })} /></label>
+              </> : null}
               <label>Ubicacion<input value={form.location} onChange={(event) => set({ location: event.target.value })} /></label>
               <label>Lote<input value={form.intakeBatch} onChange={(event) => set({ intakeBatch: event.target.value })} placeholder="Caja 1, Binder EX..." /></label>
               <label>Categoria(s)<input value={form.tags} onChange={(event) => set({ tags: event.target.value })} placeholder="jugables, old, full art..." list="inventory-tag-suggestions" /></label>
               <label>Estado<select value={form.inventoryStatus} onChange={(event) => set({ inventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
               {editing ? <><label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label></> : null}
-              <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} /></label>
-              <label>Precio ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} /></label>
-              <div className="price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
+              {!fullPage || editing ? <>
+                <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} /></label>
+                <label>Precio ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} /></label>
+                <div className="price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
+              </> : null}
             </div>
           </section>
 
-          <details className="edit-section advanced-edit-section">
+          <details className="edit-section advanced-edit-section" open={fullPage || undefined}>
             <summary>Avanzado</summary>
             <div className="edit-field-grid">
               <label>SKU<input value={form.sku} onChange={(event) => set({ sku: event.target.value })} placeholder="Si lo dejas vacio se genera" /></label>

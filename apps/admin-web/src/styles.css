@@ -5789,6 +5789,87 @@ select {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+.stock-intake-view {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 24px;
+}
+
+.stock-intake-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.stock-intake-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.stock-intake-header p {
+  color: var(--muted);
+}
+
+.stock-intake-feedback {
+  margin: 0;
+}
+
+.stock-intake-view .modal-form-shell {
+  overflow: visible;
+  min-height: auto;
+}
+
+.stock-intake-view .inventory-edit-layout {
+  grid-template-columns: 320px minmax(0, 1fr);
+  overflow: visible;
+  padding: 0;
+}
+
+.stock-intake-view .inventory-edit-layout.catalog-choosing {
+  max-width: 1120px;
+}
+
+.stock-intake-view .catalog-picker-results {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: none;
+}
+
+.stock-intake-view .catalog-picker-row {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+.stock-intake-view .catalog-picker-meta {
+  grid-column: 2;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-items: stretch;
+  gap: 10px;
+}
+
+.stock-intake-view .catalog-picker-badges {
+  justify-content: flex-start;
+}
+
+.stock-intake-view .catalog-picker-prices {
+  min-width: 124px;
+}
+
+.stock-intake-view .inventory-edit-preview {
+  top: 14px;
+}
+
+.stock-intake-view .modal-footer {
+  position: sticky;
+  z-index: 20;
+  bottom: 0;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.35);
+}
+
 .inventory-edit-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -6329,6 +6410,14 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .stock-intake-view .inventory-edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-intake-view .catalog-picker-results {
+    grid-template-columns: 1fr;
+  }
+
   .inventory-edit-preview {
     position: static;
     grid-template-columns: 150px minmax(0, 1fr);
@@ -6341,6 +6430,15 @@ select {
 }
 
 @media (max-width: 620px) {
+  .stock-intake-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stock-intake-header .secondary-action {
+    width: 100%;
+  }
+
   .catalog-picker-search {
     grid-template-columns: 1fr;
   }
