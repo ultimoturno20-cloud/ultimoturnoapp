@@ -1,5 +1,132 @@
 # UltimoTurno - estado actual
 
+Actualizado: 2026-09-18
+
+> Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
+> como referencia historica.
+
+## Resumen vigente
+
+- Workspace obligatorio: `D:\UltimoTurno\Stock`.
+- Produccion: `https://ultimoturnoapp-api.vercel.app/`.
+- Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
+- Rama de despliegue: `main`.
+- Ultimo cambio funcional documentado antes de esta actualizacion: `708c9aa`.
+- El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
+  ni recrearlo durante verificaciones.
+- Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
+  solo de frontend y no modificaron la base de ordenes.
+
+## Trabajo completado del 12 al 16 de septiembre
+
+### Claims e importacion
+
+- Se agrego un cargador CSV dentro de cada claim para elegir una seccion,
+  cargar o pegar el archivo, generar una vista previa y agregar solo las filas
+  conciliadas.
+- Se corrigio el error `504` de `Generar vista previa` para CSV del scanner.
+- Se agrego matching de nombres con caracteres japoneses en CSV de MonPrice.
+- Se reparo la recuperacion de imagenes del claim activo y se bloquearon URLs
+  protegidas o no publicas que se rompian en la web.
+
+### Imagenes online
+
+- El bucket esperado es `ultimoturno-images`.
+- Existe un daemon local de produccion en `tools/image-storage-daemon.ts`.
+- Comando: `npm run images:storage:daemon -- --loop`.
+- Lanzador: `Mejorar Calidad Imagenes Online.cmd`.
+- Descarga candidatos al directorio `D:\UltimoTurno\pricecharting-images`, los
+  sube a Supabase Storage y enlaza la URL publica en la base online.
+- Endpoints agregados:
+  - `GET /pricecharting-images/download-candidates?limit=N`
+  - `POST /pricecharting-images/:id/link-public`
+  - `POST /pricecharting-images/:id/download-failed`
+- Los `403`, `404` y `410` se registran con espera de 24 horas para evitar que
+  el daemon repita inmediatamente la misma fuente fallida.
+- Cuando hay backlog de candidatos ya descubiertos, el daemon prioriza subirlos
+  y evita ejecutar la busqueda externa pesada en cada ciclo.
+- Ultima observacion manual conocida: `claim-sin-img=0`, `stock-sin-img=6` y
+  cobertura de catalogo cercana al `23%`. Es una foto operativa, no una garantia
+  actual; consultar los endpoints antes de tomarla como valor presente.
+- `external-index` puede superar los 60 segundos y devolver `504` en Vercel.
+  El daemon sigue con candidatos existentes. Algunas URLs de TCGPlayer responden
+  `403`; ahora quedan en backoff en lugar de trabar la cola.
+
+### PriceCharting
+
+- El token se configura solo por variable de entorno `PRICECHARTING_TOKEN`.
+- Vercel ejecuta `/api/cron/pricecharting-refresh` diariamente a las `09:00 UTC`
+  (`06:00` de Argentina) segun `vercel.json`.
+- La busqueda de imagenes tiene fallback cuando PriceCharting devuelve una
+  pagina de busqueda en lugar de una ficha de producto.
+
+### Ordenes
+
+- Se renovo el tablero con metricas operativas: contactar, vencidas, cobrar,
+  embaladas y entregar.
+- Las tarjetas muestran comprador, estado, total, resumen, mensaje, deuda y
+  progreso de embalaje con colores por estado.
+- Se compacto la cabecera y la navegacion solo en la vista Ordenes para dejar
+  mas altura al tablero y a las tarjetas.
+- Archivos principales: `apps/admin-web/src/main.tsx` y
+  `apps/admin-web/src/styles.css`.
+
+## Commits funcionales recientes
+
+```text
+708c9aa Compact orders workspace chrome
+6539590 Polish orders workspace UI
+c66f66a Back off failed image download sources
+a14d887 Skip image discovery while storage backlog exists
+4ad725e Make image storage daemon production-safe
+4473356 Add online image storage daemon
+85f2234 Handle PriceCharting search fallback for images
+ca6a9a0 Schedule daily PriceCharting refresh
+5aea65a Add image quality repair tools
+0b3bc17 Support Japanese MonPrice CSV names
+24a6ee0 Prevent protected claim image URLs
+9fd2c87 Fix claim image URLs for web
+0f553a6 Repair active claim image recovery
+8b1d530 Fix scanner CSV import preview
+2ebd38d Add claim section CSV loader
+```
+
+## Variables necesarias, sin valores
+
+```ini
+ULTIMOTURNO_ACCESS_KEY=...
+ULTIMOTURNO_DATABASE_URL=...
+ULTIMOTURNO_DATABASE_SSL=true
+ULTIMOTURNO_DATABASE_POOL_MAX=1
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_STORAGE_BUCKET=ultimoturno-images
+PRICECHARTING_TOKEN=...
+PRICECHARTING_IMAGE_DIR=D:\UltimoTurno\pricecharting-images
+```
+
+Nunca copiar valores reales a Git, logs compartidos o documentacion.
+
+## Verificacion y deploy
+
+Antes de subir cambios:
+
+```powershell
+npm run lint
+npm run typecheck
+npm test
+npm run db:verify
+npm run build
+```
+
+Despues de `git push`, comprobar `GET /api/public-status` y confirmar que
+`deployment.commitSha` coincide con el commit enviado. Si no coincide, Vercel
+todavia puede estar construyendo.
+
+---
+
+## Archivo historico al 2026-09-11
+
 Actualizado: 2026-09-11
 
 Este archivo es la memoria corta del proyecto para poder abrir otro chat y
@@ -226,4 +353,3 @@ de5a4f1 Filter reference rows in unified catalog
 
 Si online no refleja el comportamiento esperado, revisar en Vercel si el commit
 activo es el ultimo de `main`.
-

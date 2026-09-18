@@ -1,5 +1,89 @@
 # UltimoTurno - proximos pasos
 
+Actualizado: 2026-09-18
+
+> Las prioridades vigentes estan en esta primera seccion. El plan del
+> 2026-09-11 se conserva debajo como referencia historica.
+
+## Prioridades vigentes
+
+### 1. Completar cobertura de imagenes
+
+- Dejar `Mejorar Calidad Imagenes Online.cmd` ejecutando por lotes.
+- Vigilar que bajen `stock-sin-img` y `claim-sin-img` sin aumentar errores.
+- Mantener el backoff de fuentes `403/404/410`.
+- Dividir o paginar `external-index` si los `504` de Vercel siguen impidiendo
+  descubrir nuevas URLs.
+- Medir por separado cobertura de catalogo, stock y claim; el catalogo completo
+  puede crecer lentamente sin afectar la operacion diaria.
+
+Senal de exito: claim activo y stock operativo sin imagenes rotas, daemon capaz
+de continuar solo y cobertura de catalogo en crecimiento.
+
+### 2. Validar CSV reales de scanner y MonPrice
+
+- Probar archivos con nombres japoneses, BOM UTF-8, comas y comillas.
+- Confirmar que `Generar vista previa` responde dentro del limite de Vercel.
+- Mantener la regla: nada se escribe antes de `Confirmar e importar`.
+- Probar el cargador CSV por seccion sobre el claim activo sin cancelarlo ni
+  eliminarlo.
+
+Senal de exito: el archivo escaneado genera preview, concilia las cartas y solo
+las filas confirmadas llegan a la seccion elegida.
+
+### 3. Seguir compactando Ordenes con datos intactos
+
+- Verificar el tablero en desktop y movil con volumen real.
+- Si todavia falta espacio vertical, ocultar o colapsar la marca superior solo
+  dentro de Ordenes.
+- No cambiar estados, reservas ni queries de persistencia por una mejora visual.
+
+Senal de exito: mas tarjetas visibles y acciones legibles sin modificar una sola
+orden de produccion.
+
+### 4. Robustecer tareas automaticas
+
+- Confirmar diariamente el cron PriceCharting de las `09:00 UTC`.
+- Revisar errores de pool de Supabase y mantener
+  `ULTIMOTURNO_DATABASE_POOL_MAX=1`.
+- Evitar tareas monoliticas que excedan los 60 segundos de Vercel; procesar en
+  lotes reanudables e idempotentes.
+
+### 5. Mejorar calidad de catalogo
+
+- Resolver duplicados y variantes ambiguas.
+- Priorizar imagenes visibles para cartas que existen en stock o claims.
+- Mostrar claramente idioma, acabado y fuente de precio.
+- Mantener PriceCharting y TCGCSV como referencias, no como inventario.
+
+## Prompt para iniciar otro chat
+
+```text
+Estamos trabajando en UltimoTurno. Usa exclusivamente el workspace
+D:\UltimoTurno\Stock; no uses C:\Users\skype\Documents\Stock.
+
+Antes de responder lee AGENTS.md, docs/PROJECT_STATUS.md y docs/NEXT_STEPS.md.
+Revisa git status antes de editar. Produccion es
+https://ultimoturnoapp-api.vercel.app/ con Vercel, Supabase/Postgres y Supabase
+Storage.
+
+Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
+recrees durante pruebas. No pongas secretos en Git.
+
+Trabajo reciente: CSV por seccion de claim, fix de preview de CSV escaneado,
+matching japones de MonPrice, reparacion de imagenes de claims, daemon local que
+descarga/sube/enlaza imagenes en Supabase, cron diario de PriceCharting y
+rediseño compacto de Ordenes sin cambios de base.
+
+Objetivo actual: completar imagenes faltantes y hacer que el proceso automatico
+sea reanudable, evitando 504 de external-index y reintentos continuos de URLs
+TCGPlayer con 403. Luego validar CSV reales y seguir compactando Ordenes.
+```
+
+---
+
+## Archivo historico al 2026-09-11
+
 Actualizado: 2026-09-11
 
 Este archivo marca el orden recomendado para seguir. La idea es evitar gastar
@@ -148,4 +232,3 @@ pool en Vercel/Supabase.
 No pegar secretos completos en archivos versionados. Usar variables de entorno.
 La app online es https://ultimoturnoapp-api.vercel.app/
 ```
-

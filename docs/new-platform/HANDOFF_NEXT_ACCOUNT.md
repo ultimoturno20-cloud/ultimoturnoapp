@@ -1,5 +1,36 @@
 # Traspaso de contexto - UltimoTurno
 
+## Aviso vigente - 2026-09-18
+
+Este documento contiene historia extensa del proyecto. Para estado operativo y
+prioridades actuales usar primero:
+
+1. `AGENTS.md`
+2. `docs/PROJECT_STATUS.md`
+3. `docs/NEXT_STEPS.md`
+
+La plataforma ya no es solo local: produccion corre en Vercel con
+Supabase/Postgres y Supabase Storage. Cualquier afirmacion historica mas abajo
+que diga que no hay Supabase remoto, que no se debe desplegar o que el sistema
+es solo un prototipo queda reemplazada por los tres documentos anteriores.
+
+Reglas que siguen siendo obligatorias:
+
+- usar `D:\UltimoTurno\Stock`;
+- no guardar secretos en Git;
+- preservar el claim activo y las ordenes reales de produccion;
+- revisar `git status` antes de editar;
+- validar y desplegar incrementalmente.
+
+Cambios recientes resumidos: CSV por seccion de claim, preview de scanner
+reparado, matching japones de MonPrice, recuperacion de imagenes en claims,
+daemon de imagenes hacia Supabase, cron diario PriceCharting y tablero de
+Ordenes visualmente renovado/compactado.
+
+---
+
+## Archivo historico
+
 Actualizado: 2026-08-24
 
 Este documento permite continuar el trabajo desde otra cuenta de Codex en la
