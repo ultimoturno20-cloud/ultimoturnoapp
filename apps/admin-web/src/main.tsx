@@ -4219,6 +4219,46 @@ function ClaimsView(props: {
 
       {active ? (
         <div className="claims-workspace">
+          <section className="panel claim-loader claim-loader-top">
+            <div className="section-heading compact-heading">
+              <div><h3>Agregar desde PriceCharting</h3><p>Busca y suma cartas al claim activo.</p></div>
+              <strong>{props.priceChartingCache.status.totalEntries.toLocaleString("es-AR")} en cache</strong>
+            </div>
+            <label className="claim-section-select">Cargar en seccion
+              <select value={selectedSectionId} onChange={(event) => setSelectedSectionId(event.target.value)}>
+                <option value="">Sin seccion</option>
+                {sections.map((section) => <option value={section.id} key={section.id}>{section.name}</option>)}
+              </select>
+            </label>
+            <LanguageGroupSelector value={claimCatalogLanguageGroup} onChange={(languageGroup) => {
+              setClaimCatalogLanguageGroup(languageGroup);
+              setSelectedPriceChartingIds([]);
+              props.onSearchPriceCharting(search, languageGroup);
+            }} />
+            <form className="cache-search" onSubmit={(event) => { event.preventDefault(); props.onSearchPriceCharting(search, claimCatalogLanguageGroup); }}>
+              <label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, expansion, numero o ID" /></label>
+              <button className="primary-action" type="submit"><Icon name="search" />Buscar</button>
+            </form>
+            {selectedPriceChartingIds.length > 0 && (
+              <button className="primary-action" disabled={!selectedPriceChartingIds.length} onClick={addSelected}>
+                <Icon name="plus" />Agregar seleccionadas ({selectedPriceChartingIds.length})
+              </button>
+            )}
+            <div className="claim-pc-results">
+              {claimCatalogEntries.slice(0, 12).map((entry) => (
+                <button className={`claim-pc-row ${selectedPriceChartingIds.includes(entry.priceChartingId) ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => togglePriceCharting(entry.priceChartingId)}>
+                  <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="PC" className="" fallbackClassName="image-placeholder compact-placeholder" />
+                  <div>
+                    <strong>{entry.productName}</strong>
+                    <span>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""}</span>
+                    <small>{languageGroupOptions.find((option) => option.value === entry.languageGroup)?.label || "Ingles"}{claimCatalogStock.get(entry.priceChartingId) ? ` / ${claimCatalogStock.get(entry.priceChartingId)} en stock` : ""}</small>
+                    <MoneyStack usd={entry.loosePriceUsd} blueRate={props.blueRate} compact />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="panel claim-review-panel">
             <div className="section-heading claim-review-heading">
               <div><h3>Mesa de revision</h3><p>Precio final, comprador y tags antes de cerrar.</p></div>
@@ -4335,46 +4375,6 @@ function ClaimsView(props: {
                 </div>
               ) : null}
             </section>
-            <section className="panel claim-loader">
-              <div className="section-heading compact-heading">
-                <div><h3>Agregar desde PriceCharting</h3><p>Busca y suma cartas al claim activo.</p></div>
-                <strong>{props.priceChartingCache.status.totalEntries.toLocaleString("es-AR")} en cache</strong>
-              </div>
-              <label className="claim-section-select">Cargar en seccion
-                <select value={selectedSectionId} onChange={(event) => setSelectedSectionId(event.target.value)}>
-                  <option value="">Sin seccion</option>
-                  {sections.map((section) => <option value={section.id} key={section.id}>{section.name}</option>)}
-                </select>
-              </label>
-              <LanguageGroupSelector value={claimCatalogLanguageGroup} onChange={(languageGroup) => {
-                setClaimCatalogLanguageGroup(languageGroup);
-                setSelectedPriceChartingIds([]);
-                props.onSearchPriceCharting(search, languageGroup);
-              }} />
-              <form className="cache-search" onSubmit={(event) => { event.preventDefault(); props.onSearchPriceCharting(search, claimCatalogLanguageGroup); }}>
-                <label>Buscar<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, expansion, numero o ID" /></label>
-                <button className="primary-action" type="submit"><Icon name="search" />Buscar</button>
-              </form>
-              {selectedPriceChartingIds.length > 0 && (
-                <button className="primary-action" disabled={!selectedPriceChartingIds.length} onClick={addSelected}>
-                  <Icon name="plus" />Agregar seleccionadas ({selectedPriceChartingIds.length})
-                </button>
-              )}
-              <div className="claim-pc-results">
-                {claimCatalogEntries.slice(0, 12).map((entry) => (
-                  <button className={`claim-pc-row ${selectedPriceChartingIds.includes(entry.priceChartingId) ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => togglePriceCharting(entry.priceChartingId)}>
-                    <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="PC" className="" fallbackClassName="image-placeholder compact-placeholder" />
-                    <div>
-                      <strong>{entry.productName}</strong>
-                      <span>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""}</span>
-                      <small>{languageGroupOptions.find((option) => option.value === entry.languageGroup)?.label || "Ingles"}{claimCatalogStock.get(entry.priceChartingId) ? ` / ${claimCatalogStock.get(entry.priceChartingId)} en stock` : ""}</small>
-                      <MoneyStack usd={entry.loosePriceUsd} blueRate={props.blueRate} compact />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-
             <section className="panel claim-frees-panel">
               <h3>Frees</h3>
               <form className="claim-free-form" onSubmit={(event) => {
