@@ -4848,6 +4848,8 @@ function ResellerPortal() {
   const [token, setToken] = useState(() => readLocalStorage(resellerTokenKey));
   const [dashboard, setDashboard] = useState<ResellerDashboard | null>(null);
   const [credentials, setCredentials] = useState({ email: "", password: "" });
+  const [activeTab, setActiveTab] = useState<"sell" | "stock" | "sales">("sell");
+  const [search, setSearch] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
@@ -4881,17 +4883,108 @@ function ResellerPortal() {
   }
   async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); }
 
+  function addToResellerCart(item: ResellerAssignment) {
+    if (item.sellable <= 0) return;
+    setCart((current) => {
+      const line = current[item.inventoryItemId] || { quantity: 0, unitPriceArs: item.priceArs };
+      return { ...current, [item.inventoryItemId]: { ...line, quantity: Math.min(item.sellable, line.quantity + 1) } };
+    });
+  }
+
+  function updateResellerCart(item: ResellerAssignment, patch: Partial<{ quantity: number; unitPriceArs: number }>) {
+    setCart((current) => {
+      const line = current[item.inventoryItemId] || { quantity: 0, unitPriceArs: item.priceArs };
+      const next = {
+        quantity: Math.max(0, Math.min(item.sellable, patch.quantity ?? line.quantity)),
+        unitPriceArs: Math.max(0, patch.unitPriceArs ?? line.unitPriceArs)
+      };
+      if (!next.quantity) {
+        const { [item.inventoryItemId]: _removed, ...rest } = current;
+        return rest;
+      }
+      return { ...current, [item.inventoryItemId]: next };
+    });
+  }
+
   if (!token || !dashboard) return <main className="reseller-portal login"><form className="panel reseller-login" onSubmit={login}><img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" /><h1>Portal de revendedores</h1><p>Ingresa para ver tu consignacion y cargar ventas.</p>{error ? <div className="feedback error">{error}</div> : null}<input required type="email" placeholder="Email" value={credentials.email} onChange={(event) => setCredentials({ ...credentials, email: event.target.value })} /><input required type="password" placeholder="Password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} /><button className="primary-action" disabled={saving}>{saving ? "Ingresando..." : "Ingresar"}</button></form></main>;
+
+  const assigned = dashboard.assignments.filter((item) => item.remaining > 0);
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleAssignments = assigned.filter((item) => !normalizedSearch || [item.name, item.expansion, item.number, item.sku].join(" ").toLowerCase().includes(normalizedSearch));
+  const cartItems = assigned.filter((item) => (cart[item.inventoryItemId]?.quantity || 0) > 0);
   const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
-  return <main className="reseller-portal"><header className="app-header"><div className="brand-lockup"><img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" /><div><h1>{dashboard.reseller.displayName}</h1><p className="subtitle">Consignacion UltimoTurno</p></div></div><div className="header-actions"><button className="secondary-action" onClick={() => void load()}><Icon name="refresh" />Actualizar</button><button className="secondary-action" onClick={() => void logout()}>Salir</button></div></header>
-    {error ? <div className="feedback error">{error}</div> : null}
-    <section className="metrics reseller-metrics"><Metric label="En mano" value={dashboard.summary.remainingUnits} helper="unidades" /><Metric label="Vendibles" value={dashboard.summary.sellableUnits} helper="stock vigente" /><Metric label="Ventas" value={formatArs(dashboard.summary.grossSalesArs)} helper="bruto" /><Metric label="Tu comision" value={formatArs(dashboard.summary.commissionArs)} helper={`${dashboard.reseller.commissionPercent}%`} /><Metric label="A rendir" value={formatArs(dashboard.summary.outstandingArs)} helper="neto pendiente" /></section>
-    <section className="panel"><div className="section-heading"><div><h2>Nueva venta</h2><p>La disponibilidad se valida otra vez al confirmar.</p></div><strong>{formatArs(saleTotal)}</strong></div><div className="reseller-sale-fields"><input placeholder="Cliente" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /><input placeholder="Nota opcional" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
-      <div className="reseller-catalog">{dashboard.assignments.filter((item) => item.remaining > 0).map((item) => { const line = cart[item.inventoryItemId] || { quantity: 0, unitPriceArs: item.priceArs }; return <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-card-art" fallbackClassName="reseller-card-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.sellable} vendible de {item.remaining} en mano</small></div><label>Cant.<input type="number" min="0" max={item.sellable} value={line.quantity} onChange={(event) => setCart({ ...cart, [item.inventoryItemId]: { ...line, quantity: Number(event.target.value) } })} /></label><label>Precio<input type="number" min="0" step="100" value={line.unitPriceArs} onChange={(event) => setCart({ ...cart, [item.inventoryItemId]: { ...line, unitPriceArs: Number(event.target.value) } })} /></label></article>; })}</div>
-      <div className="reseller-sale-footer"><span>Comision estimada: {formatArs(saleTotal * dashboard.reseller.commissionPercent / 100)}</span><button className="primary-action" disabled={saving || !saleTotal} onClick={() => void submitSale()}>{saving ? "Confirmando..." : "Confirmar venta"}</button></div>
-    </section>
-    <section className="panel"><div className="section-heading"><div><h2>Mis ventas</h2><p>Historial confirmado y saldo generado.</p></div></div><div className="reseller-table">{dashboard.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)}</span><b>{formatArs(sale.commissionArs)} comision</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span></div>)}</div></section>
-  </main>;
+  const commission = saleTotal * dashboard.reseller.commissionPercent / 100;
+
+  return (
+    <main className="reseller-portal redesigned">
+      <header className="reseller-portal-header">
+        <div className="brand-lockup"><img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" /><div><h1>{dashboard.reseller.displayName}</h1><p className="subtitle">Panel de consignacion</p></div></div>
+        <div className="header-actions"><button className="icon-action" title="Actualizar" aria-label="Actualizar" onClick={() => void load()}><Icon name="refresh" /></button><button className="secondary-action" onClick={() => void logout()}>Salir</button></div>
+      </header>
+
+      {error ? <div className="feedback error">{error}</div> : null}
+
+      <section className="reseller-summary-strip">
+        <div><span>Disponible para vender</span><strong>{dashboard.summary.sellableUnits}</strong><small>de {dashboard.summary.remainingUnits} en mano</small></div>
+        <div><span>Mi comision acumulada</span><strong>{formatArs(dashboard.summary.commissionArs)}</strong><small>{dashboard.reseller.commissionPercent}% por venta</small></div>
+        <div className="highlight"><span>Saldo a rendir</span><strong>{formatArs(dashboard.summary.outstandingArs)}</strong><small>{formatArs(dashboard.summary.settledArs)} ya rendido</small></div>
+      </section>
+
+      <nav className="reseller-tabs" aria-label="Secciones del portal">
+        <button className={activeTab === "sell" ? "active" : ""} onClick={() => setActiveTab("sell")}>Nueva venta{cartItems.length ? ` (${cartItems.length})` : ""}</button>
+        <button className={activeTab === "stock" ? "active" : ""} onClick={() => setActiveTab("stock")}>Mi stock ({dashboard.summary.remainingUnits})</button>
+        <button className={activeTab === "sales" ? "active" : ""} onClick={() => setActiveTab("sales")}>Mis ventas ({dashboard.sales.length})</button>
+      </nav>
+
+      {activeTab === "sell" ? (
+        <section className="reseller-sell-layout">
+          <div className="reseller-product-browser">
+            <div className="reseller-section-heading"><div><h2>Elegir cartas</h2><p>Agrega al carrito lo que vendiste.</p></div><label className="reseller-search"><Icon name="search" /><input placeholder="Buscar por carta, expansion o numero" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
+            {visibleAssignments.length ? <div className="reseller-product-grid">{visibleAssignments.map((item) => {
+              const inCart = cart[item.inventoryItemId]?.quantity || 0;
+              return <article className={`reseller-product ${item.sellable <= 0 ? "unavailable" : ""}`} key={item.inventoryItemId}>
+                <CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" />
+                <div className="reseller-product-copy"><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.sellable > 0 ? `${item.sellable} disponible${item.sellable === 1 ? "" : "s"}` : "Sin stock disponible"}</small></div>
+                <div className="reseller-product-action"><b>{formatArs(item.priceArs)}</b><button className={inCart ? "secondary-action" : "primary-action"} disabled={item.sellable <= 0 || inCart >= item.sellable} onClick={() => addToResellerCart(item)}><Icon name="plus" />{inCart ? `${inCart} en carrito` : "Agregar"}</button></div>
+              </article>;
+            })}</div> : <EmptyState title="No hay cartas para mostrar" body={search ? "Proba con otro nombre, expansion o numero." : "Todavia no tenes stock asignado disponible para vender."} />}
+          </div>
+
+          <aside className="reseller-checkout">
+            <div className="reseller-checkout-title"><div><span>Venta actual</span><h2>{cartItems.length ? `${cartItems.reduce((sum, item) => sum + cart[item.inventoryItemId].quantity, 0)} unidad(es)` : "Carrito vacio"}</h2></div><strong>{formatArs(saleTotal)}</strong></div>
+            {cartItems.length ? <div className="reseller-cart-lines">{cartItems.map((item) => {
+              const line = cart[item.inventoryItemId];
+              return <div className="reseller-cart-line" key={item.inventoryItemId}>
+                <div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div>
+                <button className="cart-step" aria-label={`Quitar una unidad de ${item.name}`} onClick={() => updateResellerCart(item, { quantity: line.quantity - 1 })}>−</button>
+                <b>{line.quantity}</b>
+                <button className="cart-step" aria-label={`Agregar una unidad de ${item.name}`} disabled={line.quantity >= item.sellable} onClick={() => updateResellerCart(item, { quantity: line.quantity + 1 })}>+</button>
+                <label>Precio ARS<input type="number" min="0" step="100" value={line.unitPriceArs} onChange={(event) => updateResellerCart(item, { unitPriceArs: Number(event.target.value) })} /></label>
+                <strong>{formatArs(line.quantity * line.unitPriceArs)}</strong>
+                <button className="cart-remove" aria-label={`Eliminar ${item.name}`} onClick={() => updateResellerCart(item, { quantity: 0 })}><Icon name="close" /></button>
+              </div>;
+            })}</div> : <div className="reseller-cart-empty"><Icon name="cart" /><strong>Elegí una carta</strong><span>Usá “Agregar” para armar la venta.</span></div>}
+
+            <div className="reseller-buyer-fields">
+              <label>Comprador <span>opcional</span><input placeholder="Nombre o usuario" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
+              <label>Nota <span>opcional</span><input placeholder="Entrega, pago u observacion" value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+            </div>
+            <div className="reseller-totals"><span>Total de venta <b>{formatArs(saleTotal)}</b></span><span>Tu comision ({dashboard.reseller.commissionPercent}%) <b>{formatArs(commission)}</b></span><span className="net">A rendir a UltimoTurno <b>{formatArs(saleTotal - commission)}</b></span></div>
+            <button className="primary-action reseller-confirm" disabled={saving || !cartItems.length || saleTotal <= 0} onClick={() => void submitSale()}>{saving ? "Confirmando..." : "Confirmar venta"}</button>
+            <small className="reseller-validation-note">El stock se verifica nuevamente al confirmar.</small>
+          </aside>
+        </section>
+      ) : null}
+
+      {activeTab === "stock" ? (
+        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mi stock en consignacion</h2><p>Lo que tenes en mano y lo que sigue disponible para vender.</p></div></div><div className="reseller-stock-list">{assigned.map((item) => <div key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><span><strong>{item.name}</strong><small>{item.expansion} #{item.number || "-"}</small></span><b>{item.remaining} en mano</b><em className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</em><strong>{formatArs(item.priceArs)}</strong></div>)}</div></section>
+      ) : null}
+
+      {activeTab === "sales" ? (
+        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mis ventas</h2><p>Historial, comision y saldo generado.</p></div></div>{dashboard.sales.length ? <div className="reseller-sales-list">{dashboard.sales.map((sale) => <article key={sale.id}><div><span>{formatDate(sale.soldAt)}</span><strong>{sale.customerName || "Venta sin nombre"}</strong><small>{sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</small></div><span><small>Total</small><b>{formatArs(sale.grossTotalArs)}</b></span><span><small>Mi comision</small><b>{formatArs(sale.commissionArs)}</b></span><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span></article>)}</div> : <EmptyState title="Todavia no hay ventas" body="Las ventas confirmadas apareceran aca." />}</section>
+      ) : null}
+    </main>
+  );
 }
 
 function AdminView(props: {
