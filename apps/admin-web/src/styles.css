@@ -11649,10 +11649,18 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-sales-list article { display: grid; grid-template-columns: minmax(260px, 1fr) 130px 130px 100px; gap: 16px; align-items: center; padding: 14px; background: var(--surface); border-bottom: 1px solid var(--border-soft); }
 .reseller-sales-list article > div, .reseller-sales-list article > span { display: grid; gap: 4px; }
 .reseller-orders-list { display: grid; gap: 8px; }
-.reseller-orders-list article { display: grid; grid-template-columns: minmax(260px, 1fr) 130px 100px minmax(210px, auto); gap: 16px; align-items: center; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-orders-list article { display: grid; grid-template-columns: minmax(240px, 1fr) 120px minmax(160px, auto) minmax(260px, auto) minmax(210px, auto); gap: 16px; align-items: center; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-orders-list article.cancelled { opacity: .62; }
 .reseller-order-main { display: grid; gap: 4px; min-width: 0; }
 .reseller-order-main span, .reseller-order-main small, .reseller-order-main em { color: var(--muted); font-size: 12px; }
 .reseller-order-main em { font-style: normal; }
+.reseller-order-statuses { display: flex; flex-wrap: wrap; gap: 6px; }
+.reseller-order-workflow { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 8px; }
+.reseller-order-workflow label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.reseller-order-workflow select { min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-strong); color: var(--text); font: inherit; text-transform: none; }
+.status-pill.to_pack { border-color: #cb9b35; color: #ffd578; }
+.status-pill.to_deliver { border-color: #477cca; color: #8fbdff; }
+.status-pill.delivered, .status-pill.paid { border-color: #2d865d; color: #73d9a9; }
 .reseller-order-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .status-pill.pending { color: #f5c542; }
 .status-pill.converted { color: #84e3af; }
@@ -11680,7 +11688,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-section-heading { align-items: stretch; flex-direction: column; }
   .reseller-search { width: 100%; }
   .reseller-orders-list article { grid-template-columns: minmax(0, 1fr) auto; }
-  .reseller-order-main, .reseller-order-actions { grid-column: 1 / -1; }
+  .reseller-order-main, .reseller-order-workflow, .reseller-order-actions { grid-column: 1 / -1; }
 }
 
 @media (max-width: 560px) {

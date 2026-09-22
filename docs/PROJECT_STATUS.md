@@ -342,9 +342,11 @@ MVP implementado localmente:
   venta solo despues de revalidar disponibilidad.
 - Vista de stock global para revendedores, buscable y de solo lectura; no
   expone costos de compra ni acciones administrativas.
+- Seguimiento operativo de pedidos confirmados con preparacion (`A embalar`,
+  `A entregar`, `Entregado`) y cobro (`Pendiente`, `Pagado`) independientes.
 
-Las migraciones son `0032_reseller_consignment.sql` y
-`0033_reseller_orders.sql`. No se aplicaron cambios ni
+Las migraciones son `0032_reseller_consignment.sql`,
+`0033_reseller_orders.sql` y `0034_reseller_order_workflow.sql`. No se aplicaron cambios ni
 datos de prueba sobre produccion durante la implementacion.
 
 Verificacion del MVP:

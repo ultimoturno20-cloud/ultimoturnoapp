@@ -96,6 +96,7 @@ import {
   cancelResellerSale,
   cancelOwnResellerOrder,
   confirmOwnResellerOrder,
+  updateOwnResellerOrderWorkflow,
   loginUser,
   logoutUser,
   upsertInventoryItem,
@@ -3609,6 +3610,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const db = await dbPromise;
       const reseller = await requireResellerUser(request);
       sendJson(response, 200, await cancelOwnResellerOrder(db, ownResellerOrderCancelMatch[1], reseller));
+      return;
+    }
+
+    const ownResellerOrderStatusMatch = url.pathname.match(/^\/reseller\/portal\/orders\/([^/]+)\/status$/);
+    if (ownResellerOrderStatusMatch && request.method === "PUT") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      const body = await readJson<{ fulfillmentStatus?: "to_pack" | "to_deliver" | "delivered"; paymentStatus?: "pending" | "paid" }>(request);
+      sendJson(response, 200, await updateOwnResellerOrderWorkflow(db, ownResellerOrderStatusMatch[1], body, reseller));
       return;
     }
 

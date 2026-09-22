@@ -15,6 +15,7 @@ Actualizado: 2026-09-21
   prioridad de UltimoTurno online.
 - Probar venta, anulacion, devolucion y rendicion con el piloto.
 - Probar pedidos pendientes y su conversion a venta luego de una venta central.
+- Validar con el piloto los estados de preparacion, entrega y pago de pedidos.
 - Confirmar con los revendedores que el stock global de solo lectura muestra la
   informacion comercial necesaria sin exponer datos internos.
 - Definir si el revendedor puede solicitar una anulacion o si queda solo en

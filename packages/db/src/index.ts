@@ -176,7 +176,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -370,9 +370,14 @@ export type ResellerOrder = {
   resellerUserId: string;
   customerName: string;
   status: "pending" | "converted" | "cancelled";
+  fulfillmentStatus: "to_pack" | "to_deliver" | "delivered";
+  paymentStatus: "pending" | "paid";
   totalArs: number;
   notes: string;
   convertedSaleId: string;
+  packedAt?: string;
+  deliveredAt?: string;
+  paidAt?: string;
   createdAt: string;
   lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }>;
 };
@@ -1172,8 +1177,9 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
 
 async function listResellerOrders(db: PGlite, businessId: string, resellerUserId: string): Promise<ResellerOrder[]> {
   const result = await db.query<Record<string, unknown>>(`
-    select ro.id, ro.reseller_user_id, ro.customer_name, ro.status, ro.total_ars, ro.notes,
-      ro.converted_sale_id, ro.created_at, roi.inventory_item_id, roi.quantity, roi.unit_price_ars,
+    select ro.id, ro.reseller_user_id, ro.customer_name, ro.status, ro.fulfillment_status, ro.payment_status,
+      ro.total_ars, ro.notes, ro.converted_sale_id, ro.packed_at, ro.delivered_at, ro.paid_at, ro.created_at,
+      roi.inventory_item_id, roi.quantity, roi.unit_price_ars,
       roi.line_total_ars, ii.sku, p.name
     from reseller_orders ro
     left join reseller_order_items roi on roi.order_id = ro.id
@@ -1188,7 +1194,11 @@ async function listResellerOrders(db: PGlite, businessId: string, resellerUserId
     const order = records.get(id) || {
       id, resellerUserId: String(row.reseller_user_id), customerName: String(row.customer_name || ""),
       status: String(row.status) as ResellerOrder["status"], totalArs: Number(row.total_ars || 0), notes: String(row.notes || ""),
-      convertedSaleId: String(row.converted_sale_id || ""), createdAt: String(row.created_at), lines: []
+      fulfillmentStatus: String(row.fulfillment_status || "to_pack") as ResellerOrder["fulfillmentStatus"],
+      paymentStatus: String(row.payment_status || "pending") as ResellerOrder["paymentStatus"],
+      convertedSaleId: String(row.converted_sale_id || ""), packedAt: row.packed_at ? String(row.packed_at) : undefined,
+      deliveredAt: row.delivered_at ? String(row.delivered_at) : undefined, paidAt: row.paid_at ? String(row.paid_at) : undefined,
+      createdAt: String(row.created_at), lines: []
     };
     if (row.inventory_item_id) order.lines.push({ inventoryItemId: String(row.inventory_item_id), sku: String(row.sku || ""), name: String(row.name || ""), quantity: Number(row.quantity), unitPriceArs: Number(row.unit_price_ars), lineTotalArs: Number(row.line_total_ars) });
     records.set(id, order);
@@ -1309,6 +1319,42 @@ export async function cancelOwnResellerOrder(db: PGlite, orderId: string, actor:
   `, [orderId, actor.businessId, actor.id]);
   if (!result.rows[0]) throw new Error("El pedido no existe o ya no esta pendiente.");
   await writeAudit(db, actor, "reseller.order.cancel", "reseller_order", orderId, result.rows[0], { status: "cancelled" });
+  return getResellerDashboard(db, actor.id, actor.businessId);
+}
+
+export async function updateOwnResellerOrderWorkflow(
+  db: PGlite,
+  orderId: string,
+  input: { fulfillmentStatus?: ResellerOrder["fulfillmentStatus"]; paymentStatus?: ResellerOrder["paymentStatus"] },
+  actor: AuthenticatedUser
+): Promise<ResellerDashboard> {
+  const fulfillmentStatuses: ResellerOrder["fulfillmentStatus"][] = ["to_pack", "to_deliver", "delivered"];
+  const paymentStatuses: ResellerOrder["paymentStatus"][] = ["pending", "paid"];
+  if (input.fulfillmentStatus && !fulfillmentStatuses.includes(input.fulfillmentStatus)) throw new Error("Estado de preparacion invalido.");
+  if (input.paymentStatus && !paymentStatuses.includes(input.paymentStatus)) throw new Error("Estado de pago invalido.");
+  if (!input.fulfillmentStatus && !input.paymentStatus) throw new Error("No se envio ningun estado para actualizar.");
+
+  const current = await db.query<Record<string, unknown>>(`
+    select * from reseller_orders
+    where id = $1 and business_id = $2 and reseller_user_id = $3
+  `, [orderId, actor.businessId, actor.id]);
+  const previous = current.rows[0];
+  if (!previous || previous.status !== "converted") throw new Error("Primero confirma la venta para gestionar la entrega y el pago.");
+  const fulfillmentStatus = input.fulfillmentStatus || String(previous.fulfillment_status) as ResellerOrder["fulfillmentStatus"];
+  const paymentStatus = input.paymentStatus || String(previous.payment_status) as ResellerOrder["paymentStatus"];
+  const result = await db.query<Record<string, unknown>>(`
+    update reseller_orders set
+      fulfillment_status = $4,
+      payment_status = $5,
+      packed_at = case when $4 in ('to_deliver', 'delivered') then coalesce(packed_at, now()) else null end,
+      delivered_at = case when $4 = 'delivered' then coalesce(delivered_at, now()) else null end,
+      paid_at = case when $5 = 'paid' then coalesce(paid_at, now()) else null end,
+      updated_at = now()
+    where id = $1 and business_id = $2 and reseller_user_id = $3 and status = 'converted'
+    returning *
+  `, [orderId, actor.businessId, actor.id, fulfillmentStatus, paymentStatus]);
+  if (!result.rows[0]) throw new Error("No se pudo actualizar el pedido.");
+  await writeAudit(db, actor, "reseller.order.workflow", "reseller_order", orderId, previous, result.rows[0]);
   return getResellerDashboard(db, actor.id, actor.businessId);
 }
 

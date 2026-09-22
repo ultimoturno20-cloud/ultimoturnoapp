@@ -5,7 +5,7 @@ import "./styles.css";
 type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
-type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; totalArs: number; notes: string; convertedSaleId: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
+type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; fulfillmentStatus: "to_pack" | "to_deliver" | "delivered"; paymentStatus: "pending" | "paid"; totalArs: number; notes: string; convertedSaleId: string; packedAt?: string; deliveredAt?: string; paidAt?: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
 type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
@@ -4906,6 +4906,14 @@ function ResellerPortal() {
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
   }
+  async function updateOwnOrderWorkflow(orderId: string, patch: Partial<Pick<ResellerOrder, "fulfillmentStatus" | "paymentStatus">>) {
+    setSaving(true);
+    try {
+      setDashboard(await api<ResellerDashboard>(`/reseller/portal/orders/${orderId}/status`, { token, method: "PUT", body: patch }));
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSaving(false); }
+  }
   async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); }
 
   function addToResellerCart(item: ResellerAssignment) {
@@ -4959,7 +4967,7 @@ function ResellerPortal() {
 
       <nav className="reseller-tabs" aria-label="Secciones del portal">
         <button className={activeTab === "sell" ? "active" : ""} onClick={() => setActiveTab("sell")}>Nueva venta{cartItems.length ? ` (${cartItems.length})` : ""}</button>
-        <button className={activeTab === "orders" ? "active" : ""} onClick={() => setActiveTab("orders")}>Pedidos ({dashboard.orders.filter((order) => order.status === "pending").length})</button>
+        <button className={activeTab === "orders" ? "active" : ""} onClick={() => setActiveTab("orders")}>Pedidos ({dashboard.orders.filter((order) => order.status === "pending" || (order.status === "converted" && order.fulfillmentStatus !== "delivered")).length})</button>
         <button className={activeTab === "stock" ? "active" : ""} onClick={() => setActiveTab("stock")}>Mi stock ({dashboard.summary.remainingUnits})</button>
         <button className={activeTab === "global" ? "active" : ""} onClick={() => setActiveTab("global")}>Stock global ({dashboard.globalStock.length})</button>
         <button className={activeTab === "sales" ? "active" : ""} onClick={() => setActiveTab("sales")}>Mis ventas ({dashboard.sales.length})</button>
@@ -5007,10 +5015,18 @@ function ResellerPortal() {
 
       {activeTab === "orders" ? (
         <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mis pedidos</h2><p>Seguimiento propio. Guardarlos no reserva ni descuenta stock.</p></div><button className="primary-action" onClick={() => setActiveTab("sell")}><Icon name="plus" />Nuevo pedido</button></div>
-          {dashboard.orders.length ? <div className="reseller-orders-list">{dashboard.orders.map((order) => <article key={order.id}>
+          {dashboard.orders.length ? <div className="reseller-orders-list">{dashboard.orders.map((order) => <article className={order.status === "cancelled" ? "cancelled" : ""} key={order.id}>
             <div className="reseller-order-main"><span>{formatDate(order.createdAt)}</span><strong>{order.customerName || "Pedido sin nombre"}</strong><small>{order.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</small>{order.notes ? <em>{order.notes}</em> : null}</div>
             <strong>{formatArs(order.totalArs)}</strong>
-            <span className={`status-pill ${order.status}`}>{order.status === "pending" ? "Pendiente" : order.status === "converted" ? "Vendido" : "Cancelado"}</span>
+            <div className="reseller-order-statuses">
+              {order.status === "pending" ? <span className="status-pill pending">Sin confirmar</span> : null}
+              {order.status === "cancelled" ? <span className="status-pill cancelled">Cancelado</span> : null}
+              {order.status === "converted" ? <><span className={`status-pill ${order.fulfillmentStatus}`}>{order.fulfillmentStatus === "to_pack" ? "A embalar" : order.fulfillmentStatus === "to_deliver" ? "A entregar" : "Entregado"}</span><span className={`status-pill ${order.paymentStatus}`}>{order.paymentStatus === "paid" ? "Pagado" : "Pago pendiente"}</span></> : null}
+            </div>
+            {order.status === "converted" ? <div className="reseller-order-workflow">
+              <label>Preparacion<select disabled={saving} value={order.fulfillmentStatus} onChange={(event) => void updateOwnOrderWorkflow(order.id, { fulfillmentStatus: event.target.value as ResellerOrder["fulfillmentStatus"] })}><option value="to_pack">A embalar</option><option value="to_deliver">A entregar</option><option value="delivered">Entregado</option></select></label>
+              <label>Cobro<select disabled={saving} value={order.paymentStatus} onChange={(event) => void updateOwnOrderWorkflow(order.id, { paymentStatus: event.target.value as ResellerOrder["paymentStatus"] })}><option value="pending">Pendiente</option><option value="paid">Pagado</option></select></label>
+            </div> : null}
             <div className="reseller-order-actions">{order.status === "pending" ? <><button className="secondary-action" disabled={saving} onClick={() => void updateOwnOrder(order.id, "cancel")}>Cancelar</button><button className="primary-action" disabled={saving} onClick={() => void updateOwnOrder(order.id, "confirm")}>Confirmar venta</button></> : null}</div>
           </article>)}</div> : <EmptyState title="Todavia no hay pedidos" body="Arma un carrito y elegi Guardar pedido para seguirlo sin descontar stock." />}
         </section>

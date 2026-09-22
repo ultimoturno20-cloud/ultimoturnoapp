@@ -18,6 +18,7 @@ import {
   getResellerDashboard,
   listStockForBusiness,
   loginUser,
+  updateOwnResellerOrderWorkflow,
   upsertInventoryItem
 } from "./index.js";
 
@@ -64,6 +65,9 @@ it("keeps consigned stock available centrally and validates real stock when a re
     lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12000 }]
   }, reseller!);
   const pendingOrder = dashboard.orders.find((order) => order.status === "pending")!;
+  assert.equal(pendingOrder.fulfillmentStatus, "to_pack");
+  assert.equal(pendingOrder.paymentStatus, "pending");
+  await assert.rejects(() => updateOwnResellerOrderWorkflow(db, pendingOrder.id, { fulfillmentStatus: "to_deliver" }, reseller!), /Primero confirma la venta/);
 
   await createSale(db, {
     customerName: "Venta central",
@@ -83,6 +87,14 @@ it("keeps consigned stock available centrally and validates real stock when a re
   dashboard = await confirmOwnResellerOrder(db, pendingOrder.id, reseller!);
   const sale = dashboard.sales[0];
   assert.equal(dashboard.orders.find((order) => order.id === pendingOrder.id)?.status, "converted");
+  dashboard = await updateOwnResellerOrderWorkflow(db, pendingOrder.id, { fulfillmentStatus: "to_deliver", paymentStatus: "paid" }, reseller!);
+  const readyOrder = dashboard.orders.find((order) => order.id === pendingOrder.id)!;
+  assert.equal(readyOrder.fulfillmentStatus, "to_deliver");
+  assert.equal(readyOrder.paymentStatus, "paid");
+  assert.ok(readyOrder.packedAt);
+  assert.ok(readyOrder.paidAt);
+  dashboard = await updateOwnResellerOrderWorkflow(db, pendingOrder.id, { fulfillmentStatus: "delivered" }, reseller!);
+  assert.ok(dashboard.orders.find((order) => order.id === pendingOrder.id)?.deliveredAt);
   assert.equal(sale.commissionArs, 2400);
   assert.equal(sale.netDueArs, 9600);
   assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].quantityOnHand, 0);
