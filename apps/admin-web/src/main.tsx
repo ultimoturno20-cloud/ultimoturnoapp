@@ -2,7 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "admin";
+type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
+type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
+type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
+type ResellerDashboard = {
+  reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
+  assignments: ResellerAssignment[];
+  sales: ResellerSale[];
+  settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
+  summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
+};
 type AvailabilityFilter = "all" | "available" | "reserved" | "out";
 type LanguageGroupFilter = "all" | "english" | "japanese" | "chinese";
 type SortMode = "name" | "expansion" | "number" | "price" | "quantity";
@@ -2180,6 +2189,7 @@ function App() {
             <NavButton icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
             <NavButton icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
             <NavButton icon="cart" active={view === "mobile-intake"} onClick={() => setView("mobile-intake")}>Carga movil</NavButton>
+            <NavButton icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Revendedores</NavButton>
             <NavButton icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
             <NavButton icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
             <NavButton icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
@@ -2414,6 +2424,7 @@ function App() {
           onExit={() => setView("dashboard")}
         />
       ) : null}
+      {view === "resellers" ? <ResellersAdminView stock={stock.items} /> : null}
       {view === "admin" ? (
         <AdminView
           environment={environment}
@@ -4708,6 +4719,179 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
       </section>
     </section>
   );
+}
+
+function ResellersAdminView({ stock }: { stock: StockRow[] }) {
+  const [resellers, setResellers] = useState<ResellerDashboard[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20 });
+  const [stockQuery, setStockQuery] = useState("");
+  const [assignItemId, setAssignItemId] = useState("");
+  const [assignQuantity, setAssignQuantity] = useState(1);
+  const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await api<{ resellers: ResellerDashboard[] }>("/resellers");
+      setResellers(data.resellers);
+      setSelectedId((current) => current || data.resellers[0]?.reseller.userId || "");
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+  const replace = (dashboard: ResellerDashboard) => {
+    setResellers((current) => current.map((item) => item.reseller.userId === dashboard.reseller.userId ? dashboard : item));
+  };
+  const visibleStock = stock.filter((item) => item.quantityOnHand > 0 && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(stockQuery.toLowerCase())).slice(0, 30);
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const result = await api<{ reseller: ResellerDashboard }>("/resellers", { method: "POST", body: form });
+      setResellers((current) => [result.reseller, ...current]);
+      setSelectedId(result.reseller.reseller.userId);
+      setForm({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20 });
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  async function assign() {
+    if (!selected || !assignItemId) return;
+    try {
+      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments`, { method: "POST", body: { inventoryItemId: assignItemId, quantity: assignQuantity } }));
+      setAssignItemId("");
+      setAssignQuantity(1);
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  async function registerReturn(item: ResellerAssignment) {
+    if (!selected) return;
+    const raw = window.prompt(`Unidades devueltas de ${item.name}`, "1");
+    if (!raw) return;
+    try { replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/returns`, { method: "POST", body: { inventoryItemId: item.inventoryItemId, quantity: Number(raw) } })); }
+    catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  async function settle() {
+    if (!selected) return;
+    const raw = window.prompt("Importe recibido en ARS", String(Math.round(selected.summary.outstandingArs)));
+    if (!raw) return;
+    const note = window.prompt("Nota de la rendicion", "Rendicion de cuenta") || "";
+    try { replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/settlements`, { method: "POST", body: { amountArs: Number(raw), note } })); }
+    catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  async function cancelSale(sale: ResellerSale) {
+    if (!window.confirm(`Anular la venta a ${sale.customerName} y reponer ${sale.lines.reduce((sum, line) => sum + line.quantity, 0)} unidad(es)?`)) return;
+    try { replace(await api<ResellerDashboard>(`/resellers/sales/${sale.id}/cancel`, { method: "POST" })); }
+    catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  return (
+    <section className="view reseller-admin-view">
+      <div className="section-heading"><div><h2>Revendedores</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div><a className="secondary-action" href="?revendedor=1" target="_blank" rel="noreferrer">Abrir portal</a></div>
+      {error ? <div className="feedback error">{error}</div> : null}
+      <div className="reseller-layout">
+        <aside className="panel reseller-sidebar">
+          <h3>Equipo</h3>
+          {loading ? <p className="muted">Cargando...</p> : null}
+          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}</strong><span>{formatArs(item.summary.outstandingArs)} a rendir</span></button>)}
+          <form className="reseller-create" onSubmit={create}>
+            <h3>Nuevo revendedor</h3>
+            <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
+            <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            <input required minLength={8} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+            <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
+            <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
+          </form>
+        </aside>
+        <div className="reseller-workspace">
+          {!selected ? <EmptyState title="Sin revendedores" body="Crea el primer usuario para comenzar a asignar mercaderia." /> : <>
+            <section className="metrics reseller-metrics">
+              <Metric label="Consignadas" value={selected.summary.remainingUnits} helper="unidades pendientes" />
+              <Metric label="Vendibles ahora" value={selected.summary.sellableUnits} helper="segun stock real" />
+              <Metric label="Ventas" value={formatArs(selected.summary.grossSalesArs)} helper="bruto confirmado" />
+              <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
+              <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} />
+            </section>
+            <section className="panel">
+              <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
+              <div className="reseller-assign-controls">
+                <input placeholder="Buscar carta" value={stockQuery} onChange={(event) => setStockQuery(event.target.value)} />
+                <select value={assignItemId} onChange={(event) => setAssignItemId(event.target.value)}><option value="">Elegir carta</option>{visibleStock.map((item) => <option key={item.id} value={item.id}>{item.product.name} - {item.product.expansion} #{item.product.number || "-"} ({item.quantityOnHand} stock)</option>)}</select>
+                <input type="number" min="1" value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} />
+                <button className="primary-action" onClick={() => void assign()} disabled={!assignItemId}>Asignar</button>
+              </div>
+            </section>
+            <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero.</p></div></div>
+              <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b><button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button></div>)}</div>
+            </section>
+            <section className="panel"><div className="section-heading"><div><h3>Ventas y rendiciones</h3><p>Saldo neto luego de comision.</p></div><button className="primary-action" disabled={!selected.summary.outstandingArs} onClick={() => void settle()}>Registrar rendicion</button></div>
+              <div className="reseller-table">{selected.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)} bruto</span><b>{formatArs(sale.netDueArs)} neto</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span>{sale.status === "confirmed" ? <button className="secondary-action" onClick={() => void cancelSale(sale)}>Anular</button> : <span />}</div>)}</div>
+            </section>
+          </>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const resellerTokenKey = "ultimoturno_reseller_token";
+
+function ResellerPortal() {
+  const [token, setToken] = useState(() => readLocalStorage(resellerTokenKey));
+  const [dashboard, setDashboard] = useState<ResellerDashboard | null>(null);
+  const [credentials, setCredentials] = useState({ email: "", password: "" });
+  const [customerName, setCustomerName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const load = async (sessionToken = token) => {
+    if (!sessionToken) return;
+    try { setDashboard(await api<ResellerDashboard>("/reseller/portal", { token: sessionToken })); setError(""); }
+    catch (nextError) { if (isAccessError(nextError)) { removeLocalStorage(resellerTokenKey); setToken(""); } setError(errorMessage(nextError)); }
+  };
+  useEffect(() => { void load(); }, [token]);
+
+  async function login(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const result = await api<{ token: string }>("/reseller/auth/login", { method: "POST", body: credentials });
+      writeLocalStorage(resellerTokenKey, result.token); setToken(result.token); setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSaving(false); }
+  }
+  async function submitSale() {
+    const lines = Object.entries(cart).filter(([, line]) => line.quantity > 0).map(([inventoryItemId, line]) => ({ inventoryItemId, ...line }));
+    if (!lines.length) { setError("Agrega al menos una carta a la venta."); return; }
+    setSaving(true);
+    try {
+      await api("/reseller/portal/sales", { token, method: "POST", body: { customerName, notes, lines } });
+      setCart({}); setCustomerName(""); setNotes(""); await load();
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSaving(false); }
+  }
+  async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); }
+
+  if (!token || !dashboard) return <main className="reseller-portal login"><form className="panel reseller-login" onSubmit={login}><img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" /><h1>Portal de revendedores</h1><p>Ingresa para ver tu consignacion y cargar ventas.</p>{error ? <div className="feedback error">{error}</div> : null}<input required type="email" placeholder="Email" value={credentials.email} onChange={(event) => setCredentials({ ...credentials, email: event.target.value })} /><input required type="password" placeholder="Password" value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })} /><button className="primary-action" disabled={saving}>{saving ? "Ingresando..." : "Ingresar"}</button></form></main>;
+  const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
+  return <main className="reseller-portal"><header className="app-header"><div className="brand-lockup"><img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" /><div><h1>{dashboard.reseller.displayName}</h1><p className="subtitle">Consignacion UltimoTurno</p></div></div><div className="header-actions"><button className="secondary-action" onClick={() => void load()}><Icon name="refresh" />Actualizar</button><button className="secondary-action" onClick={() => void logout()}>Salir</button></div></header>
+    {error ? <div className="feedback error">{error}</div> : null}
+    <section className="metrics reseller-metrics"><Metric label="En mano" value={dashboard.summary.remainingUnits} helper="unidades" /><Metric label="Vendibles" value={dashboard.summary.sellableUnits} helper="stock vigente" /><Metric label="Ventas" value={formatArs(dashboard.summary.grossSalesArs)} helper="bruto" /><Metric label="Tu comision" value={formatArs(dashboard.summary.commissionArs)} helper={`${dashboard.reseller.commissionPercent}%`} /><Metric label="A rendir" value={formatArs(dashboard.summary.outstandingArs)} helper="neto pendiente" /></section>
+    <section className="panel"><div className="section-heading"><div><h2>Nueva venta</h2><p>La disponibilidad se valida otra vez al confirmar.</p></div><strong>{formatArs(saleTotal)}</strong></div><div className="reseller-sale-fields"><input placeholder="Cliente" value={customerName} onChange={(event) => setCustomerName(event.target.value)} /><input placeholder="Nota opcional" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>
+      <div className="reseller-catalog">{dashboard.assignments.filter((item) => item.remaining > 0).map((item) => { const line = cart[item.inventoryItemId] || { quantity: 0, unitPriceArs: item.priceArs }; return <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-card-art" fallbackClassName="reseller-card-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.sellable} vendible de {item.remaining} en mano</small></div><label>Cant.<input type="number" min="0" max={item.sellable} value={line.quantity} onChange={(event) => setCart({ ...cart, [item.inventoryItemId]: { ...line, quantity: Number(event.target.value) } })} /></label><label>Precio<input type="number" min="0" step="100" value={line.unitPriceArs} onChange={(event) => setCart({ ...cart, [item.inventoryItemId]: { ...line, unitPriceArs: Number(event.target.value) } })} /></label></article>; })}</div>
+      <div className="reseller-sale-footer"><span>Comision estimada: {formatArs(saleTotal * dashboard.reseller.commissionPercent / 100)}</span><button className="primary-action" disabled={saving || !saleTotal} onClick={() => void submitSale()}>{saving ? "Confirmando..." : "Confirmar venta"}</button></div>
+    </section>
+    <section className="panel"><div className="section-heading"><div><h2>Mis ventas</h2><p>Historial confirmado y saldo generado.</p></div></div><div className="reseller-table">{dashboard.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)}</span><b>{formatArs(sale.commissionArs)} comision</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span></div>)}</div></section>
+  </main>;
 }
 
 function AdminView(props: {
@@ -8063,7 +8247,12 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+function Root() {
+  const resellerMode = new URLSearchParams(window.location.search).get("revendedor") === "1" || window.location.hash === "#revendedor";
+  return resellerMode ? <ResellerPortal /> : <App />;
+}
+
+createRoot(document.getElementById("root") as HTMLElement).render(<Root />);
 
 
 

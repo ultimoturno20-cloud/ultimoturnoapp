@@ -322,6 +322,37 @@ Regla de precio:
 - Si falta precio fuente, recomendar minimo `800 ARS`.
 - El backend tambien normaliza el precio ARS antes de guardar.
 
+## Revendedores en consignacion
+
+MVP implementado localmente:
+
+- Usuarios revendedores con email, password y sesion propia.
+- Comision porcentual configurable por revendedor.
+- Asignacion y devolucion de unidades con historial auditable.
+- La asignacion es blanda: no modifica `quantity_on_hand` ni
+  `quantity_reserved`, por lo que UltimoTurno conserva prioridad de venta.
+- Al confirmar una venta del revendedor se valida el stock real en transaccion;
+  si una venta central consumio las unidades, la operacion se rechaza.
+- La venta confirmada descuenta stock, calcula bruto, comision y neto a rendir.
+- Anular una venta repone stock y revierte las unidades vendidas.
+- Rendiciones registradas como libro de pagos, con saldo pendiente.
+- Gestion interna en `Mas > Revendedores`.
+- Portal separado en `?revendedor=1`.
+
+La migracion es `0032_reseller_consignment.sql`. No se aplicaron cambios ni
+datos de prueba sobre produccion durante la implementacion.
+
+Verificacion del MVP:
+
+```text
+typecheck OK
+lint OK
+build OK
+tests OK: 42 pass, 0 fail
+alta/login/portal API local OK
+revision visual desktop OK
+```
+
 ## Verificacion
 
 Ultima verificacion local conocida despues de los cambios estructurales:

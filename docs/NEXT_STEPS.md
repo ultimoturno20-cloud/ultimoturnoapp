@@ -1,13 +1,28 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-18
+Actualizado: 2026-09-21
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
 
-### 1. Completar cobertura de imagenes
+### 1. Publicar y pilotear revendedores
+
+- Aplicar la migracion `0032_reseller_consignment.sql` mediante el deploy.
+- Crear un revendedor de prueba con comision real y asignarle pocas cartas.
+- Probar una venta central antes que la venta del revendedor para confirmar la
+  prioridad de UltimoTurno online.
+- Probar venta, anulacion, devolucion y rendicion con el piloto.
+- Definir si el revendedor puede solicitar una anulacion o si queda solo en
+  manos del administrador.
+- Agregar cambio de password y edicion/baja de revendedores en la siguiente
+  iteracion.
+
+Senal de exito: el revendedor carga ventas desde su portal, el stock se descuenta
+una sola vez y el saldo a rendir coincide con la comision acordada.
+
+### 2. Completar cobertura de imagenes
 
 - Dejar `Mejorar Calidad Imagenes Online.cmd` ejecutando por lotes.
 - Vigilar que bajen `stock-sin-img` y `claim-sin-img` sin aumentar errores.
@@ -20,7 +35,7 @@ Actualizado: 2026-09-18
 Senal de exito: claim activo y stock operativo sin imagenes rotas, daemon capaz
 de continuar solo y cobertura de catalogo en crecimiento.
 
-### 2. Validar CSV reales de scanner y MonPrice
+### 3. Validar CSV reales de scanner y MonPrice
 
 - Probar archivos con nombres japoneses, BOM UTF-8, comas y comillas.
 - Confirmar que `Generar vista previa` responde dentro del limite de Vercel.
@@ -31,7 +46,7 @@ de continuar solo y cobertura de catalogo en crecimiento.
 Senal de exito: el archivo escaneado genera preview, concilia las cartas y solo
 las filas confirmadas llegan a la seccion elegida.
 
-### 3. Seguir compactando Ordenes con datos intactos
+### 4. Seguir compactando Ordenes con datos intactos
 
 - Verificar el tablero en desktop y movil con volumen real.
 - Si todavia falta espacio vertical, ocultar o colapsar la marca superior solo
@@ -41,7 +56,7 @@ las filas confirmadas llegan a la seccion elegida.
 Senal de exito: mas tarjetas visibles y acciones legibles sin modificar una sola
 orden de produccion.
 
-### 4. Robustecer tareas automaticas
+### 5. Robustecer tareas automaticas
 
 - Confirmar diariamente el cron PriceCharting de las `09:00 UTC`.
 - Revisar errores de pool de Supabase y mantener
@@ -49,7 +64,7 @@ orden de produccion.
 - Evitar tareas monoliticas que excedan los 60 segundos de Vercel; procesar en
   lotes reanudables e idempotentes.
 
-### 5. Mejorar calidad de catalogo
+### 6. Mejorar calidad de catalogo
 
 - Resolver duplicados y variantes ambiguas.
 - Priorizar imagenes visibles para cartas que existen en stock o claims.

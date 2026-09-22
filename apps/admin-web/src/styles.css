@@ -11493,6 +11493,76 @@ main:has(.trello-orders) .operations-dock { display:none; }
   min-width: 0;
 }
 
+.reseller-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.reseller-sidebar {
+  display: grid;
+  gap: 8px;
+  position: sticky;
+  top: 12px;
+}
+
+.reseller-sidebar > button {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.reseller-sidebar > button.active { border-color: var(--accent); background: rgba(237, 41, 73, .1); }
+.reseller-sidebar > button span { color: var(--muted); font-size: 12px; }
+.reseller-create { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.reseller-create label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.reseller-workspace { display: grid; gap: 16px; min-width: 0; }
+.reseller-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.reseller-assign-controls { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.5fr) 90px auto; gap: 8px; }
+.reseller-table { display: grid; gap: 8px; }
+.reseller-row { display: grid; grid-template-columns: 48px minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-row.sale { grid-template-columns: minmax(260px, 1fr) auto auto auto auto; }
+.reseller-row > div { display: grid; gap: 3px; min-width: 0; }
+.reseller-row span { color: var(--muted); font-size: 12px; }
+.reseller-thumb { width: 42px; height: 58px; object-fit: contain; border-radius: 4px; background: #0b0b0e; }
+.warning-text { color: #ffbd55; }
+.status-pill.confirmed { color: #84e3af; }
+.status-pill.cancelled { color: #ff7c8f; }
+
+.reseller-portal { min-height: 100vh; padding: 20px; display: grid; align-content: start; gap: 16px; max-width: 1440px; margin: 0 auto; }
+.reseller-portal.login { place-content: center; }
+.reseller-login { width: min(420px, calc(100vw - 32px)); display: grid; gap: 12px; }
+.reseller-login .brand-mark { width: 54px; height: 54px; }
+.reseller-sale-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.reseller-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.reseller-catalog article { display: grid; grid-template-columns: 66px minmax(110px, 1fr) 68px 105px; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); }
+.reseller-catalog article > div, .reseller-catalog article label { display: grid; gap: 4px; min-width: 0; }
+.reseller-catalog article span, .reseller-catalog article small, .reseller-catalog article label { color: var(--muted); font-size: 11px; }
+.reseller-card-art { width: 62px; height: 86px; object-fit: contain; background: #0b0b0e; border-radius: 4px; }
+.reseller-sale-footer { display: flex; justify-content: flex-end; align-items: center; gap: 16px; margin-top: 12px; }
+
+@media (max-width: 900px) {
+  .reseller-layout { grid-template-columns: 1fr; }
+  .reseller-sidebar { position: static; }
+  .reseller-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reseller-assign-controls, .reseller-sale-fields { grid-template-columns: 1fr; }
+  .reseller-row, .reseller-row.sale { grid-template-columns: 48px minmax(0, 1fr); }
+  .reseller-row.sale > :first-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .reseller-portal { padding: 10px; }
+  .reseller-catalog { grid-template-columns: 1fr; }
+  .reseller-catalog article { grid-template-columns: 58px minmax(0, 1fr); }
+  .reseller-catalog article label { grid-row: 2; }
+}
+
 .trello-order-dialog .order-detail-strip,
 .trello-order-dialog .order-work-panel,
 .trello-order-dialog .order-detail-strip-actions,

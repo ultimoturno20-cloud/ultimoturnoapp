@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   getOrderBoards,
   changeOrderBoard,
+  assignResellerStock,
   adjustInventoryQuantity,
   addClaimFree,
   addPriceChartingCardsToClaim,
@@ -24,6 +25,9 @@ import {
   createClaimSection,
   createPurchase,
   createSale,
+  createReseller,
+  createResellerSale,
+  createResellerSettlement,
   checkPostgresConnection,
   createOperationalDatabase,
   deleteMobileInventoryEntry,
@@ -36,6 +40,8 @@ import {
   getAuditLog,
   getCardIndexStatus,
   getDefaultOperationalUser,
+  getAuthenticatedUserContext,
+  getResellerDashboard,
   getHealth,
   getInventoryItem,
   getImageDatabaseQuality,
@@ -54,6 +60,7 @@ import {
   listPriceChartingCache,
   listUnifiedCatalogCards,
   listSales,
+  listResellers,
   listStockForBusiness,
   listStockImageReview,
   listPriceChartingImageCatalog,
@@ -74,6 +81,7 @@ import {
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
   resetInventoryStock,
+  returnResellerStock,
   reviewCardIndexEntry,
   updateMobileInventoryEntryStatus,
   updateInventoryItemTags,
@@ -84,6 +92,9 @@ import {
   updateSaleInternalNote,
   updateSaleMessageSent,
   updateSalePayment,
+  cancelResellerSale,
+  loginUser,
+  logoutUser,
   upsertInventoryItem,
   type AuthenticatedUser,
   type DbStockRow,
@@ -2731,6 +2742,19 @@ async function operationalUser(): Promise<AuthenticatedUser> {
   return getDefaultOperationalUser(db);
 }
 
+function bearerToken(request: IncomingMessage) {
+  const value = Array.isArray(request.headers.authorization) ? request.headers.authorization[0] : request.headers.authorization || "";
+  return value.startsWith("Bearer ") ? value.slice(7).trim() : "";
+}
+
+async function requireResellerUser(request: IncomingMessage) {
+  const db = await dbPromise;
+  const user = await getAuthenticatedUserContext(db, bearerToken(request));
+  if (!user) throw Object.assign(new Error("Sesion vencida o inexistente."), { statusCode: 401 });
+  if (!user.roles.includes("reseller")) throw Object.assign(new Error("Este usuario no es revendedor."), { statusCode: 403 });
+  return user;
+}
+
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
   for (const part of (cookieHeader || "").split(";")) {
@@ -3525,6 +3549,42 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/reseller/auth/login" && request.method === "POST") {
+      const body = await readJson<{ email?: string; password?: string }>(request);
+      const db = await dbPromise;
+      const session = await loginUser(db, body.email?.trim() || "", body.password || "");
+      const context = await getAuthenticatedUserContext(db, session.token);
+      if (!context?.roles.includes("reseller")) {
+        await logoutUser(db, session.token);
+        sendJson(response, 403, { ok: false, error: "Este usuario no tiene acceso al portal de revendedores." });
+        return;
+      }
+      sendJson(response, 200, { token: session.token, user: context });
+      return;
+    }
+
+    if (url.pathname === "/reseller/auth/logout" && request.method === "POST") {
+      const db = await dbPromise;
+      await logoutUser(db, bearerToken(request));
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (url.pathname === "/reseller/portal" && request.method === "GET") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      sendJson(response, 200, await getResellerDashboard(db, reseller.id, reseller.businessId));
+      return;
+    }
+
+    if (url.pathname === "/reseller/portal/sales" && request.method === "POST") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      const body = await readJson<{ customerName?: string; notes?: string; lines: Array<{ inventoryItemId: string; quantity: number; unitPriceArs: number }> }>(request);
+      sendJson(response, 201, { sale: await createResellerSale(db, body, reseller) });
+      return;
+    }
+
     if (!requestHasAccess(request)) {
       sendJson(response, 401, { ok: false, error: "Clave de acceso requerida o incorrecta." });
       return;
@@ -3564,6 +3624,50 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const user = await operationalUser();
+
+    if (url.pathname === "/resellers" && request.method === "GET") {
+      sendJson(response, 200, await listResellers(db, user.businessId));
+      return;
+    }
+
+    if (url.pathname === "/resellers" && request.method === "POST") {
+      const body = await readJson<{ displayName: string; email: string; password: string; phone?: string; notes?: string; commissionPercent: number }>(request);
+      sendJson(response, 201, { reseller: await createReseller(db, body, user) });
+      return;
+    }
+
+    const resellerMatch = url.pathname.match(/^\/resellers\/([^/]+)$/);
+    if (resellerMatch && request.method === "GET") {
+      sendJson(response, 200, await getResellerDashboard(db, resellerMatch[1], user.businessId));
+      return;
+    }
+
+    const resellerAssignMatch = url.pathname.match(/^\/resellers\/([^/]+)\/assignments$/);
+    if (resellerAssignMatch && request.method === "POST") {
+      const body = await readJson<{ inventoryItemId: string; quantity: number }>(request);
+      sendJson(response, 200, await assignResellerStock(db, resellerAssignMatch[1], body.inventoryItemId, Number(body.quantity), user));
+      return;
+    }
+
+    const resellerReturnMatch = url.pathname.match(/^\/resellers\/([^/]+)\/returns$/);
+    if (resellerReturnMatch && request.method === "POST") {
+      const body = await readJson<{ inventoryItemId: string; quantity: number }>(request);
+      sendJson(response, 200, await returnResellerStock(db, resellerReturnMatch[1], body.inventoryItemId, Number(body.quantity), user));
+      return;
+    }
+
+    const resellerSettlementMatch = url.pathname.match(/^\/resellers\/([^/]+)\/settlements$/);
+    if (resellerSettlementMatch && request.method === "POST") {
+      const body = await readJson<{ amountArs: number; note?: string }>(request);
+      sendJson(response, 201, await createResellerSettlement(db, resellerSettlementMatch[1], Number(body.amountArs), body.note || "", user));
+      return;
+    }
+
+    const resellerSaleCancelMatch = url.pathname.match(/^\/resellers\/sales\/([^/]+)\/cancel$/);
+    if (resellerSaleCancelMatch && request.method === "POST") {
+      sendJson(response, 200, await cancelResellerSale(db, resellerSaleCancelMatch[1], user));
+      return;
+    }
 
     if (url.pathname === "/auth/me") {
       sendJson(response, 200, { user, environment: { dataProfile, allowExamples } });

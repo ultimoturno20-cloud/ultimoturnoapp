@@ -176,7 +176,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -330,6 +330,47 @@ export type AuthenticatedUser = {
   businessId: string;
   displayName: string;
   email: string;
+};
+
+export type AuthenticatedUserContext = AuthenticatedUser & { roles: string[] };
+
+export type ResellerAssignment = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  assigned: number;
+  sold: number;
+  returned: number;
+  remaining: number;
+  stockAvailable: number;
+  sellable: number;
+  priceArs: number;
+};
+
+export type ResellerSale = {
+  id: string;
+  resellerUserId: string;
+  resellerName: string;
+  customerName: string;
+  status: "confirmed" | "cancelled";
+  grossTotalArs: number;
+  commissionPercent: number;
+  commissionArs: number;
+  netDueArs: number;
+  notes: string;
+  soldAt: string;
+  lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }>;
+};
+
+export type ResellerDashboard = {
+  reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
+  assignments: ResellerAssignment[];
+  sales: ResellerSale[];
+  settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
+  summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
 };
 
 export type UpsertInventoryInput = {
@@ -963,6 +1004,261 @@ export async function getUserByToken(db: PGlite, token: string): Promise<Authent
 
 export async function logoutUser(db: PGlite, token: string): Promise<void> {
   await db.query("delete from app_sessions where token_hash = $1", [hashToken(token)]);
+}
+
+export async function getAuthenticatedUserContext(db: PGlite, token: string): Promise<AuthenticatedUserContext | null> {
+  const user = await getUserByToken(db, token);
+  if (!user) return null;
+  const roles = await db.query<{ name: string }>(`
+    select r.name
+    from user_roles ur
+    join roles r on r.id = ur.role_id
+    where ur.user_id = $1 and r.business_id = $2
+    order by r.name
+  `, [user.id, user.businessId]);
+  return { ...user, roles: roles.rows.map((row) => row.name) };
+}
+
+export async function createReseller(db: PGlite, input: {
+  displayName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  notes?: string;
+  commissionPercent: number;
+}, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  const displayName = input.displayName.trim();
+  const email = input.email.trim().toLowerCase();
+  const commissionPercent = Number(input.commissionPercent);
+  if (!displayName) throw new Error("El nombre del revendedor es obligatorio.");
+  if (!email || !email.includes("@")) throw new Error("Ingresa un email valido.");
+  if (input.password.length < 8) throw new Error("La password debe tener al menos 8 caracteres.");
+  if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) throw new Error("La comision debe estar entre 0 y 100.");
+  const userId = crypto.randomUUID();
+  await db.exec("begin");
+  try {
+    const existing = await db.query("select id from app_users where business_id = $1 and lower(email) = lower($2)", [actor.businessId, email]);
+    if (existing.rows[0]) throw new Error("Ya existe un usuario con ese email.");
+    await db.query(`
+      insert into app_users (id, business_id, display_name, email, password_hash, active)
+      values ($1, $2, $3, $4, $5, true)
+    `, [userId, actor.businessId, displayName, email, hashPassword(input.password)]);
+    const role = await db.query<{ id: string }>("select id from roles where business_id = $1 and name = 'reseller' limit 1", [actor.businessId]);
+    if (!role.rows[0]) throw new Error("No existe el rol de revendedor.");
+    await db.query("insert into user_roles (user_id, role_id) values ($1, $2)", [userId, role.rows[0].id]);
+    await db.query(`
+      insert into reseller_profiles (user_id, business_id, commission_percent, phone, notes)
+      values ($1, $2, $3, $4, $5)
+    `, [userId, actor.businessId, commissionPercent, input.phone?.trim() || "", input.notes?.trim() || ""]);
+    await writeAudit(db, actor, "reseller.create", "reseller", userId, null, { displayName, email, commissionPercent });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  return getResellerDashboard(db, userId, actor.businessId);
+}
+
+export async function listResellers(db: PGlite, businessId: string): Promise<{ resellers: ResellerDashboard[] }> {
+  const result = await db.query<{ user_id: string }>(`
+    select rp.user_id
+    from reseller_profiles rp
+    where rp.business_id = $1
+    order by rp.updated_at desc
+  `, [businessId]);
+  return { resellers: await Promise.all(result.rows.map((row) => getResellerDashboard(db, row.user_id, businessId))) };
+}
+
+export async function getResellerDashboard(db: PGlite, resellerUserId: string, businessId: string): Promise<ResellerDashboard> {
+  const profileResult = await db.query<Record<string, unknown>>(`
+    select u.id, u.display_name, u.email, u.active, rp.phone, rp.notes, rp.commission_percent
+    from reseller_profiles rp
+    join app_users u on u.id = rp.user_id
+    where rp.user_id = $1 and rp.business_id = $2
+    limit 1
+  `, [resellerUserId, businessId]);
+  const profile = profileResult.rows[0];
+  if (!profile) throw new Error("Revendedor no encontrado.");
+  const assignmentRows = await db.query<Record<string, unknown>>(`
+    select rsa.inventory_item_id, rsa.quantity_assigned, rsa.quantity_sold, rsa.quantity_returned,
+      ii.sku, ii.quantity_on_hand, ii.quantity_reserved, p.name, p.expansion, p.card_number, p.image_url,
+      coalesce(cp.price_ars, 0) as price_ars
+    from reseller_stock_assignments rsa
+    join inventory_items ii on ii.id = rsa.inventory_item_id and ii.business_id = rsa.business_id
+    join card_products p on p.id = ii.product_id
+    left join current_prices cp on cp.inventory_item_id = ii.id
+    where rsa.business_id = $1 and rsa.reseller_user_id = $2
+    order by rsa.updated_at desc
+  `, [businessId, resellerUserId]);
+  const assignments: ResellerAssignment[] = assignmentRows.rows.map((row) => {
+    const remaining = Math.max(0, Number(row.quantity_assigned) - Number(row.quantity_sold) - Number(row.quantity_returned));
+    const stockAvailable = Math.max(0, Number(row.quantity_on_hand) - Number(row.quantity_reserved));
+    return {
+      inventoryItemId: String(row.inventory_item_id), sku: String(row.sku), name: String(row.name), expansion: String(row.expansion),
+      number: String(row.card_number || ""), imageUrl: String(row.image_url || ""), assigned: Number(row.quantity_assigned),
+      sold: Number(row.quantity_sold), returned: Number(row.quantity_returned), remaining, stockAvailable,
+      sellable: Math.min(remaining, stockAvailable), priceArs: Number(row.price_ars || 0)
+    };
+  });
+  const sales = await listResellerSales(db, businessId, resellerUserId);
+  const settlementRows = await db.query<Record<string, unknown>>(`
+    select id, amount_ars, note, settled_at from reseller_settlements
+    where business_id = $1 and reseller_user_id = $2 order by settled_at desc
+  `, [businessId, resellerUserId]);
+  const settlements = settlementRows.rows.map((row) => ({ id: String(row.id), amountArs: Number(row.amount_ars), note: String(row.note || ""), settledAt: String(row.settled_at) }));
+  const confirmed = sales.filter((sale) => sale.status === "confirmed");
+  const grossSalesArs = confirmed.reduce((sum, sale) => sum + sale.grossTotalArs, 0);
+  const commissionArs = confirmed.reduce((sum, sale) => sum + sale.commissionArs, 0);
+  const netDueArs = confirmed.reduce((sum, sale) => sum + sale.netDueArs, 0);
+  const settledArs = settlements.reduce((sum, settlement) => sum + settlement.amountArs, 0);
+  return {
+    reseller: { userId: String(profile.id), displayName: String(profile.display_name), email: String(profile.email || ""), phone: String(profile.phone || ""), notes: String(profile.notes || ""), active: Boolean(profile.active), commissionPercent: Number(profile.commission_percent) },
+    assignments, sales, settlements,
+    summary: {
+      assignedUnits: assignments.reduce((sum, item) => sum + item.assigned, 0),
+      remainingUnits: assignments.reduce((sum, item) => sum + item.remaining, 0),
+      sellableUnits: assignments.reduce((sum, item) => sum + item.sellable, 0),
+      grossSalesArs, commissionArs, netDueArs, settledArs, outstandingArs: Math.max(0, netDueArs - settledArs)
+    }
+  };
+}
+
+async function listResellerSales(db: PGlite, businessId: string, resellerUserId: string): Promise<ResellerSale[]> {
+  const result = await db.query<Record<string, unknown>>(`
+    select rs.id, rs.reseller_user_id, u.display_name as reseller_name, rs.customer_name, rs.status,
+      rs.gross_total_ars, rs.commission_percent, rs.commission_ars, rs.net_due_ars, rs.notes, rs.sold_at,
+      rsi.inventory_item_id, rsi.quantity, rsi.unit_price_ars, rsi.line_total_ars, ii.sku, p.name
+    from reseller_sales rs
+    join app_users u on u.id = rs.reseller_user_id
+    left join reseller_sale_items rsi on rsi.sale_id = rs.id
+    left join inventory_items ii on ii.id = rsi.inventory_item_id
+    left join card_products p on p.id = ii.product_id
+    where rs.business_id = $1 and rs.reseller_user_id = $2
+    order by rs.sold_at desc, rsi.id
+  `, [businessId, resellerUserId]);
+  const records = new Map<string, ResellerSale>();
+  for (const row of result.rows) {
+    const id = String(row.id);
+    const sale = records.get(id) || {
+      id, resellerUserId: String(row.reseller_user_id), resellerName: String(row.reseller_name), customerName: String(row.customer_name || ""),
+      status: String(row.status) as ResellerSale["status"], grossTotalArs: Number(row.gross_total_ars), commissionPercent: Number(row.commission_percent),
+      commissionArs: Number(row.commission_ars), netDueArs: Number(row.net_due_ars), notes: String(row.notes || ""), soldAt: String(row.sold_at), lines: []
+    };
+    if (row.inventory_item_id) sale.lines.push({ inventoryItemId: String(row.inventory_item_id), sku: String(row.sku), name: String(row.name), quantity: Number(row.quantity), unitPriceArs: Number(row.unit_price_ars), lineTotalArs: Number(row.line_total_ars) });
+    records.set(id, sale);
+  }
+  return [...records.values()];
+}
+
+export async function assignResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad a asignar debe ser un entero positivo.");
+  await db.exec("begin");
+  try {
+    const reseller = await db.query("select 1 from reseller_profiles where user_id = $1 and business_id = $2", [resellerUserId, actor.businessId]);
+    if (!reseller.rows[0]) throw new Error("Revendedor no encontrado.");
+    const item = await db.query<Record<string, unknown>>("select quantity_on_hand from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
+    if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    const assigned = await db.query<{ total: string }>(`
+      select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
+      from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2
+    `, [actor.businessId, inventoryItemId]);
+    if (Number(assigned.rows[0]?.total || 0) + quantity > Number(item.rows[0].quantity_on_hand)) throw new Error("No hay suficientes unidades fisicas para asignar. La asignacion no reserva stock, pero no puede duplicar mercaderia.");
+    await db.query(`
+      insert into reseller_stock_assignments (id, business_id, reseller_user_id, inventory_item_id, quantity_assigned)
+      values ($1, $2, $3, $4, $5)
+      on conflict (business_id, reseller_user_id, inventory_item_id)
+      do update set quantity_assigned = reseller_stock_assignments.quantity_assigned + excluded.quantity_assigned, updated_at = now()
+    `, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity]);
+    await db.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'assign', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity, actor.id]);
+    await writeAudit(db, actor, "reseller.stock.assign", "reseller", resellerUserId, null, { inventoryItemId, quantity });
+    await db.exec("commit");
+  } catch (error) { await db.exec("rollback"); throw error; }
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
+}
+
+export async function returnResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad devuelta debe ser un entero positivo.");
+  await db.exec("begin");
+  try {
+    const assignment = await db.query<Record<string, unknown>>("select * from reseller_stock_assignments where business_id = $1 and reseller_user_id = $2 and inventory_item_id = $3 for update", [actor.businessId, resellerUserId, inventoryItemId]);
+    const row = assignment.rows[0];
+    if (!row || quantity > Number(row.quantity_assigned) - Number(row.quantity_sold) - Number(row.quantity_returned)) throw new Error("La devolucion supera las unidades pendientes del revendedor.");
+    await db.query("update reseller_stock_assignments set quantity_returned = quantity_returned + $1, updated_at = now() where id = $2", [quantity, row.id]);
+    await db.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'return', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity, actor.id]);
+    await writeAudit(db, actor, "reseller.stock.return", "reseller", resellerUserId, null, { inventoryItemId, quantity });
+    await db.exec("commit");
+  } catch (error) { await db.exec("rollback"); throw error; }
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
+}
+
+export async function createResellerSale(db: PGlite, input: { customerName?: string; notes?: string; lines: CommerceLineInput[] }, actor: AuthenticatedUser): Promise<ResellerSale> {
+  if (!input.lines?.length) throw new Error("Agrega al menos una carta a la venta.");
+  const quantities = new Map<string, { quantity: number; unitPriceArs: number }>();
+  for (const line of input.lines) {
+    if (!Number.isInteger(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.unitPriceArs) || line.unitPriceArs < 0) throw new Error("Revisa cantidades y precios de la venta.");
+    const current = quantities.get(line.inventoryItemId);
+    if (current && current.unitPriceArs !== line.unitPriceArs) throw new Error("Una misma carta no puede tener dos precios en la venta.");
+    quantities.set(line.inventoryItemId, { quantity: (current?.quantity || 0) + line.quantity, unitPriceArs: line.unitPriceArs });
+  }
+  const profile = await db.query<{ commission_percent: string }>("select commission_percent from reseller_profiles where user_id = $1 and business_id = $2", [actor.id, actor.businessId]);
+  if (!profile.rows[0]) throw new Error("El usuario no es un revendedor activo.");
+  const commissionPercent = Number(profile.rows[0].commission_percent);
+  const saleId = crypto.randomUUID();
+  const grossTotalArs = [...quantities.values()].reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
+  const commissionArs = Math.round(grossTotalArs * commissionPercent) / 100;
+  const netDueArs = grossTotalArs - commissionArs;
+  await db.exec("begin");
+  try {
+    await db.query(`insert into reseller_sales (id, business_id, reseller_user_id, customer_name, gross_total_ars, commission_percent, commission_ars, net_due_ars, notes) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [saleId, actor.businessId, actor.id, input.customerName?.trim() || "Venta sin nombre", grossTotalArs, commissionPercent, commissionArs, netDueArs, input.notes?.trim() || ""]);
+    for (const [inventoryItemId, line] of quantities) {
+      const assignment = await db.query<Record<string, unknown>>("select * from reseller_stock_assignments where business_id = $1 and reseller_user_id = $2 and inventory_item_id = $3 for update", [actor.businessId, actor.id, inventoryItemId]);
+      const assigned = assignment.rows[0];
+      if (!assigned || line.quantity > Number(assigned.quantity_assigned) - Number(assigned.quantity_sold) - Number(assigned.quantity_returned)) throw new Error("La venta supera las unidades asignadas.");
+      const inventory = await db.query<Record<string, unknown>>("select quantity_on_hand, quantity_reserved from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
+      const stock = inventory.rows[0];
+      if (!stock || line.quantity > Number(stock.quantity_on_hand) - Number(stock.quantity_reserved)) throw new Error("UltimoTurno vendio parte de este stock. Actualiza el portal antes de confirmar.");
+      await db.query("update inventory_items set quantity_on_hand = quantity_on_hand - $1, updated_at = now() where id = $2 and business_id = $3", [line.quantity, inventoryItemId, actor.businessId]);
+      await db.query("update reseller_stock_assignments set quantity_sold = quantity_sold + $1, updated_at = now() where id = $2", [line.quantity, assigned.id]);
+      await db.query(`insert into reseller_sale_items (id, business_id, sale_id, inventory_item_id, quantity, unit_price_ars, line_total_ars) values ($1,$2,$3,$4,$5,$6,$7)`, [crypto.randomUUID(), actor.businessId, saleId, inventoryItemId, line.quantity, line.unitPriceArs, line.quantity * line.unitPriceArs]);
+      await db.query(`insert into inventory_movements (id,business_id,inventory_item_id,movement_type,quantity_delta,reference_type,reference_id,idempotency_key,note,created_by) values ($1,$2,$3,'reseller_sale',$4,'reseller_sale',$5,$6,$7,$8)`, [crypto.randomUUID(), actor.businessId, inventoryItemId, -line.quantity, saleId, `reseller-sale-${saleId}-${inventoryItemId}`, `Venta por ${actor.displayName}`, actor.id]);
+      await db.query(`insert into reseller_stock_events (id,business_id,reseller_user_id,inventory_item_id,event_type,quantity,reference_type,reference_id,created_by) values ($1,$2,$3,$4,'sale',$5,'reseller_sale',$6,$7)`, [crypto.randomUUID(), actor.businessId, actor.id, inventoryItemId, line.quantity, saleId, actor.id]);
+    }
+    await writeAudit(db, actor, "reseller.sale.create", "reseller_sale", saleId, null, { grossTotalArs, commissionArs, netDueArs });
+    await db.exec("commit");
+  } catch (error) { await db.exec("rollback"); throw error; }
+  return (await listResellerSales(db, actor.businessId, actor.id)).find((sale) => sale.id === saleId)!;
+}
+
+export async function cancelResellerSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  await db.exec("begin");
+  let resellerUserId = "";
+  try {
+    const saleResult = await db.query<Record<string, unknown>>("select * from reseller_sales where id = $1 and business_id = $2 for update", [saleId, actor.businessId]);
+    const sale = saleResult.rows[0];
+    if (!sale) throw new Error("Venta de revendedor no encontrada.");
+    if (sale.status === "cancelled") throw new Error("La venta ya estaba anulada.");
+    resellerUserId = String(sale.reseller_user_id);
+    const items = await db.query<Record<string, unknown>>("select inventory_item_id, quantity from reseller_sale_items where sale_id = $1", [saleId]);
+    for (const item of items.rows) {
+      await db.query("update inventory_items set quantity_on_hand = quantity_on_hand + $1, updated_at = now() where id = $2 and business_id = $3", [item.quantity, item.inventory_item_id, actor.businessId]);
+      await db.query("update reseller_stock_assignments set quantity_sold = quantity_sold - $1, updated_at = now() where business_id = $2 and reseller_user_id = $3 and inventory_item_id = $4", [item.quantity, actor.businessId, resellerUserId, item.inventory_item_id]);
+      await db.query(`insert into inventory_movements (id,business_id,inventory_item_id,movement_type,quantity_delta,reference_type,reference_id,idempotency_key,note,created_by) values ($1,$2,$3,'reseller_sale_cancel',$4,'reseller_sale',$5,$6,'Anulacion de venta de revendedor',$7)`, [crypto.randomUUID(), actor.businessId, item.inventory_item_id, item.quantity, saleId, `reseller-sale-cancel-${saleId}-${item.inventory_item_id}`, actor.id]);
+      await db.query(`insert into reseller_stock_events (id,business_id,reseller_user_id,inventory_item_id,event_type,quantity,reference_type,reference_id,created_by) values ($1,$2,$3,$4,'sale_cancel',$5,'reseller_sale',$6,$7)`, [crypto.randomUUID(), actor.businessId, resellerUserId, item.inventory_item_id, item.quantity, saleId, actor.id]);
+    }
+    await db.query("update reseller_sales set status = 'cancelled', cancelled_at = now(), cancelled_by = $1 where id = $2", [actor.id, saleId]);
+    await writeAudit(db, actor, "reseller.sale.cancel", "reseller_sale", saleId, sale, { status: "cancelled" });
+    await db.exec("commit");
+  } catch (error) { await db.exec("rollback"); throw error; }
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
+}
+
+export async function createResellerSettlement(db: PGlite, resellerUserId: string, amountArs: number, note: string, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  if (!Number.isFinite(amountArs) || amountArs <= 0) throw new Error("El importe rendido debe ser mayor a cero.");
+  const dashboard = await getResellerDashboard(db, resellerUserId, actor.businessId);
+  if (amountArs > dashboard.summary.outstandingArs) throw new Error("La rendicion supera el saldo pendiente.");
+  await db.query(`insert into reseller_settlements (id,business_id,reseller_user_id,amount_ars,note,created_by) values ($1,$2,$3,$4,$5,$6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, amountArs, note.trim(), actor.id]);
+  await writeAudit(db, actor, "reseller.settlement.create", "reseller", resellerUserId, null, { amountArs, note });
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
 export async function getDefaultOperationalUser(db: PGlite): Promise<AuthenticatedUser> {
@@ -5764,6 +6060,10 @@ async function ensureOperationalBootstrap(db: PGlite, options: OperationalDataba
   const roleId = role.rows[0]?.id || crypto.randomUUID();
   if (!role.rows[0]) {
     await db.query("insert into roles (id, business_id, name, description) values ($1, $2, 'admin', 'Administrador interno')", [roleId, businessId]);
+  }
+  const resellerRole = await db.query<{ id: string }>("select id from roles where business_id = $1 and name = 'reseller' limit 1", [businessId]);
+  if (!resellerRole.rows[0]) {
+    await db.query("insert into roles (id, business_id, name, description) values ($1, $2, 'reseller', 'Revendedor en consignacion')", [crypto.randomUUID(), businessId]);
   }
   const systemUser = await db.query<{ id: string }>("select id from app_users where business_id = $1 and display_name = 'Sistema local' limit 1", [businessId]);
   if (!systemUser.rows[0]) {
