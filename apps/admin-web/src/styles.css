@@ -11635,6 +11635,9 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-totals b { color: var(--text); }
 .reseller-totals .net { color: var(--text); font-size: 15px; font-weight: 800; }
 .reseller-confirm { width: 100%; min-height: 48px; margin-top: 14px; justify-content: center; }
+.reseller-checkout-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: 8px; margin-top: 14px; }
+.reseller-checkout-actions .reseller-confirm { margin-top: 0; }
+.reseller-checkout-actions .secondary-action { justify-content: center; }
 .reseller-validation-note { display: block; margin-top: 8px; color: var(--muted); text-align: center; }
 
 .reseller-stock-list, .reseller-sales-list { display: grid; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
@@ -11645,6 +11648,23 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-stock-list em { font-style: normal; }
 .reseller-sales-list article { display: grid; grid-template-columns: minmax(260px, 1fr) 130px 130px 100px; gap: 16px; align-items: center; padding: 14px; background: var(--surface); border-bottom: 1px solid var(--border-soft); }
 .reseller-sales-list article > div, .reseller-sales-list article > span { display: grid; gap: 4px; }
+.reseller-orders-list { display: grid; gap: 8px; }
+.reseller-orders-list article { display: grid; grid-template-columns: minmax(260px, 1fr) 130px 100px minmax(210px, auto); gap: 16px; align-items: center; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-order-main { display: grid; gap: 4px; min-width: 0; }
+.reseller-order-main span, .reseller-order-main small, .reseller-order-main em { color: var(--muted); font-size: 12px; }
+.reseller-order-main em { font-style: normal; }
+.reseller-order-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.status-pill.pending { color: #f5c542; }
+.status-pill.converted { color: #84e3af; }
+.status-pill.cancelled { color: #ff7c8f; }
+
+.reseller-global-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 8px; }
+.reseller-global-grid article { display: grid; grid-template-columns: 64px minmax(0, 1fr) 72px 92px; gap: 12px; align-items: center; min-height: 112px; padding: 10px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 6px; }
+.reseller-global-grid .reseller-product-art { grid-area: auto; width: 64px; height: 90px; }
+.reseller-global-grid article > div, .reseller-global-grid article > span { display: grid; gap: 3px; min-width: 0; }
+.reseller-global-grid article span, .reseller-global-grid article small { color: var(--muted); font-size: 12px; }
+.reseller-global-grid article > span { text-align: center; }
+.reseller-global-grid article > span b { color: var(--text); font-size: 18px; }
 
 @media (max-width: 900px) {
   .reseller-layout { grid-template-columns: 1fr; }
@@ -11659,6 +11679,8 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-summary-strip > div { min-height: 86px; border-right: 0; border-bottom: 1px solid var(--border-soft); }
   .reseller-section-heading { align-items: stretch; flex-direction: column; }
   .reseller-search { width: 100%; }
+  .reseller-orders-list article { grid-template-columns: minmax(0, 1fr) auto; }
+  .reseller-order-main, .reseller-order-actions { grid-column: 1 / -1; }
 }
 
 @media (max-width: 560px) {
@@ -11672,9 +11694,13 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-cart-line label { grid-column: 1 / 4; }
   .reseller-cart-line > strong { grid-column: 4 / 6; text-align: right; }
   .reseller-buyer-fields { grid-template-columns: 1fr; }
+  .reseller-checkout-actions { grid-template-columns: 1fr; }
   .reseller-stock-list > div { grid-template-columns: 48px minmax(0, 1fr); }
   .reseller-sales-list article { grid-template-columns: 1fr 1fr; }
   .reseller-sales-list article > div { grid-column: 1 / -1; }
+  .reseller-global-grid { grid-template-columns: 1fr; }
+  .reseller-global-grid article { grid-template-columns: 64px minmax(0, 1fr) auto; }
+  .reseller-global-grid article > strong { grid-column: 2 / 4; }
 }
 
 .trello-order-dialog .order-detail-strip,

@@ -14,6 +14,9 @@ Actualizado: 2026-09-21
 - Probar una venta central antes que la venta del revendedor para confirmar la
   prioridad de UltimoTurno online.
 - Probar venta, anulacion, devolucion y rendicion con el piloto.
+- Probar pedidos pendientes y su conversion a venta luego de una venta central.
+- Confirmar con los revendedores que el stock global de solo lectura muestra la
+  informacion comercial necesaria sin exponer datos internos.
 - Definir si el revendedor puede solicitar una anulacion o si queda solo en
   manos del administrador.
 - Agregar cambio de password y edicion/baja de revendedores en la siguiente

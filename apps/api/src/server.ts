@@ -26,6 +26,7 @@ import {
   createPurchase,
   createSale,
   createReseller,
+  createResellerOrder,
   createResellerSale,
   createResellerSettlement,
   checkPostgresConnection,
@@ -93,6 +94,8 @@ import {
   updateSaleMessageSent,
   updateSalePayment,
   cancelResellerSale,
+  cancelOwnResellerOrder,
+  confirmOwnResellerOrder,
   loginUser,
   logoutUser,
   upsertInventoryItem,
@@ -3582,6 +3585,30 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const reseller = await requireResellerUser(request);
       const body = await readJson<{ customerName?: string; notes?: string; lines: Array<{ inventoryItemId: string; quantity: number; unitPriceArs: number }> }>(request);
       sendJson(response, 201, { sale: await createResellerSale(db, body, reseller) });
+      return;
+    }
+
+    if (url.pathname === "/reseller/portal/orders" && request.method === "POST") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      const body = await readJson<{ customerName?: string; notes?: string; lines: Array<{ inventoryItemId: string; quantity: number; unitPriceArs: number }> }>(request);
+      sendJson(response, 201, await createResellerOrder(db, body, reseller));
+      return;
+    }
+
+    const ownResellerOrderConfirmMatch = url.pathname.match(/^\/reseller\/portal\/orders\/([^/]+)\/confirm$/);
+    if (ownResellerOrderConfirmMatch && request.method === "POST") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      sendJson(response, 200, await confirmOwnResellerOrder(db, ownResellerOrderConfirmMatch[1], reseller));
+      return;
+    }
+
+    const ownResellerOrderCancelMatch = url.pathname.match(/^\/reseller\/portal\/orders\/([^/]+)\/cancel$/);
+    if (ownResellerOrderCancelMatch && request.method === "POST") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      sendJson(response, 200, await cancelOwnResellerOrder(db, ownResellerOrderCancelMatch[1], reseller));
       return;
     }
 

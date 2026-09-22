@@ -5,9 +5,12 @@ import path from "node:path";
 import { it } from "node:test";
 import {
   assignResellerStock,
+  cancelOwnResellerOrder,
   cancelResellerSale,
+  confirmOwnResellerOrder,
   createOperationalDatabase,
   createReseller,
+  createResellerOrder,
   createResellerSale,
   createSale,
   getAuthenticatedUserContext,
@@ -42,7 +45,25 @@ it("keeps consigned stock available centrally and validates real stock when a re
   }, admin);
   dashboard = await assignResellerStock(db, dashboard.reseller.userId, item.id, 2, admin);
   assert.equal(dashboard.summary.remainingUnits, 2);
+  assert.equal(dashboard.globalStock[0].availableQuantity, 3);
   assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].availableQuantity, 3);
+
+  const session = await loginUser(db, "revendedor@test.local", "password-segura");
+  const reseller = await getAuthenticatedUserContext(db, session.token);
+  assert.ok(reseller?.roles.includes("reseller"));
+  dashboard = await createResellerOrder(db, {
+    customerName: "Pedido cancelado",
+    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12000 }]
+  }, reseller!);
+  assert.equal(dashboard.orders[0].status, "pending");
+  assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].quantityOnHand, 3);
+  dashboard = await cancelOwnResellerOrder(db, dashboard.orders[0].id, reseller!);
+  assert.equal(dashboard.orders[0].status, "cancelled");
+  dashboard = await createResellerOrder(db, {
+    customerName: "Cliente final",
+    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12000 }]
+  }, reseller!);
+  const pendingOrder = dashboard.orders.find((order) => order.status === "pending")!;
 
   await createSale(db, {
     customerName: "Venta central",
@@ -54,18 +75,14 @@ it("keeps consigned stock available centrally and validates real stock when a re
   assert.equal(dashboard.assignments[0].remaining, 2);
   assert.equal(dashboard.assignments[0].sellable, 1);
 
-  const session = await loginUser(db, "revendedor@test.local", "password-segura");
-  const reseller = await getAuthenticatedUserContext(db, session.token);
-  assert.ok(reseller?.roles.includes("reseller"));
   await assert.rejects(() => createResellerSale(db, {
     customerName: "No alcanza",
     lines: [{ inventoryItemId: item.id, quantity: 2, unitPriceArs: 12000 }]
   }, reseller!), /vendio parte de este stock/);
 
-  const sale = await createResellerSale(db, {
-    customerName: "Cliente final",
-    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12000 }]
-  }, reseller!);
+  dashboard = await confirmOwnResellerOrder(db, pendingOrder.id, reseller!);
+  const sale = dashboard.sales[0];
+  assert.equal(dashboard.orders.find((order) => order.id === pendingOrder.id)?.status, "converted");
   assert.equal(sale.commissionArs, 2400);
   assert.equal(sale.netDueArs, 9600);
   assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].quantityOnHand, 0);

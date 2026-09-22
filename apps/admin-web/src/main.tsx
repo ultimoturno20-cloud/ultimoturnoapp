@@ -5,9 +5,13 @@ import "./styles.css";
 type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
+type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; totalArs: number; notes: string; convertedSaleId: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
+type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
 type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
   assignments: ResellerAssignment[];
+  globalStock: ResellerGlobalStockItem[];
+  orders: ResellerOrder[];
   sales: ResellerSale[];
   settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
   summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
@@ -4848,8 +4852,9 @@ function ResellerPortal() {
   const [token, setToken] = useState(() => readLocalStorage(resellerTokenKey));
   const [dashboard, setDashboard] = useState<ResellerDashboard | null>(null);
   const [credentials, setCredentials] = useState({ email: "", password: "" });
-  const [activeTab, setActiveTab] = useState<"sell" | "stock" | "sales">("sell");
+  const [activeTab, setActiveTab] = useState<"sell" | "orders" | "stock" | "global" | "sales">("sell");
   const [search, setSearch] = useState("");
+  const [globalSearch, setGlobalSearch] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
@@ -4878,6 +4883,26 @@ function ResellerPortal() {
     try {
       await api("/reseller/portal/sales", { token, method: "POST", body: { customerName, notes, lines } });
       setCart({}); setCustomerName(""); setNotes(""); await load();
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSaving(false); }
+  }
+
+  async function saveOrder() {
+    const lines = Object.entries(cart).filter(([, line]) => line.quantity > 0).map(([inventoryItemId, line]) => ({ inventoryItemId, ...line }));
+    if (!lines.length) { setError("Agrega al menos una carta al pedido."); return; }
+    setSaving(true);
+    try {
+      setDashboard(await api<ResellerDashboard>("/reseller/portal/orders", { token, method: "POST", body: { customerName, notes, lines } }));
+      setCart({}); setCustomerName(""); setNotes(""); setActiveTab("orders"); setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSaving(false); }
+  }
+
+  async function updateOwnOrder(orderId: string, action: "confirm" | "cancel") {
+    setSaving(true);
+    try {
+      setDashboard(await api<ResellerDashboard>(`/reseller/portal/orders/${orderId}/${action}`, { token, method: "POST" }));
+      setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
   }
@@ -4911,6 +4936,8 @@ function ResellerPortal() {
   const assigned = dashboard.assignments.filter((item) => item.remaining > 0);
   const normalizedSearch = search.trim().toLowerCase();
   const visibleAssignments = assigned.filter((item) => !normalizedSearch || [item.name, item.expansion, item.number, item.sku].join(" ").toLowerCase().includes(normalizedSearch));
+  const normalizedGlobalSearch = globalSearch.trim().toLowerCase();
+  const visibleGlobalStock = dashboard.globalStock.filter((item) => !normalizedGlobalSearch || [item.name, item.expansion, item.number, item.sku, item.language].join(" ").toLowerCase().includes(normalizedGlobalSearch));
   const cartItems = assigned.filter((item) => (cart[item.inventoryItemId]?.quantity || 0) > 0);
   const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
   const commission = saleTotal * dashboard.reseller.commissionPercent / 100;
@@ -4932,7 +4959,9 @@ function ResellerPortal() {
 
       <nav className="reseller-tabs" aria-label="Secciones del portal">
         <button className={activeTab === "sell" ? "active" : ""} onClick={() => setActiveTab("sell")}>Nueva venta{cartItems.length ? ` (${cartItems.length})` : ""}</button>
+        <button className={activeTab === "orders" ? "active" : ""} onClick={() => setActiveTab("orders")}>Pedidos ({dashboard.orders.filter((order) => order.status === "pending").length})</button>
         <button className={activeTab === "stock" ? "active" : ""} onClick={() => setActiveTab("stock")}>Mi stock ({dashboard.summary.remainingUnits})</button>
+        <button className={activeTab === "global" ? "active" : ""} onClick={() => setActiveTab("global")}>Stock global ({dashboard.globalStock.length})</button>
         <button className={activeTab === "sales" ? "active" : ""} onClick={() => setActiveTab("sales")}>Mis ventas ({dashboard.sales.length})</button>
       </nav>
 
@@ -4970,14 +4999,31 @@ function ResellerPortal() {
               <label>Nota <span>opcional</span><input placeholder="Entrega, pago u observacion" value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
             </div>
             <div className="reseller-totals"><span>Total de venta <b>{formatArs(saleTotal)}</b></span><span>Tu comision ({dashboard.reseller.commissionPercent}%) <b>{formatArs(commission)}</b></span><span className="net">A rendir a UltimoTurno <b>{formatArs(saleTotal - commission)}</b></span></div>
-            <button className="primary-action reseller-confirm" disabled={saving || !cartItems.length || saleTotal <= 0} onClick={() => void submitSale()}>{saving ? "Confirmando..." : "Confirmar venta"}</button>
-            <small className="reseller-validation-note">El stock se verifica nuevamente al confirmar.</small>
+            <div className="reseller-checkout-actions"><button className="secondary-action" disabled={saving || !cartItems.length || saleTotal <= 0} onClick={() => void saveOrder()}><Icon name="orders" />Guardar pedido</button><button className="primary-action reseller-confirm" disabled={saving || !cartItems.length || saleTotal <= 0} onClick={() => void submitSale()}>{saving ? "Procesando..." : "Confirmar venta"}</button></div>
+            <small className="reseller-validation-note">Los pedidos no reservan stock. La disponibilidad se valida al confirmar la venta.</small>
           </aside>
+        </section>
+      ) : null}
+
+      {activeTab === "orders" ? (
+        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mis pedidos</h2><p>Seguimiento propio. Guardarlos no reserva ni descuenta stock.</p></div><button className="primary-action" onClick={() => setActiveTab("sell")}><Icon name="plus" />Nuevo pedido</button></div>
+          {dashboard.orders.length ? <div className="reseller-orders-list">{dashboard.orders.map((order) => <article key={order.id}>
+            <div className="reseller-order-main"><span>{formatDate(order.createdAt)}</span><strong>{order.customerName || "Pedido sin nombre"}</strong><small>{order.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</small>{order.notes ? <em>{order.notes}</em> : null}</div>
+            <strong>{formatArs(order.totalArs)}</strong>
+            <span className={`status-pill ${order.status}`}>{order.status === "pending" ? "Pendiente" : order.status === "converted" ? "Vendido" : "Cancelado"}</span>
+            <div className="reseller-order-actions">{order.status === "pending" ? <><button className="secondary-action" disabled={saving} onClick={() => void updateOwnOrder(order.id, "cancel")}>Cancelar</button><button className="primary-action" disabled={saving} onClick={() => void updateOwnOrder(order.id, "confirm")}>Confirmar venta</button></> : null}</div>
+          </article>)}</div> : <EmptyState title="Todavia no hay pedidos" body="Arma un carrito y elegi Guardar pedido para seguirlo sin descontar stock." />}
         </section>
       ) : null}
 
       {activeTab === "stock" ? (
         <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mi stock en consignacion</h2><p>Lo que tenes en mano y lo que sigue disponible para vender.</p></div></div><div className="reseller-stock-list">{assigned.map((item) => <div key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><span><strong>{item.name}</strong><small>{item.expansion} #{item.number || "-"}</small></span><b>{item.remaining} en mano</b><em className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</em><strong>{formatArs(item.priceArs)}</strong></div>)}</div></section>
+      ) : null}
+
+      {activeTab === "global" ? (
+        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Stock global</h2><p>Catalogo disponible de UltimoTurno. Esta vista es solo lectura.</p></div><label className="reseller-search"><Icon name="search" /><input placeholder="Buscar en todo el stock" value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} /></label></div>
+          {visibleGlobalStock.length ? <div className="reseller-global-grid">{visibleGlobalStock.map((item) => <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small></div><span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong></article>)}</div> : <EmptyState title="Sin resultados" body={globalSearch ? "Proba con otro nombre, expansion o numero." : "No hay stock global disponible en este momento."} />}
+        </section>
       ) : null}
 
       {activeTab === "sales" ? (

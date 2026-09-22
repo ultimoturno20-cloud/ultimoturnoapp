@@ -338,8 +338,13 @@ MVP implementado localmente:
 - Rendiciones registradas como libro de pagos, con saldo pendiente.
 - Gestion interna en `Mas > Revendedores`.
 - Portal separado en `?revendedor=1`.
+- Pedidos propios: se guardan pendientes sin reservar stock y se convierten en
+  venta solo despues de revalidar disponibilidad.
+- Vista de stock global para revendedores, buscable y de solo lectura; no
+  expone costos de compra ni acciones administrativas.
 
-La migracion es `0032_reseller_consignment.sql`. No se aplicaron cambios ni
+Las migraciones son `0032_reseller_consignment.sql` y
+`0033_reseller_orders.sql`. No se aplicaron cambios ni
 datos de prueba sobre produccion durante la implementacion.
 
 Verificacion del MVP:
