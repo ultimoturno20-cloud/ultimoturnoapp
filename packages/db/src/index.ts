@@ -176,7 +176,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2158,7 +2158,9 @@ export async function enrichCardIndexFromTcgCsv(db: PGlite, input: {
     let best: { entry: CardIndexEntry; score: number; reasons: string[] } | null = null;
     for (const entry of candidates) {
       const scored = scoreTcgCsvCardIndexMatch(entry, product, group, number);
-      if (!best || scored.score > best.score) best = { entry, ...scored };
+      if (!best || scored.score > best.score || (scored.score === best.score && cardIndexTcgCandidatePreference(entry) > cardIndexTcgCandidatePreference(best.entry))) {
+        best = { entry, ...scored };
+      }
     }
     if (!best || best.score < 72) {
       rowsSkipped++;
@@ -2246,13 +2248,17 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     left join lateral (
       select cie.image_url, cie.tcgplayer_product_id
       from card_index_entries cie
-      where cie.pricecharting_id like 'tcgcsv-%'
+      join pricecharting_cache_entries candidate_pce on candidate_pce.pricecharting_id = cie.pricecharting_id
+      where cie.pricecharting_id <> pce.pricecharting_id
         and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
-        and cie.language_group = pce.language_group
-        and cie.normalized_expansion = pce.normalized_expansion
-        and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
-            regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
-      order by case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.updated_at desc
+        and candidate_pce.language_group = pce.language_group
+        and candidate_pce.normalized_expansion = pce.normalized_expansion
+        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
+            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
+            regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
+      order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
+        case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.match_confidence desc, cie.updated_at desc
       limit 1
     ) tcg_match on true
     left join lateral (
@@ -2367,13 +2373,17 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
     left join lateral (
       select cie.image_url, cie.tcgplayer_product_id, cie.tcgplayer_url, cie.updated_at
       from card_index_entries cie
-      where cie.pricecharting_id like 'tcgcsv-%'
+      join pricecharting_cache_entries candidate_pce on candidate_pce.pricecharting_id = cie.pricecharting_id
+      where cie.pricecharting_id <> pce.pricecharting_id
         and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
-        and cie.language_group = pce.language_group
-        and cie.normalized_expansion = pce.normalized_expansion
-        and regexp_replace(lower(split_part(coalesce(cie.card_number, ''), '/', 1)), '^0+', '') =
-            regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '^0+', '')
-      order by case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.updated_at desc
+        and candidate_pce.language_group = pce.language_group
+        and candidate_pce.normalized_expansion = pce.normalized_expansion
+        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
+            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
+            regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
+      order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
+        case when coalesce(cie.image_url, '') <> '' then 0 else 1 end, cie.match_confidence desc, cie.updated_at desc
       limit 1
     ) tcg_match on true
     left join lateral (
@@ -3185,8 +3195,9 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
       coalesce(pc_identifier.external_url, pce.canonical_url, '') as pricecharting_url,
       pce.loose_price_usd as pricecharting_loose_price_usd,
-      coalesce(cie.tcgplayer_product_id, '') as tcgplayer_product_id,
-      coalesce(cie.tcgplayer_url, '') as tcgplayer_url,
+      coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''), '') as tcgplayer_product_id,
+      coalesce(nullif(cie.tcgplayer_url, ''), nullif(sibling_tcg.tcgplayer_url, ''),
+        case when coalesce(tcg_image.product_id, '') <> '' then 'https://www.tcgplayer.com/product/' || tcg_image.product_id else '' end, '') as tcgplayer_url,
       coalesce(tpce.sub_type_name, '') as tcgplayer_sub_type_name,
       tpce.low_price_usd as tcgplayer_low_price_usd,
       tpce.mid_price_usd as tcgplayer_mid_price_usd,
@@ -3241,11 +3252,35 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       limit 1
     ) pc_identifier on true
     left join pricecharting_cache_entries pce on pce.pricecharting_id = pc_identifier.external_id
+    left join pricecharting_image_cache pic on pic.pricecharting_id = pc_identifier.external_id
     left join card_index_entries cie on cie.pricecharting_id = pc_identifier.external_id
+    left join lateral (
+      select coalesce(
+        substring(coalesce(p.image_url, '') from '/product/([0-9]+)'),
+        substring(coalesce(pic.source_image_url, '') from '/product/([0-9]+)')
+      ) as product_id
+    ) tcg_image on true
+    left join lateral (
+      select candidate_cie.tcgplayer_product_id, candidate_cie.tcgplayer_url
+      from card_index_entries candidate_cie
+      join pricecharting_cache_entries candidate_pce on candidate_pce.pricecharting_id = candidate_cie.pricecharting_id
+      where coalesce(candidate_cie.tcgplayer_product_id, '') <> ''
+        and coalesce(cie.tcgplayer_product_id, '') = ''
+        and coalesce(tcg_image.product_id, '') = ''
+        and candidate_pce.language_group = pce.language_group
+        and candidate_pce.normalized_expansion = pce.normalized_expansion
+        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
+            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
+            regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
+      order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
+        candidate_cie.match_confidence desc, candidate_cie.updated_at desc
+      limit 1
+    ) sibling_tcg on true
     left join lateral (
       select *
       from tcgplayer_price_cache_entries candidate_price
-      where candidate_price.tcgplayer_product_id = cie.tcgplayer_product_id
+      where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
       order by case
         when lower(v.finish) like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 0
         when lower(v.finish) like '%holo%' and lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%holo%' and lower(candidate_price.sub_type_name) not like '%reverse%' then 0
@@ -3260,7 +3295,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
     where ii.business_id = $1
     group by ii.id, cp.price_ars, cp.price_usd, p.id, v.id,
       pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
-      cie.tcgplayer_product_id, cie.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
+      cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
+      sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
       tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd
     order by p.name, v.language, v.condition
   `, [demoBusinessId]);
@@ -3299,8 +3335,9 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
       coalesce(pc_identifier.external_url, pce.canonical_url, '') as pricecharting_url,
       pce.loose_price_usd as pricecharting_loose_price_usd,
-      coalesce(cie.tcgplayer_product_id, '') as tcgplayer_product_id,
-      coalesce(cie.tcgplayer_url, '') as tcgplayer_url,
+      coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''), '') as tcgplayer_product_id,
+      coalesce(nullif(cie.tcgplayer_url, ''), nullif(sibling_tcg.tcgplayer_url, ''),
+        case when coalesce(tcg_image.product_id, '') <> '' then 'https://www.tcgplayer.com/product/' || tcg_image.product_id else '' end, '') as tcgplayer_url,
       coalesce(tpce.sub_type_name, '') as tcgplayer_sub_type_name,
       tpce.low_price_usd as tcgplayer_low_price_usd,
       tpce.mid_price_usd as tcgplayer_mid_price_usd,
@@ -3355,11 +3392,35 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       limit 1
     ) pc_identifier on true
     left join pricecharting_cache_entries pce on pce.pricecharting_id = pc_identifier.external_id
+    left join pricecharting_image_cache pic on pic.pricecharting_id = pc_identifier.external_id
     left join card_index_entries cie on cie.pricecharting_id = pc_identifier.external_id
+    left join lateral (
+      select coalesce(
+        substring(coalesce(p.image_url, '') from '/product/([0-9]+)'),
+        substring(coalesce(pic.source_image_url, '') from '/product/([0-9]+)')
+      ) as product_id
+    ) tcg_image on true
+    left join lateral (
+      select candidate_cie.tcgplayer_product_id, candidate_cie.tcgplayer_url
+      from card_index_entries candidate_cie
+      join pricecharting_cache_entries candidate_pce on candidate_pce.pricecharting_id = candidate_cie.pricecharting_id
+      where coalesce(candidate_cie.tcgplayer_product_id, '') <> ''
+        and coalesce(cie.tcgplayer_product_id, '') = ''
+        and coalesce(tcg_image.product_id, '') = ''
+        and candidate_pce.language_group = pce.language_group
+        and candidate_pce.normalized_expansion = pce.normalized_expansion
+        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
+            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
+            regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
+      order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
+        candidate_cie.match_confidence desc, candidate_cie.updated_at desc
+      limit 1
+    ) sibling_tcg on true
     left join lateral (
       select *
       from tcgplayer_price_cache_entries candidate_price
-      where candidate_price.tcgplayer_product_id = cie.tcgplayer_product_id
+      where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
       order by case
         when lower(v.finish) like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 0
         when lower(v.finish) like '%holo%' and lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%holo%' and lower(candidate_price.sub_type_name) not like '%reverse%' then 0
@@ -3374,7 +3435,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
     where ii.business_id = $1
     group by ii.id, cp.price_ars, cp.price_usd, p.id, v.id,
       pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
-      cie.tcgplayer_product_id, cie.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
+      cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
+      sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
       tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd
     order by p.name, v.language, v.condition
   `, [businessId]);
@@ -6703,6 +6765,12 @@ function buildCardIndexLookup(entries: CardIndexEntry[]): { byNumber: Map<string
     byNumber.set(number, current);
   }
   return { byNumber };
+}
+
+function cardIndexTcgCandidatePreference(entry: CardIndexEntry): number {
+  return (entry.priceChartingId.startsWith("tcgcsv-") ? 0 : 4)
+    + (entry.tcgplayerProductId ? 0 : 2)
+    + (entry.canonicalName.includes("[") ? 0 : 1);
 }
 
 function scoreTcgCsvCardIndexMatch(

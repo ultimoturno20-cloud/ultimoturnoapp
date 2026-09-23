@@ -572,6 +572,15 @@ function scoreTcgCandidate(entry: Record<string, unknown>, product: TcgCsvProduc
   return { score: Math.max(0, Math.min(100, score)), reasons };
 }
 
+function tcgCandidatePreference(entry: Record<string, unknown>): number {
+  const priceChartingId = String(entry.pricecharting_id || "");
+  const canonicalName = String(entry.canonical_name || "");
+  const hasTcgplayerLink = Boolean(String(entry.tcgplayer_product_id || "").trim());
+  return (priceChartingId.startsWith("tcgcsv-") ? 0 : 4)
+    + (hasTcgplayerLink ? 0 : 2)
+    + (canonicalName.includes("[") ? 0 : 1);
+}
+
 async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, products: TcgCsvProduct[]) {
   const numbers = [...new Set(products
     .map((product) => normalizeTcgNumber(tcgCsvExtendedValue(product, "Number", "Card Number")))
@@ -580,7 +589,7 @@ async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, pr
   const params = numbers;
   const placeholders = params.map((_, index) => `$${index + 1}`).join(", ");
   const rows = await db.query<Record<string, unknown>>(`
-    select id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
+    select id, pricecharting_id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
     from card_index_entries
     where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') in (${placeholders})
   `, params);
@@ -737,7 +746,7 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
   const candidateRows = candidatesByNumber
     ? (candidatesByNumber.get(normalizedNumber) || []).slice(0, 500)
     : (await db.query<Record<string, unknown>>(`
-      select id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
+      select id, pricecharting_id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
       from card_index_entries
       where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') = $1
       limit 500
@@ -745,7 +754,9 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
   let best: { row: Record<string, unknown>; score: number; reasons: string[] } | null = null;
   for (const row of candidateRows) {
     const scored = scoreTcgCandidate(row, product, group, number);
-    if (!best || scored.score > best.score) best = { row, ...scored };
+    if (!best || scored.score > best.score || (scored.score === best.score && tcgCandidatePreference(row) > tcgCandidatePreference(best.row))) {
+      best = { row, ...scored };
+    }
   }
   if (!best || best.score < 72) {
     if (!seedMissing) return "skipped" as const;
@@ -3549,6 +3560,28 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         const db = await dbPromise.catch(() => null);
         if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message }).catch(() => undefined);
         sendJson(response, 502, { ok: false, job: "pricecharting-refresh", error: message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/cron/tcgplayer-refresh" && request.method === "GET") {
+      if (!requestHasCronAccess(request)) {
+        sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
+        return;
+      }
+      try {
+        const db = await dbPromise;
+        const status = await refreshTcgplayerPricesFromTcgCsv(db, { force: false });
+        sendJson(response, 200, {
+          ok: true,
+          job: "tcgplayer-refresh",
+          status
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const db = await dbPromise.catch(() => null);
+        if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message }).catch(() => undefined);
+        sendJson(response, 502, { ok: false, job: "tcgplayer-refresh", error: message });
       }
       return;
     }

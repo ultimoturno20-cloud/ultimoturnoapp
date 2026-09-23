@@ -1291,7 +1291,7 @@ describe("operational inventory database", () => {
     await replacePriceChartingCache(db, {
       category: "pokemon-cards",
       sourceHash: "test-hash",
-      rowsReceived: 1,
+      rowsReceived: 2,
       rowsSkipped: 0,
       rows: [{
         priceChartingId: "pc-pikachu-25",
@@ -1305,6 +1305,18 @@ describe("operational inventory database", () => {
         loosePriceUsd: 4.99,
         imageUrl: "",
         searchKey: "pikachu promo 025"
+      }, {
+        priceChartingId: "pc-pikachu-25-reverse",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-reverse-holo-25",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-reverse-holo-25",
+        productName: "Pikachu [Reverse Holo]",
+        normalizedName: "pikachu reverse holo",
+        expansionName: "Promo",
+        normalizedExpansion: "promo",
+        cardNumber: "025",
+        loosePriceUsd: 5.99,
+        imageUrl: "",
+        searchKey: "pikachu reverse holo promo 025"
       }]
     });
     await refreshCardIndexFromPriceCharting(db);
@@ -1352,6 +1364,44 @@ describe("operational inventory database", () => {
     assert.equal(firstStatus.productEntries, 1);
     assert.equal(firstStatus.linkedProductEntries, 1);
     assert.equal(firstStatus.linkedCardIndexEntries, 1);
+
+    const user = await getDefaultOperationalUser(db);
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-IMAGE-025",
+      name: "Pikachu",
+      expansion: "Promo",
+      number: "025",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      imageUrl: "https://tcgplayer-cdn.tcgplayer.com/product/555_in_1000x1000.jpg",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 1000
+    }, user);
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-SIBLING-025",
+      name: "Pikachu",
+      expansion: "Promo",
+      number: "025",
+      language: "EN",
+      condition: "NM",
+      finish: "reverse_holo",
+      imageUrl: "https://example.invalid/pikachu-reverse.jpg",
+      priceChartingId: "pc-pikachu-25-reverse",
+      priceChartingUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-reverse-holo-25",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 1000
+    }, user);
+    const stock = await listStockForBusiness(db, user.businessId);
+    const exactImage = stock.items.find((item) => item.sku === "TEST-TCG-IMAGE-025");
+    const siblingVariant = stock.items.find((item) => item.sku === "TEST-TCG-SIBLING-025");
+    assert.equal(exactImage?.priceReferences.tcgplayer.productId, "555");
+    assert.equal(exactImage?.priceReferences.tcgplayer.marketPriceUsd, 2.5);
+    assert.equal(siblingVariant?.priceReferences.tcgplayer.productId, "555");
+    assert.equal(siblingVariant?.priceReferences.tcgplayer.subTypeName, "Reverse Holofoil");
+    assert.equal(siblingVariant?.priceReferences.tcgplayer.marketPriceUsd, 5.5);
 
     await replaceTcgplayerPriceCache(db, {
       source: "tcgcsv",

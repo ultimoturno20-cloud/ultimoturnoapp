@@ -3,7 +3,8 @@
   "installCommand": "npm install",
   "outputDirectory": "apps/admin-web/dist",
   "crons": [
-    { "path": "/api/cron/pricecharting-refresh", "schedule": "0 9 * * *" }
+    { "path": "/api/cron/pricecharting-refresh", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/tcgplayer-refresh", "schedule": "30 9 * * *" }
   ],
   "rewrites": [
     { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },

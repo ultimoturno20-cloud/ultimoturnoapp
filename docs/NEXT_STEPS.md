@@ -91,6 +91,10 @@ orden de produccion.
 - Priorizar imagenes visibles para cartas que existen en stock o claims.
 - Mostrar claramente idioma, acabado y fuente de precio.
 - Mantener PriceCharting y TCGCSV como referencias, no como inventario.
+- Medir la cobertura TCGplayer del inventario despues del backfill completo y
+  revisar manualmente conflictos; no aprobar coincidencias debiles en lote.
+- Confirmar que el cron diario de TCGplayer deja una corrida `completed` o
+  `skipped` y que no excede el limite de ejecucion de Vercel.
 
 ## Prompt para iniciar otro chat
 

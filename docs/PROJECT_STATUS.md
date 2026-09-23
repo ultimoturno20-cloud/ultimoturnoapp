@@ -60,6 +60,25 @@ Actualizado: 2026-09-23
 - Se normalizo el tamano visual de cartas y se agregaron fallbacks seguros para
   imagenes publicas de TCGPlayer/CDN mediante proxy cuando hace falta.
 
+### Precios TCGplayer
+
+- La fuente de precios es TCGCSV, sin depender de credenciales de la API oficial
+  de TCGplayer. El cache guarda low, mid, high, market y direct low por producto
+  y acabado.
+- Al iniciar la mejora habia `45.464` precios para `31.480` productos, pero solo
+  `26` de las `1.347` cartas del inventario resolvian un producto TCGplayer. El
+  problema era de vinculacion, no de descarga.
+- El matcher ahora prioriza fichas PriceCharting reales sobre filas sinteticas
+  TCGCSV cuando ambas tienen la misma coincidencia.
+- Inventario y catalogo pueden heredar el producto TCGplayer de otra variante de
+  la misma carta, y eligen el subtipo de precio segun acabado (`Normal`,
+  `Reverse Holofoil`, `Holofoil`, etc.).
+- Cuando una imagen ya contiene `/product/{id}`, ese identificador exacto tiene
+  prioridad y evita una coincidencia aproximada.
+- Vercel ejecuta `/api/cron/tcgplayer-refresh` diariamente a las `09:30 UTC`
+  (`06:30` de Argentina), despues del cron de PriceCharting.
+- Migracion nueva: `0035_tcgplayer_price_fallback.sql`.
+
 ### Revendedores en consignacion
 
 - Se publico un sistema de usuarios revendedores con comision configurable,
