@@ -45,6 +45,11 @@ Actualizado: 2026-09-23
 
 ### Claims, catalogo y stock
 
+- La pantalla `Calidad` se simplifico para el trabajo diario: conserva las
+  metricas y la bandeja de revision, pero muestra solo `Sincronizar fuentes` y
+  `Reparar imagenes prioritarias`. La sincronizacion ejecuta PriceCharting,
+  indice maestro y TCGplayer en orden; los controles tecnicos duplicados quedan
+  centralizados en `Mas > Administracion`.
 - Se agrego `/claims/planificar`, un workspace separado para preparar multiples
   borradores sin modificar ni reservar stock. Incluye selector masivo desde
   inventario disponible, cantidades, secciones, precios, tags y publicacion

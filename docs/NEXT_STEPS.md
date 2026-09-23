@@ -106,6 +106,9 @@ orden de produccion.
 
 ### 7. Mejorar calidad de catalogo
 
+- Usar `Calidad` como bandeja operativa y mantener las tareas de emergencia o
+  diagnostico tecnico dentro de `Mas > Administracion`, sin volver a duplicar
+  acciones en ambas pantallas.
 - Resolver duplicados y variantes ambiguas.
 - Priorizar imagenes visibles para cartas que existen en stock o claims.
 - Mostrar claramente idioma, acabado y fuente de precio.

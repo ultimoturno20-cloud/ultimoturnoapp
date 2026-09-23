@@ -2663,11 +2663,11 @@ function App() {
           onCardIndexSearch={(search, filter) => void searchCardIndex(search, filter)}
           onCardIndexReview={(cardIndexId, input) => void reviewCardIndex(cardIndexId, input)}
           onCardIndexApproveByConfidence={(minimumConfidence, search, filter) => void approveCardIndexByConfidence(minimumConfidence, search, filter)}
-          onPriceChartingSync={() => void syncPriceChartingCache()}
-          onCardIndexRebuild={() => void rebuildCardIndex()}
-          onCardIndexTcgCsvSync={() => void syncCardIndexTcgCsv()}
+          onPriceChartingSync={syncPriceChartingCache}
+          onCardIndexRebuild={rebuildCardIndex}
+          onCardIndexTcgCsvSync={syncCardIndexTcgCsv}
           onPriceChartingImageReindexLocal={() => void reindexLocalPriceChartingImages()}
-          onPriceChartingImageBatch={(includeAll, mode) => void processPriceChartingImages(includeAll, mode)}
+          onPriceChartingImageBatch={processPriceChartingImages}
           onPriceChartingBackfillChange={(running) => { setPriceChartingImageBackfillRunning(running); if (!running) setPriceChartingImageResumeAt(""); }}
           showImageReview={showStockImageReview}
           onToggleImageReview={() => void toggleStockImageReview()}
@@ -5927,11 +5927,11 @@ function CatalogView(props: {
   onCardIndexSearch: (search: string, filter?: CardIndexFilter) => void;
   onCardIndexReview: (cardIndexId: string, input: { action: "approve" | "reject" | "manual"; tcgplayerProductId?: string; tcgplayerUrl?: string; imageUrl?: string; note?: string }) => void;
   onCardIndexApproveByConfidence: (minimumConfidence: number, search: string, filter: CardIndexFilter) => void;
-  onPriceChartingSync: () => void;
-  onCardIndexRebuild: () => void;
-  onCardIndexTcgCsvSync: () => void;
+  onPriceChartingSync: () => Promise<void>;
+  onCardIndexRebuild: () => Promise<void>;
+  onCardIndexTcgCsvSync: () => Promise<void>;
   onPriceChartingImageReindexLocal: () => void;
-  onPriceChartingImageBatch: (includeAll: boolean, mode?: ImageResolverMode) => void;
+  onPriceChartingImageBatch: (includeAll: boolean, mode?: ImageResolverMode) => Promise<void>;
   onPriceChartingBackfillChange: (running: boolean) => void;
   showImageReview: boolean;
   onToggleImageReview: () => void;
@@ -5950,7 +5950,8 @@ function CatalogView(props: {
   const [cardIndexSearch, setCardIndexSearch] = useState("");
   const [cardIndexFilter, setCardIndexFilter] = useState<CardIndexFilter>("all");
   const [approvalConfidence, setApprovalConfidence] = useState(90);
-  const [showAdvancedCatalogTools, setShowAdvancedCatalogTools] = useState(false);
+  const [qualityTask, setQualityTask] = useState<"" | "sources" | "images">("");
+  const showAdvancedCatalogTools = false;
   const imageFoundEntries = Math.max(props.priceChartingImages.downloadedEntries, props.priceChartingImages.urlEntries);
   const imageProgressTotal = Math.max(1, props.priceChartingImages.totalEntries);
   const imageProgress = Math.round((imageFoundEntries / imageProgressTotal) * 100);
@@ -5991,6 +5992,26 @@ function CatalogView(props: {
     setCardIndexFilter(filter);
     props.onCardIndexSearch(cardIndexSearch, filter);
   };
+  const syncCatalogSources = async () => {
+    if (qualityTask) return;
+    setQualityTask("sources");
+    try {
+      await props.onPriceChartingSync();
+      await props.onCardIndexRebuild();
+      await props.onCardIndexTcgCsvSync();
+    } finally {
+      setQualityTask("");
+    }
+  };
+  const repairPriorityImages = async () => {
+    if (qualityTask) return;
+    setQualityTask("images");
+    try {
+      await props.onPriceChartingImageBatch(false, "external-index");
+    } finally {
+      setQualityTask("");
+    }
+  };
   const qualityMetrics: Array<{ label: string; value: number; helper: string; filter: CardIndexFilter; tone: string }> = [
     { label: "Para revisar", value: props.cardIndexStatus.weakMatchEntries + props.cardIndexStatus.priceChartingOnlyEntries, helper: "debiles o solo PriceCharting", filter: "pending_review", tone: "warn" },
     { label: "Conflictos", value: props.cardIndexStatus.conflictEntries, helper: "requieren correccion manual", filter: "conflict", tone: "danger" },
@@ -6025,20 +6046,11 @@ function CatalogView(props: {
           ))}
         </div>
         <div className="catalog-doctor-actions">
-          <button className="secondary-action" disabled={props.priceChartingSyncing} onClick={props.onPriceChartingSync}>
-            <Icon name="refresh" />{props.priceChartingSyncing ? "Actualizando..." : "Actualizar PriceCharting"}
+          <button className="secondary-action" disabled={Boolean(qualityTask) || props.priceChartingSyncing || props.cardIndexSyncing} onClick={() => void syncCatalogSources()}>
+            <Icon name="refresh" />{qualityTask === "sources" ? "Sincronizando fuentes..." : "Sincronizar fuentes"}
           </button>
-          <button className="secondary-action" disabled={props.cardIndexSyncing} onClick={props.onCardIndexRebuild}>
-            <Icon name="palette" />{props.cardIndexRebuildAfterId ? "Continuar indice PC" : "Reconstruir indice PC"}
-          </button>
-          <button className="secondary-action" disabled={props.cardIndexSyncing} onClick={props.onCardIndexTcgCsvSync}>
-            <Icon name="external" />{props.cardIndexNextGroupOffset === null ? "TCG completo" : `TCG desde grupo ${props.cardIndexNextGroupOffset}`}
-          </button>
-          <button className="secondary-action" disabled={props.priceChartingImageProcessing} onClick={props.onPriceChartingImageReindexLocal}>
-            <Icon name="image" />Reindexar imagenes locales
-          </button>
-          <button className="primary-action" disabled={props.priceChartingImageProcessing} onClick={() => props.onPriceChartingImageBatch(true, "external-index")}>
-            <Icon name="search" />Buscar URLs faltantes
+          <button className="primary-action" disabled={Boolean(qualityTask) || props.priceChartingImageProcessing} onClick={() => void repairPriorityImages()}>
+            <Icon name="image" />{qualityTask === "images" ? "Reparando imagenes..." : "Reparar imagenes prioritarias"}
           </button>
         </div>
         <p className="catalog-doctor-note">
@@ -6050,11 +6062,8 @@ function CatalogView(props: {
           <div>
             <p className="eyebrow">Calidad</p>
             <h2>Bandeja de datos del catalogo</h2>
-            <p>Revisa solo lo que afecta el uso diario: imagen, link externo, match y confianza. Las herramientas tecnicas quedan en mantenimiento.</p>
+            <p>Revisa lo que afecta el uso diario: imagen, link externo, match y confianza. El mantenimiento tecnico esta en Administracion.</p>
           </div>
-          <button className="secondary-action" onClick={() => setShowAdvancedCatalogTools((open) => !open)}>
-            <Icon name={showAdvancedCatalogTools ? "close" : "settings"} />{showAdvancedCatalogTools ? "Ocultar mantenimiento" : "Mantenimiento"}
-          </button>
         </div>
         <div className="quality-overview">
           {qualityMetrics.map((metric) => (
