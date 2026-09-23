@@ -1749,7 +1749,12 @@ async function downloadImageUrl(sourceImageUrl: string, priceChartingId: string,
 
 async function downloadPriceChartingImage(input: { priceChartingId: string; canonicalUrl: string; sourceImageUrl?: string; productName: string; expansionName: string; cardNumber: string; allowPriceCharting: boolean; mode: ImageResolverMode }) {
   const existing = await findLocalPriceChartingImage(input.priceChartingId);
-  if (existing) return existing;
+  if (existing) {
+    return {
+      ...existing,
+      sourceImageUrl: input.sourceImageUrl || existing.sourceImageUrl
+    };
+  }
 
   if (input.sourceImageUrl) {
     const downloaded = await downloadImageUrl(unwrapImageSourceUrl(input.sourceImageUrl), input.priceChartingId, imageDownloadSourceLabel(input.sourceImageUrl));
@@ -1944,8 +1949,7 @@ async function forceInventoryProductImage(
 
   if (manualUrl) {
     if (manualUrl.startsWith("/")) {
-      imageUrl = manualUrl;
-      source = "URL local manual";
+      throw new Error("Usa una URL publica http/https, no una ruta local.");
     } else {
       const parsed = parseHttpUrl(manualUrl);
       if (!parsed) throw new Error("La URL manual no parece valida.");
@@ -1957,7 +1961,7 @@ async function forceInventoryProductImage(
       }
       if (target.priceChartingId || isDirectImageUrl(parseHttpUrl(sourceImageUrl) || parsed)) {
         const result = await downloadImageUrl(sourceImageUrl, target.priceChartingId || target.itemId, imageDownloadSourceLabel(sourceImageUrl));
-        imageUrl = result.publicUrl;
+        imageUrl = extractRemoteImageUrl(result.sourceImageUrl);
         source = imageDownloadSourceLabel(sourceImageUrl);
         if (target.priceChartingId && /^[a-zA-Z0-9_-]+$/.test(target.priceChartingId)) {
           await recordPriceChartingImageSuccess(db, {
@@ -1992,15 +1996,17 @@ async function forceInventoryProductImage(
       priceChartingId: target.priceChartingId,
       ...result
     });
-    imageUrl = result.publicUrl;
+    imageUrl = extractRemoteImageUrl(result.sourceImageUrl) || extractRemoteImageUrl(cachedSourceImageUrl);
     source = imageDownloadSourceLabel(result.sourceImageUrl || target.cacheImageUrl);
   } else {
     const external = await findExternalCardImage(target, input.mode === "pokemon-tcg" ? "pokemon-tcg" : "auto");
     if (!external) throw new Error("No encontre imagen automatica y esta carta no tiene ID de PriceCharting para forzar.");
     const result = await downloadImageUrl(external.imageUrl, target.itemId, external.source);
-    imageUrl = result.publicUrl;
+    imageUrl = extractRemoteImageUrl(result.sourceImageUrl);
     source = external.source;
   }
+
+  if (!imageUrl) throw new Error("La imagen se encontro, pero no tiene una URL publica durable para guardar.");
 
   await setInventoryProductImage(db, target.productId, imageUrl, user);
   const item = await getInventoryItem(db, inventoryItemId, user.businessId);

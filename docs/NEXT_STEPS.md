@@ -62,6 +62,9 @@ una sola vez y el saldo a rendir coincide con la comision acordada.
 ### 3. Completar cobertura de imagenes
 
 - Dejar `Mejorar Calidad Imagenes Online.cmd` ejecutando por lotes.
+- Confirmar que las cartas reparadas manualmente conservan una URL publica
+  `http/https` y no vuelven a `/pricecharting-images/files/...` despues de un
+  nuevo despliegue de Vercel.
 - Vigilar que bajen `stock-sin-img` y `claim-sin-img` sin aumentar errores.
 - Mantener el backoff de fuentes `403/404/410`.
 - Dividir o paginar `external-index` si los `504` de Vercel siguen impidiendo

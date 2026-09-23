@@ -72,6 +72,10 @@ Actualizado: 2026-09-23
   completo en cada consulta.
 - Se normalizo el tamano visual de cartas y se agregaron fallbacks seguros para
   imagenes publicas de TCGPlayer/CDN mediante proxy cuando hace falta.
+- `Forzar imagen` en Inventario ya no guarda rutas efimeras como
+  `/pricecharting-images/files/...`: conserva la fuente publica remota que
+  funciona entre ejecuciones de Vercel. Volver a forzar una carta afectada
+  reemplaza la ruta local rota por su URL durable.
 
 ### Precios TCGplayer
 
