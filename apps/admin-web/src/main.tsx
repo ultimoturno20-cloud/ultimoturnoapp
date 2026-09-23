@@ -3699,7 +3699,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     else set({ condition: form.condition === "GRADED" ? "NM" : form.condition, gradingCompany: "", grade: "", gradingCert: "" });
   };
   const selectCatalogCard = (entry: PriceChartingCacheEntry) => {
-    const priceUsd = entry.priceChartingPriceUsd ?? entry.loosePriceUsd ?? null;
+    const priceUsd = entry.priceChartingPriceUsd ?? entry.loosePriceUsd ?? entry.tcgplayerPriceUsd ?? null;
     const priceChartingUrl = entry.priceChartingUrl || entry.canonicalUrl;
     set({
       sku: "",
