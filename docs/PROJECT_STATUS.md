@@ -11,13 +11,37 @@ Actualizado: 2026-09-23
 - Produccion: `https://ultimoturnoapp-api.vercel.app/`.
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
-- Ultimo commit funcional desplegado y verificado: `5e115f1`.
+- Ultimo commit funcional desplegado y verificado al iniciar esta mejora:
+  `271933f`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
   solo de frontend y no modificaron la base de ordenes.
 
 ## Trabajo completado del 17 al 23 de septiembre
+
+### Navegacion y sincronizacion
+
+- Cada sector principal tiene una URL propia y navegable: `/inicio`,
+  `/inventario`, `/inventario/cargar-stock`, `/claims`, `/claims/en-vivo`,
+  `/ordenes`, `/caja`, `/compras`, `/calidad`, `/movimientos`, `/importar`,
+  `/carga-movil`, `/revendedores` y `/admin`.
+- El portal de revendedores tambien tiene URLs por sector:
+  `/portal-revendedor/venta`, `/portal-revendedor/pedidos`,
+  `/portal-revendedor/stock`, `/portal-revendedor/stock-global` y
+  `/portal-revendedor/ventas`.
+- La navegacion usa el historial del navegador sin recargar toda la aplicacion;
+  atras, adelante y abrir un enlace en otra pestana funcionan como se espera.
+- El sector visible se sincroniza automaticamente cada 15 segundos y al volver
+  a enfocar la ventana. Solo consulta los datos necesarios para esa pantalla y
+  conserva formularios, carrito, filtros y posicion de scroll.
+- `Actualizar sector` reemplaza la recarga global manual. El indicador
+  `En vivo` / `Sincronizando` informa el estado sin bloquear la operacion.
+- El portal de revendedores sincroniza su panel cada 15 segundos sin vaciar el
+  carrito ni cambiar la pestana activa.
+- Verificacion local: una carga externa de 5 cartas aparecio sola en Inventario
+  durante el siguiente ciclo, sin recargar la pagina; rutas directas, historial,
+  desktop, movil y consola del navegador verificados.
 
 ### Claims, catalogo y stock
 

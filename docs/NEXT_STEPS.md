@@ -7,6 +7,22 @@ Actualizado: 2026-09-23
 
 ## Prioridades vigentes
 
+### 0. Observar la sincronizacion sectorial en produccion
+
+- Confirmar con dos sesiones reales que inventario, claims, ordenes, caja y el
+  portal reflejen cambios dentro de los 15 segundos esperados.
+- Vigilar latencia y cantidad de consultas durante el uso diario.
+- Mantener el refresco acotado al sector visible; no volver a descargar toda la
+  aplicacion para actualizar una sola pantalla.
+- Evaluar Supabase Realtime o eventos del servidor solo si los 15 segundos no
+  alcanzan o si el sondeo genera una carga medible. El sondeo actual es simple,
+  predecible y conserva el estado local de trabajo.
+- Verificar que todas las rutas directas funcionen en Vercel despues de cada
+  cambio de `vercel.json`.
+
+Senal de exito: dos operadores ven las altas y cambios sin F5, sin perder lo
+que estaban escribiendo y sin una recarga completa de la interfaz.
+
 ### 1. Pilotear revendedores en produccion
 
 - Crear un revendedor de prueba con comision real y asignarle pocas cartas.
@@ -90,7 +106,9 @@ Storage.
 Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
 recrees durante pruebas. No pongas secretos en Git.
 
-Commit de produccion confirmado al cerrar el chat: `5e115f1`.
+Commit de produccion confirmado antes de la mejora de sincronizacion:
+`271933f`. Revisar `git log -1` y `/api/public-status` para obtener el commit
+final publicado por el chat siguiente.
 
 Trabajo reciente: carga de stock en pagina completa, busqueda de catalogo mas
 rapida, imagenes con fallback/proxy seguro, tarjetas de inventario normalizadas,
@@ -100,7 +118,14 @@ stock global de solo lectura y estados independientes de preparacion y cobro.
 UltimoTurno siempre conserva prioridad sobre el stock y la venta del revendedor
 revalida disponibilidad antes de descontar.
 
-Objetivo inmediato: pilotear revendedores con pocas cartas reales y comprobar
+La navegacion principal y el portal usan URLs reales por sector. La pantalla
+visible se actualiza cada 15 segundos y al recuperar el foco, sin F5 ni perdida
+de formularios, carrito, filtros o scroll. El boton superior actualiza solo el
+sector actual. Antes de cambiar esto, revisar la implementacion de History API,
+los mapas de rutas y `vercel.json`.
+
+Objetivo inmediato: validar la sincronizacion con dos sesiones en produccion y
+luego pilotear revendedores con pocas cartas reales para comprobar
 prioridad central, venta, anulacion, devolucion, rendicion, pedidos y estados.
 Luego continuar cobertura de imagenes y validacion de CSV reales.
 ```

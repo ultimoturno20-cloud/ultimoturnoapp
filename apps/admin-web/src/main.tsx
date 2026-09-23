@@ -3,6 +3,45 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
+type ResellerPortalTab = "sell" | "orders" | "stock" | "global" | "sales";
+const viewPaths: Record<View, string> = {
+  dashboard: "/inicio",
+  inventory: "/inventario",
+  "stock-intake": "/inventario/cargar-stock",
+  claims: "/claims",
+  "claim-live": "/claims/en-vivo",
+  orders: "/ordenes",
+  sales: "/caja",
+  purchases: "/compras",
+  catalog: "/calidad",
+  movements: "/movimientos",
+  import: "/importar",
+  "mobile-intake": "/carga-movil",
+  resellers: "/revendedores",
+  admin: "/admin"
+};
+const resellerPortalPaths: Record<ResellerPortalTab, string> = {
+  sell: "/portal-revendedor/venta",
+  orders: "/portal-revendedor/pedidos",
+  stock: "/portal-revendedor/stock",
+  global: "/portal-revendedor/stock-global",
+  sales: "/portal-revendedor/ventas"
+};
+
+function viewFromLocation(): View {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("mobile") === "1" || window.location.hash === "#mobile") return "mobile-intake";
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  return (Object.entries(viewPaths).find(([, route]) => route === path)?.[0] as View | undefined) || "dashboard";
+}
+
+function resellerTabFromLocation(): ResellerPortalTab {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const routed = Object.entries(resellerPortalPaths).find(([, route]) => route === path)?.[0] as ResellerPortalTab | undefined;
+  if (routed) return routed;
+  const legacy = new URLSearchParams(window.location.search).get("seccion");
+  return (["sell", "orders", "stock", "global", "sales"] as ResellerPortalTab[]).includes(legacy as ResellerPortalTab) ? legacy as ResellerPortalTab : "sell";
+}
 type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; fulfillmentStatus: "to_pack" | "to_deliver" | "delivered"; paymentStatus: "pending" | "paid"; totalArs: number; notes: string; convertedSaleId: string; packedAt?: string; deliveredAt?: string; paidAt?: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
@@ -802,13 +841,14 @@ function App() {
   const [accessKeyDraft, setAccessKeyDraft] = useState(() => getStoredAccessKey());
   const [accessChecking, setAccessChecking] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [viewRefreshing, setViewRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
+  const viewRefreshRequest = useRef<Promise<void> | null>(null);
+  const routeInitialized = useRef(false);
   const [userName, setUserName] = useState("");
   const [environment, setEnvironment] = useState<AppEnvironment>({ dataProfile: "EJEMPLOS", allowExamples: true });
   const [blueRate, setBlueRate] = useState<BlueExchangeRate>(() => fallbackBlueRate());
-  const [view, setView] = useState<View>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("mobile") === "1" || window.location.hash === "#mobile" ? "mobile-intake" : "dashboard";
-  });
+  const [view, setView] = useState<View>(() => viewFromLocation());
   const [stock, setStock] = useState<{ summary: StockSummary; items: StockRow[] }>({ summary: emptySummary(), items: [] });
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
@@ -946,6 +986,63 @@ function App() {
     setStock(await api<{ summary: StockSummary; items: StockRow[] }>("/stock"));
   }
 
+  async function refreshViewData(targetView: View = view) {
+    if (viewRefreshRequest.current) return viewRefreshRequest.current;
+    const request = (async () => {
+      setViewRefreshing(true);
+      if (targetView === "inventory" || targetView === "stock-intake" || targetView === "resellers") {
+        await refreshStock();
+      } else if (targetView === "claims" || targetView === "claim-live") {
+        const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
+        setClaims(claimsData); setStock(stockData);
+      } else if (targetView === "orders") {
+        const [salesData, claimsData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<ClaimsWorkspace>("/claims")]);
+        setSales(salesData.sales); setClaims(claimsData);
+      } else if (targetView === "sales") {
+        const [salesData, purchasesData, stockData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
+        setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData);
+      } else if (targetView === "purchases") {
+        const [purchasesData, stockData] = await Promise.all([api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
+        setPurchases(purchasesData.purchases); setStock(stockData);
+      } else if (targetView === "movements") {
+        const [movementData, auditData] = await Promise.all([api<{ movements: MovementRow[] }>("/movements"), api<{ audit: AuditRow[] }>("/audit")]);
+        setMovements(movementData.movements); setAudit(auditData.audit);
+      } else if (targetView === "import") {
+        setImportRuns((await api<{ imports: ImportRunRow[] }>("/imports")).imports);
+      } else if (targetView === "mobile-intake") {
+        setMobileEntries((await api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000")).entries);
+      } else if (targetView === "catalog") {
+        const [stockData, imageData, qualityData] = await Promise.all([api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<PriceChartingImageCacheStatus>("/pricecharting-images/status"), api<ImageDatabaseQuality>("/database-quality/images")]);
+        setStock(stockData); setPriceChartingImages(imageData); setImageQuality(qualityData);
+      } else if (targetView === "admin") {
+        const [stockData, priceData, tcgData, indexData, imageData, qualityData] = await Promise.all([
+          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
+          api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
+          api<TcgplayerPriceCacheStatus>("/tcgplayer-prices/status"),
+          api<CardIndexStatus>("/card-index/status"),
+          api<PriceChartingImageCacheStatus>("/pricecharting-images/status"),
+          api<ImageDatabaseQuality>("/database-quality/images")
+        ]);
+        setStock(stockData); setPriceChartingCache(priceData); setTcgplayerPrices(tcgData); setCardIndexStatus(indexData); setPriceChartingImages(imageData); setImageQuality(qualityData);
+      } else {
+        const [stockData, movementData, auditData, salesData, purchasesData, mobileData, rateData] = await Promise.all([
+          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
+          api<{ movements: MovementRow[] }>("/movements"),
+          api<{ audit: AuditRow[] }>("/audit"),
+          api<{ sales: SaleRecord[] }>("/sales"),
+          api<{ purchases: PurchaseRecord[] }>("/purchases"),
+          api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000"),
+          api<BlueExchangeRate>("/exchange-rate/blue").catch(() => blueRate)
+        ]);
+        setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales); setPurchases(purchasesData.purchases); setMobileEntries(mobileData.entries); setBlueRate(rateData);
+      }
+      setLastSyncedAt(new Date().toISOString());
+    })();
+    viewRefreshRequest.current = request;
+    try { await request; }
+    finally { if (viewRefreshRequest.current === request) viewRefreshRequest.current = null; setViewRefreshing(false); }
+  }
+
   async function refreshPriceChartingImageStatus() {
     setPriceChartingImages(await api<PriceChartingImageCacheStatus>("/pricecharting-images/status"));
   }
@@ -984,6 +1081,38 @@ function App() {
       })
       .finally(() => setInitialLoadComplete(true));
   }, [initialExamplesChecked]);
+
+  useEffect(() => {
+    const nextPath = viewPaths[view];
+    if (window.location.pathname !== nextPath) {
+      const method = routeInitialized.current ? "pushState" : "replaceState";
+      window.history[method]({ view }, "", nextPath);
+    }
+    routeInitialized.current = true;
+  }, [view]);
+
+  useEffect(() => {
+    const handlePopState = () => setView(viewFromLocation());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoadComplete || accessRequired) return;
+    const sync = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshViewData(view).catch(() => undefined);
+    };
+    const interval = window.setInterval(sync, 15000);
+    const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [accessRequired, initialLoadComplete, view]);
 
   useEffect(() => {
     if (!["catalog", "admin"].includes(view) || priceChartingImages.totalEntries) return;
@@ -2176,27 +2305,28 @@ function App() {
             <span className={`profile-badge ${environment.allowExamples ? "examples" : "pilot"}`}>{environment.dataProfile}</span>
             <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`}>Blue {formatArs(blueRate.sell)}</span>
           </div>
-          <button className="secondary-action header-refresh" onClick={() => void refresh()}><Icon name="refresh" />Actualizar</button>
+          <span className={`live-sync-status ${viewRefreshing ? "syncing" : ""}`}><i />{viewRefreshing ? "Sincronizando" : lastSyncedAt ? `En vivo · ${new Date(lastSyncedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : "En vivo"}</span>
+          <button className="secondary-action header-refresh" disabled={viewRefreshing} onClick={() => void refreshViewData(view).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
         </div>
       </header>
 
       <nav className="nav" aria-label="Navegacion principal">
-        <NavButton icon="home" active={view === "dashboard"} onClick={() => setView("dashboard")}>Inicio</NavButton>
-        <NavButton icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>
-        <NavButton icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
-        <NavButton icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
-        <NavButton icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
+        <NavButton href={viewPaths.dashboard} icon="home" active={view === "dashboard"} onClick={() => setView("dashboard")}>Inicio</NavButton>
+        <NavButton href={viewPaths.inventory} icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>
+        <NavButton href={viewPaths.orders} icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
+        <NavButton href={viewPaths.sales} icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
+        <NavButton href={viewPaths.claims} icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
         <details className="more-nav">
           <summary>Mas</summary>
           <div>
-            <NavButton icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
-            <NavButton icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
-            <NavButton icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
-            <NavButton icon="cart" active={view === "mobile-intake"} onClick={() => setView("mobile-intake")}>Carga movil</NavButton>
-            <NavButton icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Revendedores</NavButton>
-            <NavButton icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
-            <NavButton icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
-            <NavButton icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
+            <NavButton href={viewPaths.purchases} icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
+            <NavButton href={viewPaths["claim-live"]} icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
+            <NavButton href={viewPaths.import} icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
+            <NavButton href={viewPaths["mobile-intake"]} icon="cart" active={view === "mobile-intake"} onClick={() => setView("mobile-intake")}>Carga movil</NavButton>
+            <NavButton href={viewPaths.resellers} icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Revendedores</NavButton>
+            <NavButton href={viewPaths.catalog} icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
+            <NavButton href={viewPaths.movements} icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
+            <NavButton href={viewPaths.admin} icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
           </div>
         </details>
       </nav>
@@ -4736,17 +4866,21 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
   const [assignQuantity, setAssignQuantity] = useState(1);
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const data = await api<{ resellers: ResellerDashboard[] }>("/resellers");
       setResellers(data.resellers);
       setSelectedId((current) => current || data.resellers[0]?.reseller.userId || "");
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
-    finally { setLoading(false); }
+    finally { if (!quiet) setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    const interval = window.setInterval(() => { if (document.visibilityState === "visible") void load(true); }, 15000);
+    return () => window.clearInterval(interval);
+  }, []);
   const replace = (dashboard: ResellerDashboard) => {
     setResellers((current) => current.map((item) => item.reseller.userId === dashboard.reseller.userId ? dashboard : item));
   };
@@ -4798,7 +4932,7 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
 
   return (
     <section className="view reseller-admin-view">
-      <div className="section-heading"><div><h2>Revendedores</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div><a className="secondary-action" href="?revendedor=1" target="_blank" rel="noreferrer">Abrir portal</a></div>
+      <div className="section-heading"><div><h2>Revendedores</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div><a className="secondary-action" href="/portal-revendedor" target="_blank" rel="noreferrer">Abrir portal</a></div>
       {error ? <div className="feedback error">{error}</div> : null}
       <div className="reseller-layout">
         <aside className="panel reseller-sidebar">
@@ -4852,7 +4986,7 @@ function ResellerPortal() {
   const [token, setToken] = useState(() => readLocalStorage(resellerTokenKey));
   const [dashboard, setDashboard] = useState<ResellerDashboard | null>(null);
   const [credentials, setCredentials] = useState({ email: "", password: "" });
-  const [activeTab, setActiveTab] = useState<"sell" | "orders" | "stock" | "global" | "sales">("sell");
+  const [activeTab, setActiveTab] = useState<ResellerPortalTab>(() => resellerTabFromLocation());
   const [search, setSearch] = useState("");
   const [globalSearch, setGlobalSearch] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -4860,12 +4994,37 @@ function ResellerPortal() {
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const portalRefreshRequest = useRef(false);
+  const portalRouteInitialized = useRef(false);
   const load = async (sessionToken = token) => {
     if (!sessionToken) return;
+    if (portalRefreshRequest.current) return;
+    portalRefreshRequest.current = true;
     try { setDashboard(await api<ResellerDashboard>("/reseller/portal", { token: sessionToken })); setError(""); }
     catch (nextError) { if (isAccessError(nextError)) { removeLocalStorage(resellerTokenKey); setToken(""); } setError(errorMessage(nextError)); }
+    finally { portalRefreshRequest.current = false; }
   };
   useEffect(() => { void load(); }, [token]);
+  useEffect(() => {
+    const nextPath = resellerPortalPaths[activeTab];
+    if (window.location.pathname !== nextPath) {
+      const method = portalRouteInitialized.current ? "pushState" : "replaceState";
+      window.history[method]({ resellerTab: activeTab }, "", nextPath);
+    }
+    portalRouteInitialized.current = true;
+  }, [activeTab]);
+  useEffect(() => {
+    const onPopState = () => setActiveTab(resellerTabFromLocation());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  useEffect(() => {
+    if (!token) return;
+    const sync = () => { if (document.visibilityState === "visible") void load(); };
+    const interval = window.setInterval(sync, 15000);
+    window.addEventListener("focus", sync);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus", sync); };
+  }, [token]);
 
   async function login(event: React.FormEvent) {
     event.preventDefault();
@@ -4966,11 +5125,11 @@ function ResellerPortal() {
       </section>
 
       <nav className="reseller-tabs" aria-label="Secciones del portal">
-        <button className={activeTab === "sell" ? "active" : ""} onClick={() => setActiveTab("sell")}>Nueva venta{cartItems.length ? ` (${cartItems.length})` : ""}</button>
-        <button className={activeTab === "orders" ? "active" : ""} onClick={() => setActiveTab("orders")}>Pedidos ({dashboard.orders.filter((order) => order.status === "pending" || (order.status === "converted" && order.fulfillmentStatus !== "delivered")).length})</button>
-        <button className={activeTab === "stock" ? "active" : ""} onClick={() => setActiveTab("stock")}>Mi stock ({dashboard.summary.remainingUnits})</button>
-        <button className={activeTab === "global" ? "active" : ""} onClick={() => setActiveTab("global")}>Stock global ({dashboard.globalStock.length})</button>
-        <button className={activeTab === "sales" ? "active" : ""} onClick={() => setActiveTab("sales")}>Mis ventas ({dashboard.sales.length})</button>
+        <PortalTabLink tab="sell" activeTab={activeTab} onNavigate={setActiveTab}>Nueva venta{cartItems.length ? ` (${cartItems.length})` : ""}</PortalTabLink>
+        <PortalTabLink tab="orders" activeTab={activeTab} onNavigate={setActiveTab}>Pedidos ({dashboard.orders.filter((order) => order.status === "pending" || (order.status === "converted" && order.fulfillmentStatus !== "delivered")).length})</PortalTabLink>
+        <PortalTabLink tab="stock" activeTab={activeTab} onNavigate={setActiveTab}>Mi stock ({dashboard.summary.remainingUnits})</PortalTabLink>
+        <PortalTabLink tab="global" activeTab={activeTab} onNavigate={setActiveTab}>Stock global ({dashboard.globalStock.length})</PortalTabLink>
+        <PortalTabLink tab="sales" activeTab={activeTab} onNavigate={setActiveTab}>Mis ventas ({dashboard.sales.length})</PortalTabLink>
       </nav>
 
       {activeTab === "sell" ? (
@@ -6712,8 +6871,12 @@ function csvCell(value: string | number) {
   return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function NavButton({ active, icon, onClick, children }: { active: boolean; icon: IconName; onClick: () => void; children: React.ReactNode }) {
-  return <button className={active ? "active" : ""} aria-current={active ? "page" : undefined} onClick={onClick}><Icon name={icon} /><span>{children}</span></button>;
+function NavButton({ active, href, icon, onClick, children }: { active: boolean; href: string; icon: IconName; onClick: () => void; children: React.ReactNode }) {
+  return <a className={active ? "active" : ""} href={href} aria-current={active ? "page" : undefined} onClick={(event) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onClick(); }}><Icon name={icon} /><span>{children}</span></a>;
+}
+
+function PortalTabLink({ tab, activeTab, onNavigate, children }: { tab: ResellerPortalTab; activeTab: ResellerPortalTab; onNavigate: (tab: ResellerPortalTab) => void; children: React.ReactNode }) {
+  return <a className={activeTab === tab ? "active" : ""} href={resellerPortalPaths[tab]} aria-current={activeTab === tab ? "page" : undefined} onClick={(event) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onNavigate(tab); }}>{children}</a>;
 }
 
 function Metric({ label, value, helper }: { label: string; value: React.ReactNode; helper: React.ReactNode }) {
@@ -8403,7 +8566,7 @@ function errorMessage(error: unknown) {
 }
 
 function Root() {
-  const resellerMode = new URLSearchParams(window.location.search).get("revendedor") === "1" || window.location.hash === "#revendedor";
+  const resellerMode = window.location.pathname.startsWith("/portal-revendedor") || new URLSearchParams(window.location.search).get("revendedor") === "1" || window.location.hash === "#revendedor";
   return resellerMode ? <ResellerPortal /> : <App />;
 }
 

@@ -20,7 +20,23 @@
     { "source": "/api/tcgplayer-prices/:path*", "destination": "/api/dispatch?path=/tcgplayer-prices/:path*" },
     { "source": "/api/exchange-rate/:path*", "destination": "/api/dispatch?path=/exchange-rate/:path*" },
     { "source": "/api/examples/:path*", "destination": "/api/dispatch?path=/examples/:path*" },
-    { "source": "/api/imports/:path*", "destination": "/api/dispatch?path=/imports/:path*" }
+    { "source": "/api/imports/:path*", "destination": "/api/dispatch?path=/imports/:path*" },
+    { "source": "/inicio", "destination": "/index.html" },
+    { "source": "/inventario", "destination": "/index.html" },
+    { "source": "/inventario/:path*", "destination": "/index.html" },
+    { "source": "/ordenes", "destination": "/index.html" },
+    { "source": "/caja", "destination": "/index.html" },
+    { "source": "/claims", "destination": "/index.html" },
+    { "source": "/claims/:path*", "destination": "/index.html" },
+    { "source": "/compras", "destination": "/index.html" },
+    { "source": "/calidad", "destination": "/index.html" },
+    { "source": "/movimientos", "destination": "/index.html" },
+    { "source": "/importar", "destination": "/index.html" },
+    { "source": "/carga-movil", "destination": "/index.html" },
+    { "source": "/revendedores", "destination": "/index.html" },
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/portal-revendedor", "destination": "/index.html" },
+    { "source": "/portal-revendedor/:path*", "destination": "/index.html" }
   ],
   "functions": {
     "api/[...path].ts": {

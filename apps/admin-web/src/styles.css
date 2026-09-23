@@ -214,7 +214,7 @@ h4 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-.nav button {
+.nav a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -226,28 +226,29 @@ h4 {
   color: #d9d9de;
   background: linear-gradient(180deg, #17171c, #101014);
   font-weight: 900;
+  text-decoration: none;
 }
 
-.nav button .ui-icon {
+.nav a .ui-icon {
   width: 19px;
   height: 19px;
   color: #b9bdc8;
 }
 
-.nav button:hover {
+.nav a:hover {
   border-color: #5a5a66;
   color: #ffffff;
   background: #1d1d24;
 }
 
-.nav button.active {
+.nav a.active {
   border-color: var(--accent);
   color: #ffffff;
   background: linear-gradient(180deg, var(--accent-2), var(--accent));
   box-shadow: var(--button-shadow);
 }
 
-.nav button.active .ui-icon {
+.nav a.active .ui-icon {
   color: #ffffff;
 }
 
@@ -8259,6 +8260,11 @@ h2 {
   padding-inline: 13px;
 }
 
+.live-sync-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 750; white-space: nowrap; }
+.live-sync-status i { width: 7px; height: 7px; border-radius: 50%; background: #42c98d; box-shadow: 0 0 0 3px rgba(66, 201, 141, .12); }
+.live-sync-status.syncing i { background: #efb84d; animation: sync-pulse 900ms ease-in-out infinite alternate; }
+@keyframes sync-pulse { to { opacity: .35; transform: scale(.75); } }
+
 .nav {
   position: sticky;
   top: 62px;
@@ -8272,7 +8278,7 @@ h2 {
   background: linear-gradient(180deg, rgba(8, 8, 10, 0.88), rgba(8, 8, 10, 0.66));
 }
 
-.nav button {
+.nav a {
   min-height: 40px;
   border-radius: 8px;
   padding: 0 10px;
@@ -8282,25 +8288,25 @@ h2 {
   box-shadow: none;
 }
 
-.nav button span {
+.nav a span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.nav button .ui-icon {
+.nav a .ui-icon {
   width: 16px;
   height: 16px;
   color: #aeb2bd;
 }
 
-.nav button:hover:not(.active) {
+.nav a:hover:not(.active) {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.075);
 }
 
-.nav button.active {
+.nav a.active {
   border-color: rgba(232, 42, 64, 0.72);
   background:
     linear-gradient(180deg, rgba(232, 42, 64, 0.24), rgba(232, 42, 64, 0.16)),
@@ -11087,7 +11093,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
   padding: 6px 0 8px;
 }
 
-.orders-mode .nav button,
+.orders-mode .nav a,
 .orders-mode .more-nav summary {
   min-height: 34px;
   border-radius: 7px;
@@ -11095,7 +11101,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
   font-size: 13px;
 }
 
-.orders-mode .nav button .ui-icon {
+.orders-mode .nav a .ui-icon {
   width: 16px;
   height: 16px;
 }
@@ -11555,6 +11561,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
 
 .reseller-portal-header h1 { margin: 0; font-size: 24px; }
 .reseller-portal-header .header-actions { display: flex; align-items: center; gap: 8px; }
+.reseller-tabs a { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
 .icon-action, .cart-step, .cart-remove {
   display: inline-grid;
   place-items: center;
@@ -11580,8 +11587,8 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-summary-strip .highlight { border-top: 3px solid #37c982; background: #0d1813; }
 
 .reseller-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-.reseller-tabs button { padding: 10px 18px; color: var(--muted); background: transparent; border: 0; border-bottom: 3px solid transparent; font-weight: 800; }
-.reseller-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.reseller-tabs a { padding: 10px 18px; color: var(--muted); background: transparent; border: 0; border-bottom: 3px solid transparent; font-weight: 800; }
+.reseller-tabs a.active { color: var(--text); border-bottom-color: var(--accent); }
 
 .reseller-sell-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 460px); gap: 18px; align-items: start; }
 .reseller-product-browser, .reseller-tab-content { min-width: 0; }
@@ -11696,7 +11703,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-portal-header { align-items: flex-start; }
   .reseller-portal-header .brand-lockup h1 { font-size: 19px; }
   .reseller-tabs { overflow-x: auto; }
-  .reseller-tabs button { flex: 0 0 auto; padding-inline: 12px; }
+  .reseller-tabs a { flex: 0 0 auto; padding-inline: 12px; }
   .reseller-product-grid { grid-template-columns: 1fr; }
   .reseller-cart-line { grid-template-columns: minmax(0, 1fr) 28px 20px 28px 30px; }
   .reseller-cart-line label { grid-column: 1 / 4; }
