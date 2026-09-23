@@ -76,6 +76,39 @@ export type DbStockSummary = {
   stockValueArs: number;
 };
 
+export type InventoryPriceRepairScope = "floor" | "all";
+
+export type InventoryPriceRepairCandidate = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  currentArs: number;
+  currentUsd: number | null;
+  referenceUsd: number;
+  referenceSource: "pricecharting" | "tcgplayer";
+  referenceLabel: string;
+  suggestedArs: number;
+  suggestedUsd: number;
+  differenceArs: number;
+};
+
+export type InventoryPriceRepairPreview = {
+  scope: InventoryPriceRepairScope;
+  blueRateSell: number;
+  totalStockItems: number;
+  totalCandidates: number;
+  withoutReference: number;
+  increases: number;
+  decreases: number;
+  totalDifferenceArs: number;
+  priceChartingCandidates: number;
+  tcgplayerCandidates: number;
+  candidates: InventoryPriceRepairCandidate[];
+};
+
 export type DbMovementRow = {
   id: string;
   businessId: string;
@@ -3361,6 +3394,122 @@ export async function listStockForBusiness(db: PGlite, businessId: string): Prom
   const previousBusinessId = demoBusinessId;
   void previousBusinessId;
   return listStockInternal(db, businessId);
+}
+
+function inventoryReferencePrice(item: DbStockRow): { usd: number; source: "pricecharting" | "tcgplayer"; label: string } | null {
+  const priceChartingUsd = Number(item.priceReferences.priceCharting.usd || 0);
+  if (priceChartingUsd > 0) return { usd: priceChartingUsd, source: "pricecharting", label: "PriceCharting" };
+  const tcgplayer = item.priceReferences.tcgplayer;
+  const tcgplayerUsd = [tcgplayer.marketPriceUsd, tcgplayer.usd, tcgplayer.midPriceUsd, tcgplayer.lowPriceUsd, tcgplayer.directLowPriceUsd, tcgplayer.highPriceUsd]
+    .map((value) => Number(value || 0))
+    .find((value) => value > 0) || 0;
+  if (!tcgplayerUsd) return null;
+  return { usd: tcgplayerUsd, source: "tcgplayer", label: tcgplayer.subTypeName ? `TCGplayer ${tcgplayer.subTypeName}` : "TCGplayer" };
+}
+
+function recommendedInventorySalePriceArs(referenceUsd: number, blueRateSell: number): number {
+  const converted = referenceUsd * blueRateSell;
+  if (!Number.isFinite(converted) || converted <= 0) return minimumSalePriceArs;
+  return Math.max(minimumSalePriceArs, Math.ceil(converted / 100) * 100);
+}
+
+export async function previewInventorySalePriceRepair(
+  db: PGlite,
+  businessId: string,
+  input: { scope?: InventoryPriceRepairScope; blueRateSell: number; limit?: number }
+): Promise<InventoryPriceRepairPreview> {
+  const scope: InventoryPriceRepairScope = input.scope === "all" ? "all" : "floor";
+  const blueRateSell = Math.max(1, Number(input.blueRateSell || 0));
+  const limit = Math.max(1, Math.min(500, Math.floor(Number(input.limit || 100))));
+  const stock = await listStockForBusiness(db, businessId);
+  let withoutReference = 0;
+  const allCandidates: InventoryPriceRepairCandidate[] = [];
+  for (const item of stock.items) {
+    const reference = inventoryReferencePrice(item);
+    if (!reference) {
+      withoutReference += 1;
+      continue;
+    }
+    const currentArs = Math.max(0, Number(item.priceArs || 0));
+    const suggestedArs = recommendedInventorySalePriceArs(reference.usd, blueRateSell);
+    const differenceArs = suggestedArs - currentArs;
+    const shouldRepair = scope === "floor"
+      ? currentArs <= minimumSalePriceArs && differenceArs > 0
+      : Math.abs(differenceArs) >= 100;
+    if (!shouldRepair) continue;
+    allCandidates.push({
+      inventoryItemId: item.id,
+      sku: item.sku,
+      name: item.product.name,
+      expansion: item.product.expansion,
+      number: item.product.number || "",
+      imageUrl: item.product.imageUrl || "",
+      currentArs,
+      currentUsd: item.priceUsd,
+      referenceUsd: reference.usd,
+      referenceSource: reference.source,
+      referenceLabel: reference.label,
+      suggestedArs,
+      suggestedUsd: Math.round((suggestedArs / blueRateSell) * 100) / 100,
+      differenceArs
+    });
+  }
+  allCandidates.sort((left, right) => {
+    const leftFloor = left.currentArs <= minimumSalePriceArs ? 0 : 1;
+    const rightFloor = right.currentArs <= minimumSalePriceArs ? 0 : 1;
+    return leftFloor - rightFloor || Math.abs(right.differenceArs) - Math.abs(left.differenceArs) || left.name.localeCompare(right.name);
+  });
+  return {
+    scope,
+    blueRateSell,
+    totalStockItems: stock.items.length,
+    totalCandidates: allCandidates.length,
+    withoutReference,
+    increases: allCandidates.filter((candidate) => candidate.differenceArs > 0).length,
+    decreases: allCandidates.filter((candidate) => candidate.differenceArs < 0).length,
+    totalDifferenceArs: allCandidates.reduce((sum, candidate) => sum + candidate.differenceArs, 0),
+    priceChartingCandidates: allCandidates.filter((candidate) => candidate.referenceSource === "pricecharting").length,
+    tcgplayerCandidates: allCandidates.filter((candidate) => candidate.referenceSource === "tcgplayer").length,
+    candidates: allCandidates.slice(0, limit)
+  };
+}
+
+export async function repairInventorySalePrices(
+  db: PGlite,
+  input: { scope?: InventoryPriceRepairScope; blueRateSell: number; limit?: number },
+  actor: AuthenticatedUser
+): Promise<{ updated: number; applied: InventoryPriceRepairCandidate[]; preview: InventoryPriceRepairPreview }> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, (connection) => repairInventorySalePrices(connection, input, actor));
+  const limit = Math.max(1, Math.min(250, Math.floor(Number(input.limit || 100))));
+  const before = await previewInventorySalePriceRepair(db, actor.businessId, { ...input, limit });
+  const candidates = before.candidates.slice(0, limit);
+  if (!candidates.length) return { updated: 0, applied: [], preview: before };
+  const params: unknown[] = [];
+  const values = candidates.map((candidate, index) => {
+    const offset = index * 4;
+    params.push(candidate.inventoryItemId, actor.businessId, candidate.suggestedArs, candidate.suggestedUsd);
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, false)`;
+  });
+  await db.query(`
+    insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
+    values ${values.join(", ")}
+    on conflict (inventory_item_id) do update set
+      price_ars = excluded.price_ars,
+      price_usd = excluded.price_usd,
+      manual_override = false,
+      updated_at = now()
+  `, params);
+  const runId = crypto.randomUUID();
+  await writeAudit(db, actor, "inventory.prices.repair", "inventory_price_batch", runId, {
+    scope: before.scope,
+    blueRateSell: before.blueRateSell,
+    candidates: candidates.map((candidate) => ({ inventoryItemId: candidate.inventoryItemId, priceArs: candidate.currentArs }))
+  }, {
+    updated: candidates.length,
+    candidates: candidates.map((candidate) => ({ inventoryItemId: candidate.inventoryItemId, priceArs: candidate.suggestedArs, source: candidate.referenceSource }))
+  });
+  const preview = await previewInventorySalePriceRepair(db, actor.businessId, { ...input, limit });
+  return { updated: candidates.length, applied: candidates, preview };
 }
 
 async function listStockInternal(db: PGlite, businessId: string): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {

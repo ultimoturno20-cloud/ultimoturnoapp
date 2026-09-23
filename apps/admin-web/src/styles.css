@@ -7200,7 +7200,110 @@ select {
   border-color: rgba(34, 197, 94, 0.2);
   background:
     linear-gradient(135deg, rgba(34, 197, 94, 0.08), transparent 40%),
+  var(--surface);
+}
+
+.sale-price-repair-panel {
+  display: grid;
+  gap: 12px;
+  border-color: rgba(245, 197, 66, 0.28);
+  background:
+    linear-gradient(135deg, rgba(245, 197, 66, 0.07), transparent 42%),
     var(--surface);
+}
+
+.price-repair-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.price-repair-controls select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 34px 0 10px;
+  color: var(--text);
+  background: #0b0b0e;
+}
+
+.price-repair-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.price-repair-summary > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #0b0b0e;
+}
+
+.price-repair-summary span,
+.price-repair-copy span,
+.price-repair-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.price-repair-summary strong {
+  font-size: 20px;
+}
+
+.price-repair-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.price-repair-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px;
+  background: #09090c;
+}
+
+.price-repair-thumb {
+  width: 54px;
+  height: 76px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  object-fit: contain;
+  background: #111217;
+}
+
+.price-repair-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.price-repair-copy strong,
+.price-repair-copy span,
+.price-repair-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-repair-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-repair-change > .ui-icon {
+  color: var(--muted);
 }
 
 .image-quality-priorities {
@@ -8670,6 +8773,33 @@ h2 {
   .admin-grid,
   .admin-image-stats {
     grid-template-columns: 1fr;
+  }
+
+  .price-repair-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .price-repair-list {
+    grid-template-columns: 1fr;
+  }
+
+  .price-repair-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .price-repair-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .price-repair-thumb {
+    width: 48px;
+    height: 67px;
+  }
+
+  .price-repair-change {
+    grid-column: 2;
+    justify-content: space-between;
   }
 
   .admin-card-wide {

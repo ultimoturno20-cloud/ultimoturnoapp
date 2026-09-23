@@ -30,6 +30,7 @@ import {
   listStockForBusiness,
   listSales,
   previewActiveClaimOrders,
+  previewInventorySalePriceRepair,
   previewInventorySnapshot,
   publishClaimPlan,
   recordPriceChartingImageFailure,
@@ -39,12 +40,63 @@ import {
   replaceTcgplayerPriceCache,
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
+  repairInventorySalePrices,
   updateClaimCard,
   upsertClaimPlanItems,
   upsertInventoryItem
 } from "./index.js";
 
 describe("operational inventory database", () => {
+  it("previews and repairs minimum sale prices from external references", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-price-repair-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "price-repair-test",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "repair-zekrom-31",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/n%27s-zekrom-31",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/n%27s-zekrom-31",
+        productName: "N's Zekrom",
+        normalizedName: "n s zekrom",
+        expansionName: "Promo",
+        normalizedExpansion: "promo",
+        cardNumber: "31",
+        loosePriceUsd: 6.32,
+        imageUrl: "",
+        searchKey: "n s zekrom promo 31"
+      }]
+    });
+    const item = await upsertInventoryItem(db, {
+      sku: "REPAIR-ZEKROM-031",
+      name: "N's Zekrom",
+      expansion: "Promo",
+      number: "31",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 800,
+      priceUsd: 0.52,
+      priceChartingId: "repair-zekrom-31",
+      priceChartingUrl: "https://www.pricecharting.com/game/pokemon-promo/n%27s-zekrom-31"
+    }, user);
+    const preview = await previewInventorySalePriceRepair(db, user.businessId, { scope: "floor", blueRateSell: 1540, limit: 20 });
+    assert.equal(preview.totalCandidates, 1);
+    assert.equal(preview.candidates[0].inventoryItemId, item.id);
+    assert.equal(preview.candidates[0].suggestedArs, 9800);
+    const repaired = await repairInventorySalePrices(db, { scope: "floor", blueRateSell: 1540, limit: 20 }, user);
+    assert.equal(repaired.updated, 1);
+    const stock = await listStockForBusiness(db, user.businessId);
+    assert.equal(stock.items.find((row) => row.id === item.id)?.priceArs, 9800);
+    assert.equal(repaired.preview.totalCandidates, 0);
+    await db.close();
+  });
+
   it("publishes a claim plan from existing inventory without duplicating stock", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-planner-"));
     const db = await createOperationalDatabase({ dataDir });

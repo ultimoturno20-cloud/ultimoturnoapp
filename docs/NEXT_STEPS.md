@@ -112,6 +112,9 @@ orden de produccion.
   coincidencias debiles en lote.
 - Confirmar que el cron diario de TCGplayer deja una corrida `completed` o
   `skipped` y que no excede el limite de ejecucion de Vercel.
+- Generar primero la vista previa del reparador de precios con `Solo $800 y
+  faltantes`, revisar una muestra y aplicar una tanda chica. Usar `Todos los
+  desactualizados` solo despues de revisar cuantas cartas bajarian de precio.
 
 ## Prompt para iniciar otro chat
 

@@ -344,11 +344,12 @@ type StockQualitySummary = {
   duplicates: number;
 };
 
-type IconName = "activity" | "cart" | "check" | "claims" | "close" | "copy" | "download" | "edit" | "external" | "filter" | "home" | "image" | "import" | "inventory" | "orders" | "palette" | "play" | "plus" | "purchases" | "refresh" | "sales" | "search" | "settings";
+type IconName = "activity" | "arrow-right" | "cart" | "check" | "claims" | "close" | "copy" | "download" | "edit" | "external" | "filter" | "home" | "image" | "import" | "inventory" | "orders" | "palette" | "play" | "plus" | "purchases" | "refresh" | "sales" | "search" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     activity: <><path d="M4 12h4l2-7 4 14 2-7h4" /></>,
+    "arrow-right": <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
     cart: <><circle cx="9" cy="19" r="1.5" /><circle cx="17" cy="19" r="1.5" /><path d="M3 5h2l2.2 10h10.2l2-7H7" /></>,
     check: <path d="m5 12 4 4 10-10" />,
     claims: <><path d="M5 4h14v16H5z" /><path d="M8 8h8" /><path d="M8 12h8" /><path d="M8 16h5" /></>,
@@ -681,6 +682,39 @@ type PriceChartingCacheStatus = {
     errorMessage: string;
     completedAt: string;
   };
+};
+
+type InventoryPriceRepairScope = "floor" | "all";
+
+type InventoryPriceRepairCandidate = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  currentArs: number;
+  currentUsd: number | null;
+  referenceUsd: number;
+  referenceSource: "pricecharting" | "tcgplayer";
+  referenceLabel: string;
+  suggestedArs: number;
+  suggestedUsd: number;
+  differenceArs: number;
+};
+
+type InventoryPriceRepairPreview = {
+  scope: InventoryPriceRepairScope;
+  blueRateSell: number;
+  totalStockItems: number;
+  totalCandidates: number;
+  withoutReference: number;
+  increases: number;
+  decreases: number;
+  totalDifferenceArs: number;
+  priceChartingCandidates: number;
+  tcgplayerCandidates: number;
+  candidates: InventoryPriceRepairCandidate[];
 };
 
 type PriceChartingAutoRefreshStatus = {
@@ -5550,6 +5584,44 @@ function AdminView(props: {
   const imageProgress = Math.round((imageReady / imageTotal) * 100);
   const qualityImageCoverage = percent(props.imageQuality.summary.catalogEntriesWithAnyImage, Math.max(1, props.imageQuality.summary.catalogEntries));
   const catalogBusy = props.priceChartingSyncing || props.cardIndexSyncing || props.priceChartingImageProcessing;
+  const [priceRepairScope, setPriceRepairScope] = useState<InventoryPriceRepairScope>("floor");
+  const [priceRepairPreview, setPriceRepairPreview] = useState<InventoryPriceRepairPreview | null>(null);
+  const [priceRepairBusy, setPriceRepairBusy] = useState(false);
+  const [priceRepairFeedback, setPriceRepairFeedback] = useState("");
+  const previewPriceRepairs = async () => {
+    setPriceRepairBusy(true);
+    setPriceRepairFeedback("");
+    try {
+      const preview = await api<InventoryPriceRepairPreview>(`/inventory/prices/repair-preview?scope=${priceRepairScope}&limit=250`);
+      setPriceRepairPreview(preview);
+      setPriceRepairFeedback(preview.totalCandidates ? `${preview.totalCandidates} precio(s) pueden repararse.` : "No hay precios para reparar con este alcance.");
+    } catch (error) {
+      setPriceRepairFeedback(errorMessage(error));
+    } finally {
+      setPriceRepairBusy(false);
+    }
+  };
+  const applyPriceRepairs = async () => {
+    if (!priceRepairPreview?.totalCandidates) return;
+    const batchSize = Math.min(250, priceRepairPreview.totalCandidates);
+    const decreaseWarning = priceRepairPreview.decreases ? ` Incluye ${priceRepairPreview.decreases} baja(s) de precio.` : "";
+    if (!window.confirm(`Se actualizaran ${batchSize} precio(s) de venta usando blue ${formatArs(priceRepairPreview.blueRateSell)}.${decreaseWarning} Los claims y ventas historicas no cambian.`)) return;
+    setPriceRepairBusy(true);
+    setPriceRepairFeedback("Aplicando reparacion auditada...");
+    try {
+      const response = await api<{ result: { updated: number; preview: InventoryPriceRepairPreview } }>("/inventory/prices/repair", {
+        method: "POST",
+        body: { scope: priceRepairScope, limit: 250, confirmation: "REPARAR PRECIOS" }
+      });
+      setPriceRepairPreview(response.result.preview);
+      setPriceRepairFeedback(`${response.result.updated} precio(s) reparados. ${response.result.preview.totalCandidates} pendiente(s).`);
+      props.onRefresh();
+    } catch (error) {
+      setPriceRepairFeedback(errorMessage(error));
+    } finally {
+      setPriceRepairBusy(false);
+    }
+  };
   return (
     <section className="view admin-view">
       <section className="panel admin-hero">
@@ -5654,6 +5726,43 @@ function AdminView(props: {
           <button className="secondary-action" disabled={props.priceChartingImageProcessing} onClick={() => props.onPriceChartingImageBatch(true, "auto")}><Icon name="download" />Guardar locales</button>
           <button className="secondary-action" disabled={catalogBusy} onClick={props.onGoCatalog}><Icon name="palette" />Auditar catalogo</button>
         </div>
+      </section>
+
+      <section className="panel sale-price-repair-panel">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Precios de venta</p>
+            <h3>Reparador general</h3>
+            <p>Recalcula inventario con PriceCharting y, cuando falta, TCGplayer. Primero genera una vista previa; no modifica claims, ordenes ni ventas anteriores.</p>
+          </div>
+          <div className="price-repair-controls">
+            <select value={priceRepairScope} disabled={priceRepairBusy} onChange={(event) => { setPriceRepairScope(event.target.value as InventoryPriceRepairScope); setPriceRepairPreview(null); setPriceRepairFeedback(""); }}>
+              <option value="floor">Solo $800 y faltantes</option>
+              <option value="all">Todos los desactualizados</option>
+            </select>
+            <button className="secondary-action" disabled={priceRepairBusy} onClick={() => void previewPriceRepairs()}><Icon name="search" />{priceRepairBusy ? "Calculando..." : "Generar vista previa"}</button>
+            <button className="primary-action" disabled={priceRepairBusy || !priceRepairPreview?.totalCandidates} onClick={() => void applyPriceRepairs()}><Icon name="check" />Aplicar tanda ({Math.min(250, priceRepairPreview?.totalCandidates || 0)})</button>
+          </div>
+        </div>
+        {priceRepairPreview ? <>
+          <div className="price-repair-summary">
+            <div><span>A reparar</span><strong>{priceRepairPreview.totalCandidates.toLocaleString("es-AR")}</strong></div>
+            <div><span>Suben</span><strong>{priceRepairPreview.increases.toLocaleString("es-AR")}</strong></div>
+            <div><span>Bajan</span><strong>{priceRepairPreview.decreases.toLocaleString("es-AR")}</strong></div>
+            <div><span>PriceCharting</span><strong>{priceRepairPreview.priceChartingCandidates.toLocaleString("es-AR")}</strong></div>
+            <div><span>TCGplayer</span><strong>{priceRepairPreview.tcgplayerCandidates.toLocaleString("es-AR")}</strong></div>
+            <div><span>Sin referencia</span><strong>{priceRepairPreview.withoutReference.toLocaleString("es-AR")}</strong></div>
+          </div>
+          {priceRepairPreview.candidates.length ? <div className="price-repair-list">{priceRepairPreview.candidates.slice(0, 12).map((candidate) => (
+            <article className="price-repair-row" key={candidate.inventoryItemId}>
+              <CardArt src={candidate.imageUrl} alt={candidate.name} label={candidate.name} className="price-repair-thumb" fallbackClassName="price-repair-thumb image-placeholder" />
+              <div className="price-repair-copy"><strong>{candidate.name}</strong><span>{candidate.expansion}{candidate.number ? ` #${candidate.number}` : ""}</span><small>{candidate.referenceLabel} · {formatUsd(candidate.referenceUsd)}</small></div>
+              <div className="price-repair-change"><MoneyStack ars={candidate.currentArs || null} blueRate={props.blueRate} compact label="Actual" /><Icon name="arrow-right" /><MoneyStack ars={candidate.suggestedArs} blueRate={props.blueRate} compact label="Nuevo" /></div>
+            </article>
+          ))}</div> : <p className="muted">Los precios de este alcance ya estan al dia.</p>}
+          {priceRepairPreview.totalCandidates > 12 ? <p className="muted">Mostrando 12 ejemplos de {priceRepairPreview.totalCandidates.toLocaleString("es-AR")}. La tanda aplica hasta 250.</p> : null}
+        </> : <p className="muted">Genera la vista previa para ver exactamente que cartas cambiarian.</p>}
+        {priceRepairFeedback ? <p className="intake-feedback" role="status">{priceRepairFeedback}</p> : null}
       </section>
 
       <div className="admin-grid">

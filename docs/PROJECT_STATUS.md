@@ -100,6 +100,14 @@ Actualizado: 2026-09-23
 - Vercel ejecuta `/api/cron/tcgplayer-refresh` diariamente a las `09:30 UTC`
   (`06:30` de Argentina), despues del cron de PriceCharting.
 - Migracion nueva: `0035_tcgplayer_price_fallback.sql`.
+- El alta de stock usa TCGplayer como respaldo cuando una carta no tiene precio
+  PriceCharting, evitando que cartas con referencia valida caigan al minimo de
+  `800 ARS`.
+- `Mas > Administracion` incluye un reparador general de precios de venta con
+  vista previa. El modo seguro corrige pisos y faltantes; el modo general
+  muestra tambien subas y bajas. Trabaja en tandas auditadas de hasta 250,
+  recalcula con el dolar blue vigente y no modifica claims, ordenes ni ventas
+  historicas.
 
 ### Revendedores en consignacion
 
