@@ -3281,10 +3281,15 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       select *
       from tcgplayer_price_cache_entries candidate_price
       where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
+        and (lower(v.finish) not like '%cosmos%' or lower(candidate_price.sub_type_name) like '%cosmos%')
+        and (lower(v.finish) not like '%master%ball%' or lower(candidate_price.sub_type_name) like '%master%ball%')
+        and (lower(v.finish) not like '%poke%ball%' or lower(candidate_price.sub_type_name) like '%poke%ball%')
       order by case
         when lower(v.finish) like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 0
+        when lower(v.finish) like '%1st%edition%' and lower(candidate_price.sub_type_name) like '%1st%edition%' then 0
         when lower(v.finish) like '%holo%' and lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%holo%' and lower(candidate_price.sub_type_name) not like '%reverse%' then 0
-        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 0
+        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) like '%unlimited%' then 0
+        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 1
         when lower(candidate_price.sub_type_name) = 'normal' then 1
         else 2
       end, candidate_price.market_price_usd desc nulls last
@@ -3421,10 +3426,15 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       select *
       from tcgplayer_price_cache_entries candidate_price
       where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
+        and (lower(v.finish) not like '%cosmos%' or lower(candidate_price.sub_type_name) like '%cosmos%')
+        and (lower(v.finish) not like '%master%ball%' or lower(candidate_price.sub_type_name) like '%master%ball%')
+        and (lower(v.finish) not like '%poke%ball%' or lower(candidate_price.sub_type_name) like '%poke%ball%')
       order by case
         when lower(v.finish) like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 0
+        when lower(v.finish) like '%1st%edition%' and lower(candidate_price.sub_type_name) like '%1st%edition%' then 0
         when lower(v.finish) like '%holo%' and lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%holo%' and lower(candidate_price.sub_type_name) not like '%reverse%' then 0
-        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 0
+        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) like '%unlimited%' then 0
+        when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 1
         when lower(candidate_price.sub_type_name) = 'normal' then 1
         else 2
       end, candidate_price.market_price_usd desc nulls last

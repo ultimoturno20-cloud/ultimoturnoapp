@@ -1394,14 +1394,30 @@ describe("operational inventory database", () => {
       quantityReserved: 0,
       priceArs: 1000
     }, user);
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-COSMOS-025",
+      name: "Pikachu",
+      expansion: "Promo",
+      number: "025",
+      language: "EN",
+      condition: "NM",
+      finish: "cosmos holo",
+      imageUrl: "https://tcgplayer-cdn.tcgplayer.com/product/555_in_1000x1000.jpg",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 1000
+    }, user);
     const stock = await listStockForBusiness(db, user.businessId);
     const exactImage = stock.items.find((item) => item.sku === "TEST-TCG-IMAGE-025");
     const siblingVariant = stock.items.find((item) => item.sku === "TEST-TCG-SIBLING-025");
+    const unmatchedCosmos = stock.items.find((item) => item.sku === "TEST-TCG-COSMOS-025");
     assert.equal(exactImage?.priceReferences.tcgplayer.productId, "555");
     assert.equal(exactImage?.priceReferences.tcgplayer.marketPriceUsd, 2.5);
     assert.equal(siblingVariant?.priceReferences.tcgplayer.productId, "555");
     assert.equal(siblingVariant?.priceReferences.tcgplayer.subTypeName, "Reverse Holofoil");
     assert.equal(siblingVariant?.priceReferences.tcgplayer.marketPriceUsd, 5.5);
+    assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.productId, "555");
+    assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.marketPriceUsd, null);
 
     await replaceTcgplayerPriceCache(db, {
       source: "tcgcsv",

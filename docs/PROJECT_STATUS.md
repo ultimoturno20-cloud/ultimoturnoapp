@@ -77,6 +77,12 @@ Actualizado: 2026-09-23
   prioridad y evita una coincidencia aproximada.
 - El endpoint de sincronizacion acepta `inventoryOnly=true` para recorrer TCGCSV
   contra las cartas operativas sin reprocesar todo el indice de 120 mil fichas.
+- El backfill productivo completo conecto `1.120` de las `1.347` cartas del
+  inventario y encontro precio para `1.119`; antes solo `25` tenian precio.
+  Se preservaron `10` conflictos ambiguos sin sobreescribirlos.
+- La seleccion de precio respeta el acabado. `Cosmos`, `Master Ball` y
+  `Poke Ball` no usan un precio generico si TCGCSV no ofrece ese subtipo, y las
+  cartas antiguas normales priorizan `Unlimited` sobre `Normal`.
 - Vercel ejecuta `/api/cron/tcgplayer-refresh` diariamente a las `09:30 UTC`
   (`06:30` de Argentina), despues del cron de PriceCharting.
 - Migracion nueva: `0035_tcgplayer_price_fallback.sql`.
