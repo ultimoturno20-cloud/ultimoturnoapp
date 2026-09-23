@@ -1,15 +1,14 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-21
+Actualizado: 2026-09-23
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
 
-### 1. Publicar y pilotear revendedores
+### 1. Pilotear revendedores en produccion
 
-- Aplicar la migracion `0032_reseller_consignment.sql` mediante el deploy.
 - Crear un revendedor de prueba con comision real y asignarle pocas cartas.
 - Probar una venta central antes que la venta del revendedor para confirmar la
   prioridad de UltimoTurno online.
@@ -22,6 +21,8 @@ Actualizado: 2026-09-21
   manos del administrador.
 - Agregar cambio de password y edicion/baja de revendedores en la siguiente
   iteracion.
+- Evaluar si los pedidos necesitan filtros/tablero por estado cuando el piloto
+  acumule volumen real.
 
 Senal de exito: el revendedor carga ventas desde su portal, el stock se descuenta
 una sola vez y el saldo a rendir coincide con la comision acordada.
@@ -89,14 +90,19 @@ Storage.
 Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
 recrees durante pruebas. No pongas secretos en Git.
 
-Trabajo reciente: CSV por seccion de claim, fix de preview de CSV escaneado,
-matching japones de MonPrice, reparacion de imagenes de claims, daemon local que
-descarga/sube/enlaza imagenes en Supabase, cron diario de PriceCharting y
-rediseño compacto de Ordenes sin cambios de base.
+Commit de produccion confirmado al cerrar el chat: `5e115f1`.
 
-Objetivo actual: completar imagenes faltantes y hacer que el proceso automatico
-sea reanudable, evitando 504 de external-index y reintentos continuos de URLs
-TCGPlayer con 403. Luego validar CSV reales y seguir compactando Ordenes.
+Trabajo reciente: carga de stock en pagina completa, busqueda de catalogo mas
+rapida, imagenes con fallback/proxy seguro, tarjetas de inventario normalizadas,
+mejoras de claim y sistema de revendedores en consignacion. El revendedor tiene
+usuario propio, stock asignado sin exclusividad, ventas, rendiciones, pedidos,
+stock global de solo lectura y estados independientes de preparacion y cobro.
+UltimoTurno siempre conserva prioridad sobre el stock y la venta del revendedor
+revalida disponibilidad antes de descontar.
+
+Objetivo inmediato: pilotear revendedores con pocas cartas reales y comprobar
+prioridad central, venta, anulacion, devolucion, rendicion, pedidos y estados.
+Luego continuar cobertura de imagenes y validacion de CSV reales.
 ```
 
 ---

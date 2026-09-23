@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-09-18
+Actualizado: 2026-09-23
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -11,11 +11,48 @@ Actualizado: 2026-09-18
 - Produccion: `https://ultimoturnoapp-api.vercel.app/`.
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
-- Ultimo cambio funcional documentado antes de esta actualizacion: `708c9aa`.
+- Ultimo commit funcional desplegado y verificado: `5e115f1`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
   solo de frontend y no modificaron la base de ordenes.
+
+## Trabajo completado del 17 al 23 de septiembre
+
+### Claims, catalogo y stock
+
+- El buscador de cartas del claim se movio arriba de la mesa para evitar bajar
+  hasta el final de la pagina.
+- El claim agrupa cantidades: una carta con varias unidades mantiene una sola
+  imagen y el mensaje final aclara `hay N`.
+- La busqueda del claim permite filtrar ingles, japones y chino, y prioriza
+  resultados que ya existen en stock.
+- Las cartas agregadas a un claim entran al ciclo de stock; una venta confirmada
+  descuenta la unidad correspondiente.
+- La carga de stock paso a una pagina completa. `Agregar stock y seguir` queda
+  en el flujo nuevo y ya no vuelve a abrir el modal anterior.
+- La busqueda interactiva del catalogo se optimizo y dejo de recalcular el total
+  completo en cada consulta.
+- Se normalizo el tamano visual de cartas y se agregaron fallbacks seguros para
+  imagenes publicas de TCGPlayer/CDN mediante proxy cuando hace falta.
+
+### Revendedores en consignacion
+
+- Se publico un sistema de usuarios revendedores con comision configurable,
+  stock asignado, ventas, anulaciones, devoluciones y rendiciones auditables.
+- La asignacion es blanda: el stock sigue disponible para UltimoTurno, que
+  siempre tiene prioridad. La venta del revendedor revalida y descuenta stock
+  dentro de una transaccion.
+- El portal fue redisenado como una herramienta operativa, con carrito, precios,
+  comision estimada, saldo a rendir, historial y stock propio.
+- Los revendedores pueden guardar pedidos sin reservar stock y confirmarlos mas
+  tarde. Tambien pueden consultar el stock global en modo estrictamente lectura.
+- Los pedidos confirmados tienen preparacion (`A embalar`, `A entregar`,
+  `Entregado`) y cobro (`Pendiente`, `Pagado`) como estados independientes.
+- Migraciones nuevas: `0032_reseller_consignment.sql`,
+  `0033_reseller_orders.sql` y `0034_reseller_order_workflow.sql`.
+- Verificacion final: lint, typecheck, build y DB verify OK; 42 tests aprobados;
+  revision visual desktop y movil; produccion confirmada en `5e115f1`.
 
 ## Trabajo completado del 12 al 16 de septiembre
 
@@ -74,6 +111,21 @@ Actualizado: 2026-09-18
 ## Commits funcionales recientes
 
 ```text
+5e115f1 Add reseller order workflow states
+2f51d11 Add reseller orders and global stock view
+fcd6781 Redesign reseller sales portal
+32bb40f Add reseller consignment system
+6e9dac1 Remove catalog count from interactive search
+687fa8d Speed up catalog card search
+bcba451 Allow safe public image proxy fallback
+891d344 Normalize inventory card dimensions
+106264a Fallback to direct catalog images
+d364c26 Keep stock intake in full-page flow
+7952ca5 Add dedicated stock intake workspace
+4279907 Move claim card search above workspace
+75631b4 Stabilize catalog image delivery
+67fc876 Improve claim catalog and stock lifecycle
+ab108a3 Refresh project handoff documentation
 708c9aa Compact orders workspace chrome
 6539590 Polish orders workspace UI
 c66f66a Back off failed image download sources
@@ -324,7 +376,7 @@ Regla de precio:
 
 ## Revendedores en consignacion
 
-MVP implementado localmente:
+MVP publicado en produccion:
 
 - Usuarios revendedores con email, password y sesion propia.
 - Comision porcentual configurable por revendedor.
@@ -358,6 +410,8 @@ build OK
 tests OK: 42 pass, 0 fail
 alta/login/portal API local OK
 revision visual desktop OK
+revision visual movil OK
+produccion `5e115f1` OK
 ```
 
 ## Verificacion
@@ -377,12 +431,16 @@ Resultado conocido:
 typecheck OK
 build OK
 db:verify OK
-tests OK: 36 pass, 0 fail
+tests OK: 42 pass, 0 fail
 ```
 
 ## Commits recientes importantes
 
 ```text
+5e115f1 Add reseller order workflow states
+2f51d11 Add reseller orders and global stock view
+fcd6781 Redesign reseller sales portal
+32bb40f Add reseller consignment system
 609a61b Add unified catalog cards view
 556c9eb Optimize unified catalog search
 de5a4f1 Filter reference rows in unified catalog

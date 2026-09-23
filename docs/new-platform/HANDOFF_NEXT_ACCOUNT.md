@@ -1,6 +1,6 @@
 # Traspaso de contexto - UltimoTurno
 
-## Aviso vigente - 2026-09-18
+## Aviso vigente - 2026-09-23
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y
 prioridades actuales usar primero:
@@ -22,10 +22,70 @@ Reglas que siguen siendo obligatorias:
 - revisar `git status` antes de editar;
 - validar y desplegar incrementalmente.
 
-Cambios recientes resumidos: CSV por seccion de claim, preview de scanner
-reparado, matching japones de MonPrice, recuperacion de imagenes en claims,
-daemon de imagenes hacia Supabase, cron diario PriceCharting y tablero de
-Ordenes visualmente renovado/compactado.
+Estado Git y produccion al cerrar este traspaso:
+
+```text
+Rama: main
+Commit desplegado: 5e115f1 Add reseller order workflow states
+Produccion: https://ultimoturnoapp-api.vercel.app/
+DB: Supabase/Postgres por transaction pooler
+Storage: Supabase Storage
+Perfil: PILOTO REAL
+Verificacion: lint, typecheck, build y DB verify OK; 42 tests OK
+```
+
+Cambios recientes resumidos:
+
+- carga de stock en pagina completa y sin reapertura del modal viejo;
+- busqueda de catalogo mas rapida, filtros de idioma y prioridad al stock;
+- imagenes con fallback directo/proxy seguro y tarjetas de tamano estable;
+- buscador del claim arriba, cantidades agrupadas y ciclo claim-stock-venta;
+- sistema de revendedores en consignacion publicado en produccion;
+- portal propio con carrito, comision, saldo, ventas y stock asignado;
+- pedidos sin reserva de stock, stock global de solo lectura y estados de
+  preparacion/cobro.
+
+Regla central de consignacion: asignar stock a un revendedor no lo quita de la
+venta general. UltimoTurno conserva prioridad. Al confirmar la venta del
+revendedor se revalida stock real en transaccion y recien entonces se descuenta.
+
+Migraciones vigentes mas recientes:
+
+```text
+0032_reseller_consignment.sql
+0033_reseller_orders.sql
+0034_reseller_order_workflow.sql
+```
+
+## Prompt vigente para el proximo chat
+
+```text
+Estamos trabajando en UltimoTurno. Usa exclusivamente el workspace
+D:\UltimoTurno\Stock; no uses C:\Users\skype\Documents\Stock.
+
+Antes de responder o modificar archivos, lee:
+1. AGENTS.md
+2. docs/PROJECT_STATUS.md
+3. docs/NEXT_STEPS.md
+
+Luego revisa git status y confirma el commit actual. Produccion funciona en
+https://ultimoturnoapp-api.vercel.app/ con Vercel, Supabase/Postgres y Supabase
+Storage. El ultimo commit de produccion confirmado al cerrar el chat anterior
+fue 5e115f1.
+
+Hay un claim activo, ordenes y stock reales: no los elimines, canceles ni
+recrees durante pruebas. No guardes secretos en Git.
+
+El sistema de revendedores ya esta online. Es consignacion blanda: el stock
+sigue disponible para UltimoTurno, que tiene prioridad; la venta del revendedor
+revalida y descuenta stock al confirmarse. El portal incluye ventas, pedidos,
+stock propio, stock global de solo lectura, comisiones, rendiciones y estados
+de preparacion (A embalar/A entregar/Entregado) y cobro (Pendiente/Pagado).
+
+Objetivo inmediato: pilotear el flujo con un revendedor y pocas cartas reales,
+validando prioridad central, venta, anulacion, devolucion, rendicion y estados
+de pedidos. Despues continuar con imagenes faltantes y CSV reales.
+```
 
 ---
 
