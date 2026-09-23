@@ -41,6 +41,7 @@ import {
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
   repairInventorySalePrices,
+  resetInventoryStock,
   updateClaimCard,
   upsertClaimPlanItems,
   upsertInventoryItem
@@ -235,6 +236,42 @@ describe("operational inventory database", () => {
     }, user);
     stock = await listStockForBusiness(db, user.businessId);
     assert.equal(stock.items[0].quantityOnHand, 7);
+    await db.close();
+  });
+
+  it("completes a reserved sale after inventory was reset without creating negative stock", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-reset-reservation-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const item = await upsertInventoryItem(db, {
+      sku: "TEST-RESET-VULPIX-001",
+      name: "Vulpix",
+      expansion: "Set Operativo",
+      number: "37",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 3,
+      quantityReserved: 0,
+      priceArs: 2500
+    }, user);
+    const reservation = await createSale(db, {
+      customerName: "Cliente con reset",
+      saleType: "reservation",
+      channel: "claim",
+      lines: [{ inventoryItemId: item.id, quantity: 2, unitPriceArs: 2500 }]
+    }, user);
+
+    await resetInventoryStock(db, user);
+    const completed = await completeReservationSale(db, reservation.id, user);
+    const stock = await listStockForBusiness(db, user.businessId);
+    const reservationRows = await db.query<{ status: string }>("select status from reservations where external_cart_id = $1", [reservation.id]);
+
+    assert.equal(completed.status, "paid");
+    assert.equal(completed.amountPaidArs, completed.totalArs);
+    assert.equal(stock.items[0].quantityOnHand, 0);
+    assert.equal(stock.items[0].quantityReserved, 0);
+    assert.equal(reservationRows.rows[0]?.status, "confirmed");
     await db.close();
   });
 

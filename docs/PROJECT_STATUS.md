@@ -181,6 +181,10 @@ Actualizado: 2026-09-23
 
 ### Ordenes
 
+- Las ordenes reservadas pueden marcarse como pagadas despues de un reset de
+  inventario. Si la reserva ya no coincide, el cierre no genera stock negativo
+  ni descuenta una reposicion posterior: confirma el cobro, concilia la reserva
+  obsoleta y registra la excepcion en auditoria.
 - Se renovo el tablero con metricas operativas: contactar, vencidas, cobrar,
   embaladas y entregar.
 - Las tarjetas muestran comprador, estado, total, resumen, mensaje, deuda y

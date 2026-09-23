@@ -4283,12 +4283,31 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
 export async function completeReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
   const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
+  const stockExceptions: Array<{ inventoryItemId: string; name: string; quantity: number; quantityOnHand: number; quantityReserved: number }> = [];
   await db.exec("begin");
   try {
     for (const line of sale.lines) {
       if (!line.inventoryItemId) continue;
       const item = await getInventoryItem(db, line.inventoryItemId, actor.businessId);
-      if (!item || item.quantityReserved < line.quantity || item.quantityOnHand < line.quantity) throw new Error(`${line.name}: la reserva no coincide con el stock actual`);
+      if (!item || item.quantityReserved < line.quantity || item.quantityOnHand < line.quantity) {
+        if (item) {
+          await db.query(`
+            update inventory_items
+            set quantity_reserved = greatest(0, quantity_reserved - $1),
+              updated_at = now()
+            where id = $2 and business_id = $3
+          `, [line.quantity, line.inventoryItemId, actor.businessId]);
+        }
+        await db.query("update reservations set status = 'confirmed', confirmed_at = now() where business_id = $1 and external_cart_id = $2 and inventory_item_id = $3 and status = 'active'", [actor.businessId, saleId, line.inventoryItemId]);
+        stockExceptions.push({
+          inventoryItemId: line.inventoryItemId,
+          name: line.name,
+          quantity: line.quantity,
+          quantityOnHand: item?.quantityOnHand || 0,
+          quantityReserved: item?.quantityReserved || 0
+        });
+        continue;
+      }
       await db.query("update inventory_items set quantity_on_hand = quantity_on_hand - $1, quantity_reserved = quantity_reserved - $1, updated_at = now() where id = $2 and business_id = $3", [line.quantity, line.inventoryItemId, actor.businessId]);
       await db.query("update reservations set status = 'confirmed', confirmed_at = now() where business_id = $1 and external_cart_id = $2 and inventory_item_id = $3 and status = 'active'", [actor.businessId, saleId, line.inventoryItemId]);
       await db.query(`
@@ -4298,7 +4317,11 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
     }
     await db.query("update sales set status = 'paid', amount_paid_ars = total_ars, completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-    await writeAudit(db, actor, "sale.complete", "sale", saleId, sale, { status: "paid" });
+    await writeAudit(db, actor, stockExceptions.length ? "sale.complete_stock_reconciled" : "sale.complete", "sale", saleId, sale, {
+      status: "paid",
+      stockReconciled: stockExceptions.length > 0,
+      stockExceptions
+    });
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback");

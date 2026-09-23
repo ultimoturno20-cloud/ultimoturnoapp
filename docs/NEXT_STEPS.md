@@ -88,6 +88,8 @@ las filas confirmadas llegan a la seccion elegida.
 
 ### 5. Seguir compactando Ordenes con datos intactos
 
+- Revisar en auditoria los cierres `sale.complete_stock_reconciled`; indican
+  ordenes cobradas cuya reserva habia quedado obsoleta por un reset de stock.
 - Verificar el tablero en desktop y movil con volumen real.
 - Si todavia falta espacio vertical, ocultar o colapsar la marca superior solo
   dentro de Ordenes.
