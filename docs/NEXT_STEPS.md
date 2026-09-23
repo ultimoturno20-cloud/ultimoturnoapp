@@ -25,6 +25,9 @@ aplica sola y publicar no crea unidades de inventario inexistentes.
 
 ### 1. Observar la sincronizacion sectorial en produccion
 
+- Revisar visualmente las rutas principales en desktop y movil despues de la
+  unificacion del chrome, especialmente `Mas`, Ordenes, Inventario y Claims,
+  confirmando que ninguna barra tape contenido.
 - Confirmar con dos sesiones reales que inventario, claims, ordenes, caja y el
   portal reflejen cambios dentro de los 15 segundos esperados.
 - Vigilar latencia y cantidad de consultas durante el uso diario.

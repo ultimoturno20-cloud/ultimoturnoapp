@@ -11989,6 +11989,275 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .claim-plan-table article > .claim-plan-thumb { width: 58px; height: 78px; min-height: 0; object-fit: contain; }
 .claim-plan-item-name { display: grid; min-width: 0; gap: 2px; }
 .claim-plan-item-name span, .claim-plan-item-name small { color: var(--muted); }
+
+/* Unified application chrome: one visual system and no competing sticky menus. */
+:root {
+  --control-height: 40px;
+  --control-radius: 7px;
+  --panel-radius: 8px;
+  --app-gap: 12px;
+}
+
+body {
+  background: #08080a;
+}
+
+.shell {
+  display: grid;
+  gap: var(--app-gap);
+  padding: 14px clamp(12px, 1.6vw, 24px) 24px;
+}
+
+.app-header,
+.nav,
+.operations-dock,
+.view {
+  width: 100%;
+  max-width: 1760px;
+  margin-inline: auto;
+}
+
+.app-header,
+.nav,
+.operations-dock {
+  position: relative;
+  top: auto;
+  z-index: auto;
+  backdrop-filter: none;
+}
+
+.app-header {
+  min-height: 58px;
+  padding: 7px 0 11px;
+  background: transparent;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 0 11px;
+  overflow: visible;
+  background: transparent;
+}
+
+.nav > a {
+  flex: 1 1 150px;
+}
+
+.nav > a,
+.more-nav {
+  min-width: 0;
+}
+
+.more-nav {
+  position: static;
+  flex: 0.72 1 112px;
+}
+
+.more-nav[open] {
+  display: grid;
+  flex-basis: 100%;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.more-nav[open] summary {
+  width: min(180px, 100%);
+  justify-self: end;
+}
+
+.more-nav > div {
+  position: static;
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--panel-radius);
+  padding: 8px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.more-nav > div a {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.operations-dock {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0;
+  background: transparent;
+}
+
+.view {
+  margin-top: 2px;
+}
+
+.panel,
+.metric,
+.operation-action,
+.admin-card,
+.catalog-doctor-card,
+.quality-metric {
+  border-radius: var(--panel-radius);
+}
+
+.primary-action,
+.secondary-action,
+.clear-action,
+.nav a,
+.more-nav summary,
+button,
+input,
+select,
+textarea {
+  border-radius: var(--control-radius);
+}
+
+.primary-action,
+.secondary-action,
+.clear-action,
+.nav a,
+.more-nav summary {
+  min-height: var(--control-height);
+}
+
+.section-heading,
+.compact-heading,
+.admin-card-heading {
+  align-items: center;
+}
+
+.inventory-toolbar,
+.trello-toolbar {
+  top: 10px;
+  z-index: 12;
+}
+
+.inventory-toolbar {
+  max-height: min(48vh, 520px);
+}
+
+.trello-toolbar {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--panel-radius);
+  background: rgba(17, 17, 20, 0.97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.orders-mode .nav {
+  top: auto;
+}
+
+.orders-mode .trello-toolbar {
+  top: 10px;
+}
+
+.inventory-detail-drawer.workspace-side {
+  top: 12px;
+  max-height: calc(100dvh - 24px);
+}
+
+.toast-stack {
+  top: 14px;
+  right: 14px;
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .nav > a {
+    flex-basis: calc(33.333% - 7px);
+  }
+
+  .more-nav {
+    flex-basis: calc(33.333% - 7px);
+  }
+
+  .operations-dock {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .shell {
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .app-header,
+  .nav,
+  .operations-dock {
+    position: static;
+    top: auto;
+  }
+
+  .header-actions {
+    align-items: stretch;
+  }
+
+  .nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nav > a,
+  .more-nav {
+    width: 100%;
+  }
+
+  .more-nav[open] {
+    grid-column: 1 / -1;
+  }
+
+  .more-nav[open] summary {
+    width: 100%;
+  }
+
+  .more-nav > div {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-dock {
+    grid-template-columns: 1fr;
+  }
+
+  .operation-action {
+    min-height: 52px;
+  }
+
+  .inventory-toolbar,
+  .trello-toolbar {
+    position: static;
+    top: auto;
+    max-height: none;
+  }
+
+  .orders-mode .trello-toolbar {
+    top: auto;
+  }
+
+  .inventory-detail-drawer.workspace-side {
+    top: 10px;
+    max-height: calc(100dvh - 20px);
+  }
+
+  .toast-stack {
+    top: 10px;
+    right: 10px;
+    width: calc(100vw - 20px);
+  }
+}
 .claim-plan-item-name em { margin-top: 4px; color: #8ee8b0; font-size: .72rem; font-style: normal; }
 .claim-plan-table input { width: 100%; min-width: 0; }
 .claim-plan-table .icon-action { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; }

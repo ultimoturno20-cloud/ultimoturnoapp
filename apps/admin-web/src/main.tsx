@@ -2458,7 +2458,9 @@ function App() {
         <NavButton href={viewPaths.claims} icon="claims" active={view === "claims" || view === "claim-planner"} onClick={() => setView("claims")}>Claims</NavButton>
         <details className="more-nav">
           <summary>Mas</summary>
-          <div>
+          <div onClick={(event) => {
+            if ((event.target as HTMLElement).closest("a")) event.currentTarget.parentElement?.removeAttribute("open");
+          }}>
             <NavButton href={viewPaths.purchases} icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
             <NavButton href={viewPaths["claim-live"]} icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
             <NavButton href={viewPaths["claim-planner"]} icon="claims" active={view === "claim-planner"} onClick={() => setView("claim-planner")}>Planificar claim</NavButton>

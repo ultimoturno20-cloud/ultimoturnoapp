@@ -22,6 +22,11 @@ Actualizado: 2026-09-23
 
 ### Navegacion y sincronizacion
 
+- Se unifico el sistema visual global: cabecera, navegacion y barra operativa
+  permanecen en el flujo normal para no superponerse; `Mas` despliega una
+  franja que empuja el contenido y se cierra al navegar. Paneles, botones,
+  campos y toolbars comparten radios, alturas y espaciado, con una grilla
+  estable en movil.
 - Cada sector principal tiene una URL propia y navegable: `/inicio`,
   `/inventario`, `/inventario/cargar-stock`, `/claims`, `/claims/en-vivo`,
   `/ordenes`, `/caja`, `/compras`, `/calidad`, `/movimientos`, `/importar`,
