@@ -7035,7 +7035,9 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
                     <div><h4>Coincidencias PriceCharting</h4><p>Esta asociacion define el link canonico y evita descargar imagenes duplicadas.</p></div>
                     <div className="candidate-grid pricecharting-grid">{row.priceChartingCandidates.map((candidate) => (
                       <button className={`candidate-card ${selectedPriceChartingId === candidate.priceChartingId ? "selected" : ""}`} key={candidate.priceChartingId} onClick={() => choosePriceCharting(row, candidate, resolution)}>
-                        {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.productName} /> : <div className="image-placeholder">{candidate.productName.slice(0, 2).toUpperCase()}</div>}
+                        <div className="candidate-card-art">
+                          {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.productName} /> : <div className="image-placeholder">{candidate.productName.slice(0, 2).toUpperCase()}</div>}
+                        </div>
                         <strong>{candidate.productName}</strong>
                         <span>{candidate.expansionName} #{candidate.cardNumber || "-"}</span>
                         <small>ID {candidate.priceChartingId}</small>
@@ -7051,7 +7053,9 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
                     <div><h4>Posibles coincidencias en stock</h4><p>Compara nombre, expansion, numero, idioma y condicion antes de elegir.</p></div>
                     {row.candidates.length ? <div className="candidate-grid">{row.candidates.map((candidate) => (
                       <button className={`candidate-card ${resolution?.matchedInventoryItemId === candidate.inventoryItemId ? "selected" : ""}`} key={candidate.inventoryItemId} onClick={() => chooseInventory(row, candidate, resolution)}>
-                        {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.name} /> : <div className="image-placeholder">{candidate.name.slice(0, 2).toUpperCase()}</div>}
+                        <div className="candidate-card-art">
+                          {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.name} /> : <div className="image-placeholder">{candidate.name.slice(0, 2).toUpperCase()}</div>}
+                        </div>
                         <strong>{candidate.name}</strong>
                         <span>{candidate.expansion} #{candidate.number || "-"}</span>
                         <small>{[candidate.language, candidate.gradingCompany || candidate.grade ? [candidate.gradingCompany, candidate.grade].filter(Boolean).join(" ") : candidate.condition].filter(Boolean).join(" / ")}</small>
