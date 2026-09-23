@@ -176,7 +176,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -618,6 +618,48 @@ export type ClaimsWorkspace = {
   frees: ClaimFree[];
   history: Array<ClaimSession & { cards: number; buyers: number; totalArs: number; totalUsd: number }>;
   summary: ClaimSummary;
+};
+
+export type ClaimPlanItem = {
+  id: string;
+  planId: string;
+  inventoryItemId: string;
+  sku: string;
+  productName: string;
+  expansionName: string;
+  cardNumber: string;
+  imageUrl: string;
+  language: string;
+  condition: string;
+  finish: string;
+  availableQuantity: number;
+  quantity: number;
+  sectionName: string;
+  finalPriceArs: number;
+  tags: string;
+  aiReason: string;
+  sortOrder: number;
+};
+
+export type ClaimPlan = {
+  id: string;
+  name: string;
+  status: "draft" | "published" | "archived";
+  targetDate: string;
+  aiPrompt: string;
+  publishedClaimId: string;
+  createdAt: string;
+  updatedAt: string;
+  items: ClaimPlanItem[];
+};
+
+export type ClaimPlanItemInput = {
+  inventoryItemId: string;
+  quantity?: number;
+  sectionName?: string;
+  finalPriceArs?: number;
+  tags?: string;
+  aiReason?: string;
 };
 
 export type ClaimPriceRefreshResult = {
@@ -4482,6 +4524,236 @@ export function inferLanguageGroup(...values: string[]): LanguageGroup {
   return "english";
 }
 
+export async function listClaimPlans(db: PGlite, businessId = demoBusinessId): Promise<{ plans: ClaimPlan[] }> {
+  const rows = await db.query<Record<string, unknown>>(`
+    select cp.id as plan_id, cp.name as plan_name, cp.status as plan_status,
+      cp.target_date, cp.ai_prompt, cp.published_claim_id, cp.created_at as plan_created_at,
+      cp.updated_at as plan_updated_at,
+      cpi.id as item_id, cpi.inventory_item_id, cpi.quantity, cpi.section_name,
+      cpi.final_price_ars, cpi.tags, cpi.ai_reason, cpi.sort_order,
+      ii.sku, greatest(ii.quantity_on_hand - ii.quantity_reserved, 0)::integer as available_quantity,
+      p.name as product_name, p.expansion as expansion_name, p.card_number,
+      coalesce(p.image_url, '') as image_url, v.language, v.condition, v.finish
+    from claim_plans cp
+    left join claim_plan_items cpi on cpi.plan_id = cp.id and cpi.business_id = cp.business_id
+    left join inventory_items ii on ii.id = cpi.inventory_item_id and ii.business_id = cp.business_id
+    left join card_products p on p.id = ii.product_id and p.business_id = cp.business_id
+    left join card_variants v on v.id = ii.variant_id and v.business_id = cp.business_id
+    where cp.business_id = $1 and cp.status <> 'archived'
+    order by case when cp.status = 'draft' then 0 else 1 end, cp.updated_at desc,
+      cpi.sort_order, cpi.created_at
+  `, [businessId]);
+  const plans = new Map<string, ClaimPlan>();
+  for (const row of rows.rows) {
+    const id = String(row.plan_id || "");
+    const plan = plans.get(id) || {
+      id,
+      name: String(row.plan_name || ""),
+      status: String(row.plan_status || "draft") as ClaimPlan["status"],
+      targetDate: row.target_date ? String(row.target_date).slice(0, 10) : "",
+      aiPrompt: String(row.ai_prompt || ""),
+      publishedClaimId: String(row.published_claim_id || ""),
+      createdAt: String(row.plan_created_at || ""),
+      updatedAt: String(row.plan_updated_at || ""),
+      items: []
+    };
+    if (row.item_id) plan.items.push({
+      id: String(row.item_id),
+      planId: id,
+      inventoryItemId: String(row.inventory_item_id || ""),
+      sku: String(row.sku || ""),
+      productName: String(row.product_name || ""),
+      expansionName: String(row.expansion_name || ""),
+      cardNumber: String(row.card_number || ""),
+      imageUrl: String(row.image_url || ""),
+      language: String(row.language || ""),
+      condition: String(row.condition || ""),
+      finish: String(row.finish || ""),
+      availableQuantity: Number(row.available_quantity || 0),
+      quantity: Number(row.quantity || 1),
+      sectionName: String(row.section_name || ""),
+      finalPriceArs: Number(row.final_price_ars || 0),
+      tags: String(row.tags || ""),
+      aiReason: String(row.ai_reason || ""),
+      sortOrder: Number(row.sort_order || 0)
+    });
+    plans.set(id, plan);
+  }
+  return { plans: [...plans.values()] };
+}
+
+export async function createClaimPlan(
+  db: PGlite,
+  input: { name?: string; targetDate?: string },
+  actor: AuthenticatedUser
+): Promise<{ plans: ClaimPlan[] }> {
+  const id = crypto.randomUUID();
+  const name = String(input.name || "").trim() || `Proximo claim ${new Date().toLocaleDateString("es-AR")}`;
+  await db.query(`
+    insert into claim_plans (id, business_id, name, target_date, created_by)
+    values ($1, $2, $3, nullif($4, '')::date, $5)
+  `, [id, actor.businessId, name, String(input.targetDate || "").trim(), actor.id]);
+  await writeAudit(db, actor, "claim_plan.create", "claim_plan", id, null, { name, targetDate: input.targetDate || "" });
+  return listClaimPlans(db, actor.businessId);
+}
+
+export async function updateClaimPlan(
+  db: PGlite,
+  planId: string,
+  input: { name?: string; targetDate?: string; aiPrompt?: string; status?: "draft" | "archived" },
+  actor: AuthenticatedUser
+): Promise<{ plans: ClaimPlan[] }> {
+  const before = await db.query<Record<string, unknown>>("select * from claim_plans where id = $1 and business_id = $2 limit 1", [planId, actor.businessId]);
+  if (!before.rows[0]) throw new Error("El borrador ya no existe.");
+  if (String(before.rows[0].status) !== "draft") throw new Error("Solo se pueden editar borradores.");
+  await db.query(`
+    update claim_plans set
+      name = case when $1::text is null then name else coalesce(nullif(trim($1), ''), name) end,
+      target_date = case when $2::text is null then target_date else nullif($2, '')::date end,
+      ai_prompt = case when $3::text is null then ai_prompt else $3 end,
+      status = coalesce($4, status),
+      updated_at = now()
+    where id = $5 and business_id = $6
+  `, [input.name === undefined ? null : input.name, input.targetDate === undefined ? null : input.targetDate, input.aiPrompt === undefined ? null : input.aiPrompt, input.status || null, planId, actor.businessId]);
+  await writeAudit(db, actor, "claim_plan.update", "claim_plan", planId, before.rows[0], input);
+  return listClaimPlans(db, actor.businessId);
+}
+
+export async function upsertClaimPlanItems(
+  db: PGlite,
+  planId: string,
+  items: ClaimPlanItemInput[],
+  actor: AuthenticatedUser
+): Promise<{ plans: ClaimPlan[] }> {
+  const plan = await db.query<{ status: string }>("select status from claim_plans where id = $1 and business_id = $2 limit 1", [planId, actor.businessId]);
+  if (!plan.rows[0]) throw new Error("El borrador ya no existe.");
+  if (plan.rows[0].status !== "draft") throw new Error("Solo se pueden editar borradores.");
+  if (!items.length) throw new Error("Elegí al menos una carta.");
+  const next = await db.query<{ next_order: number }>("select coalesce(max(sort_order), 0)::integer + 1 as next_order from claim_plan_items where plan_id = $1", [planId]);
+  let sortOrder = Number(next.rows[0]?.next_order || 1);
+  await db.exec("begin");
+  try {
+    for (const input of items) {
+      const inventoryItemId = String(input.inventoryItemId || "").trim();
+      const quantity = Math.max(1, Math.floor(Number(input.quantity) || 1));
+      const stock = await db.query<{ available_quantity: number; price_ars: number }>(`
+        select greatest(ii.quantity_on_hand - ii.quantity_reserved, 0)::integer as available_quantity,
+          coalesce(cp.price_ars, 0)::numeric as price_ars
+        from inventory_items ii
+        left join current_prices cp on cp.inventory_item_id = ii.id and cp.business_id = ii.business_id
+        where ii.id = $1 and ii.business_id = $2 and ii.active = true
+          and coalesce(ii.inventory_status, 'available') = 'available'
+        limit 1
+      `, [inventoryItemId, actor.businessId]);
+      if (!stock.rows[0]) throw new Error("Una carta seleccionada ya no existe.");
+      if (quantity > Number(stock.rows[0].available_quantity || 0)) throw new Error("La cantidad elegida supera el stock disponible.");
+      const finalPriceArs = input.finalPriceArs === undefined
+        ? Number(stock.rows[0].price_ars || 0)
+        : Math.max(0, Number(input.finalPriceArs) || 0);
+      await db.query(`
+        insert into claim_plan_items (
+          id, business_id, plan_id, inventory_item_id, quantity, section_name,
+          final_price_ars, tags, ai_reason, sort_order
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        on conflict (plan_id, inventory_item_id) do update set
+          quantity = excluded.quantity,
+          section_name = excluded.section_name,
+          final_price_ars = excluded.final_price_ars,
+          tags = excluded.tags,
+          ai_reason = excluded.ai_reason,
+          updated_at = now()
+      `, [crypto.randomUUID(), actor.businessId, planId, inventoryItemId, quantity, String(input.sectionName || "").trim(), finalPriceArs, String(input.tags || "").trim(), String(input.aiReason || "").trim(), sortOrder++]);
+    }
+    await db.query("update claim_plans set updated_at = now() where id = $1 and business_id = $2", [planId, actor.businessId]);
+    await writeAudit(db, actor, "claim_plan.items.upsert", "claim_plan", planId, null, { items });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  return listClaimPlans(db, actor.businessId);
+}
+
+export async function deleteClaimPlanItem(db: PGlite, planId: string, itemId: string, actor: AuthenticatedUser): Promise<{ plans: ClaimPlan[] }> {
+  const deleted = await db.query<Record<string, unknown>>(`
+    delete from claim_plan_items
+    where id = $1 and plan_id = $2 and business_id = $3
+      and exists (select 1 from claim_plans where id = $2 and business_id = $3 and status = 'draft')
+    returning *
+  `, [itemId, planId, actor.businessId]);
+  if (!deleted.rows[0]) throw new Error("La carta ya no existe en el borrador.");
+  await db.query("update claim_plans set updated_at = now() where id = $1 and business_id = $2", [planId, actor.businessId]);
+  await writeAudit(db, actor, "claim_plan.item.delete", "claim_plan_item", itemId, deleted.rows[0], null);
+  return listClaimPlans(db, actor.businessId);
+}
+
+export async function publishClaimPlan(db: PGlite, planId: string, actor: AuthenticatedUser): Promise<{ plans: ClaimPlan[]; workspace: ClaimsWorkspace }> {
+  const existing = await db.query<{ id: string }>("select id from claim_sessions where business_id = $1 and status = 'open' limit 1", [actor.businessId]);
+  if (existing.rows[0]) throw new Error("Ya hay un claim activo. Cerralo antes de publicar este borrador.");
+  const plans = await listClaimPlans(db, actor.businessId);
+  const plan = plans.plans.find((candidate) => candidate.id === planId);
+  if (!plan || plan.status !== "draft") throw new Error("El borrador no está disponible.");
+  if (!plan.items.length) throw new Error("Agregá al menos una carta antes de publicar.");
+  const claimId = crypto.randomUUID();
+  await db.exec("begin");
+  try {
+    await db.query(`
+      insert into claim_sessions (id, business_id, name, source_note, created_by)
+      values ($1, $2, $3, $4, $5)
+    `, [claimId, actor.businessId, plan.name, `Publicado desde plan ${plan.id}`, actor.id]);
+    const sectionIds = new Map<string, string>();
+    const sectionNames = [...new Set(plan.items.map((item) => item.sectionName.trim()).filter(Boolean))];
+    for (let index = 0; index < sectionNames.length; index++) {
+      const sectionId = crypto.randomUUID();
+      sectionIds.set(sectionNames[index], sectionId);
+      await db.query(`insert into claim_sections (id, business_id, claim_id, name, sort_order) values ($1, $2, $3, $4, $5)`, [sectionId, actor.businessId, claimId, sectionNames[index], index + 1]);
+    }
+    const usedPriceChartingIds = new Set<string>();
+    for (let index = 0; index < plan.items.length; index++) {
+      const item = plan.items[index];
+      const source = await db.query<Record<string, unknown>>(`
+        select ii.id, ii.sku, greatest(ii.quantity_on_hand - ii.quantity_reserved, 0)::integer as available_quantity,
+          p.name, p.expansion, p.card_number, coalesce(p.image_url, '') as image_url,
+          coalesce(cp.price_ars, 0)::numeric as price_ars,
+          coalesce(ei.external_id, '') as pricecharting_id, coalesce(ei.external_url, '') as canonical_url,
+          pce.loose_price_usd
+        from inventory_items ii
+        join card_products p on p.id = ii.product_id and p.business_id = ii.business_id
+        left join current_prices cp on cp.inventory_item_id = ii.id and cp.business_id = ii.business_id
+        left join external_sources es on es.name = 'pricecharting'
+        left join external_identifiers ei on ei.source_id = es.id and ei.business_id = ii.business_id
+          and ei.product_id = ii.product_id and (ei.variant_id is null or ei.variant_id = ii.variant_id)
+        left join pricecharting_cache_entries pce on pce.pricecharting_id = ei.external_id
+        where ii.id = $1 and ii.business_id = $2 and ii.active = true
+          and coalesce(ii.inventory_status, 'available') = 'available'
+        order by case when ei.variant_id = ii.variant_id then 0 else 1 end
+        limit 1
+      `, [item.inventoryItemId, actor.businessId]);
+      const row = source.rows[0];
+      if (!row) throw new Error(`${item.productName}: la carta ya no existe.`);
+      if (item.quantity > Number(row.available_quantity || 0)) throw new Error(`${item.productName}: ya no hay ${item.quantity} unidad(es) disponibles.`);
+      const externalId = String(row.pricecharting_id || "");
+      const priceChartingId = externalId && !usedPriceChartingIds.has(externalId) ? externalId : `inventory:${item.inventoryItemId}`;
+      usedPriceChartingIds.add(priceChartingId);
+      await db.query(`
+        insert into claim_cards (
+          id, business_id, claim_id, section_id, pricecharting_id, canonical_url,
+          product_name, expansion_name, card_number, image_url, pc_price_usd,
+          suggested_ars, final_price_ars, quantity, tags, sort_order,
+          inventory_item_id, stocked_quantity, stock_origin
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 0, 'existing')
+      `, [crypto.randomUUID(), actor.businessId, claimId, sectionIds.get(item.sectionName) || null, priceChartingId, String(row.canonical_url || ""), String(row.name || ""), String(row.expansion || ""), String(row.card_number || ""), String(row.image_url || ""), optionalNumber(row.loose_price_usd) ?? null, Number(row.price_ars || 0), item.finalPriceArs || Number(row.price_ars || 0), item.quantity, item.tags, index + 1, item.inventoryItemId]);
+    }
+    await db.query("update claim_plans set status = 'published', published_claim_id = $1, updated_at = now() where id = $2 and business_id = $3", [claimId, planId, actor.businessId]);
+    await writeAudit(db, actor, "claim_plan.publish", "claim_plan", planId, plan, { claimId });
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  return { plans: (await listClaimPlans(db, actor.businessId)).plans, workspace: await listClaimsWorkspace(db, actor.businessId) };
+}
+
 export async function listClaimsWorkspace(db: PGlite, businessId = demoBusinessId): Promise<ClaimsWorkspace> {
   const active = await db.query<Record<string, unknown>>(`
     select id, name, status, source_note, created_at, closed_at, closed_sale_ids
@@ -4941,8 +5213,8 @@ export async function previewActiveClaimOrders(db: PGlite, actor: AuthenticatedU
 }
 
 async function syncClaimCardStock(db: PGlite, cardId: string, actor: AuthenticatedUser): Promise<string> {
-  const state = await db.query<{ claim_id: string; quantity: number; stocked_quantity: number; inventory_item_id: string | null }>(`
-    select claim_id, quantity, stocked_quantity, inventory_item_id
+  const state = await db.query<{ claim_id: string; quantity: number; stocked_quantity: number; inventory_item_id: string | null; stock_origin: string }>(`
+    select claim_id, quantity, stocked_quantity, inventory_item_id, stock_origin
     from claim_cards
     where id = $1 and business_id = $2
     limit 1
@@ -4952,6 +5224,11 @@ async function syncClaimCardStock(db: PGlite, cardId: string, actor: Authenticat
   const card = (await listClaimCards(db, String(row.claim_id), actor.businessId)).find((item) => item.id === cardId);
   if (!card) throw new Error("No se pudo preparar la carta del claim para stock.");
   const inventoryItemId = row.inventory_item_id || await resolveInventoryItemForClaimCard(db, card, actor);
+  if (row.stock_origin === "existing") {
+    const item = await getInventoryItem(db, inventoryItemId, actor.businessId);
+    if (!item) throw new Error(`${card.productName}: la carta vinculada ya no existe en stock.`);
+    return inventoryItemId;
+  }
   const targetQuantity = Math.max(1, Math.floor(Number(row.quantity) || 1));
   const stockedQuantity = Math.max(0, Math.floor(Number(row.stocked_quantity) || 0));
   const quantityDelta = targetQuantity - stockedQuantity;

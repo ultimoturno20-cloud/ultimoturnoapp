@@ -9,6 +9,7 @@ import {
   claimPriceChartingImageQueue,
   closeActiveClaim,
   completeReservationSale,
+  createClaimPlan,
   createClaimSession,
   createClaimSection,
   createPurchase,
@@ -30,6 +31,7 @@ import {
   listSales,
   previewActiveClaimOrders,
   previewInventorySnapshot,
+  publishClaimPlan,
   recordPriceChartingImageFailure,
   recordPriceChartingImageSuccess,
   recordPriceChartingImageUrlDiscovered,
@@ -38,10 +40,52 @@ import {
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
   updateClaimCard,
+  upsertClaimPlanItems,
   upsertInventoryItem
 } from "./index.js";
 
 describe("operational inventory database", () => {
+  it("publishes a claim plan from existing inventory without duplicating stock", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-planner-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const item = await upsertInventoryItem(db, {
+      sku: "PLAN-PIKA-001",
+      name: "Pikachu Plan",
+      expansion: "Plan Test",
+      number: "001",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 3,
+      quantityReserved: 0,
+      priceArs: 5000
+    }, user);
+    const created = await createClaimPlan(db, { name: "Claim planeado" }, user);
+    const planId = created.plans[0].id;
+    const planned = await upsertClaimPlanItems(db, planId, [{
+      inventoryItemId: item.id,
+      quantity: 2,
+      sectionName: "Jugables",
+      finalPriceArs: 5500,
+      tags: "jugable"
+    }], user);
+    assert.equal(planned.plans[0].items[0].availableQuantity, 3);
+    assert.equal(planned.plans[0].items[0].quantity, 2);
+
+    const published = await publishClaimPlan(db, planId, user);
+    assert.equal(published.workspace.activeClaim?.name, "Claim planeado");
+    assert.equal(published.workspace.cards[0].quantity, 2);
+    assert.equal(published.workspace.sections[0].name, "Jugables");
+    let stock = await listStockForBusiness(db, user.businessId);
+    assert.equal(stock.items.find((row) => row.id === item.id)?.quantityOnHand, 3);
+
+    await updateClaimCard(db, published.workspace.cards[0].id, { quantity: 1 }, user);
+    stock = await listStockForBusiness(db, user.businessId);
+    assert.equal(stock.items.find((row) => row.id === item.id)?.quantityOnHand, 3);
+    await db.close();
+  });
+
   it("persists products and inventory adjustments across reopen", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-operational-"));
     const options = {

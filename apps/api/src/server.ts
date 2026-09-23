@@ -21,6 +21,7 @@ import {
   closeActiveClaim,
   completeReservationSale,
   createMobileInventoryEntry,
+  createClaimPlan,
   createClaimSession,
   createClaimSection,
   createPurchase,
@@ -32,6 +33,7 @@ import {
   checkPostgresConnection,
   createOperationalDatabase,
   deleteMobileInventoryEntry,
+  deleteClaimPlanItem,
   deleteClaimCard,
   deleteClaimSection,
   deferPriceChartingImageQueueEntry,
@@ -54,6 +56,7 @@ import {
   listImports,
   listMovements,
   listPurchases,
+  listClaimPlans,
   listClaimsWorkspace,
   listCardIndex,
   listMobileInventoryEntries,
@@ -67,6 +70,7 @@ import {
   listPriceChartingImageCatalog,
   previewInventorySnapshot,
   previewActiveClaimOrders,
+  publishClaimPlan,
   markSalePacked,
   markSaleDelivered,
   mergeDuplicateCustomerOrders,
@@ -85,6 +89,8 @@ import {
   returnResellerStock,
   reviewCardIndexEntry,
   updateMobileInventoryEntryStatus,
+  updateClaimPlan,
+  upsertClaimPlanItems,
   updateInventoryItemTags,
   updateClaimCard,
   updateClaimSection,
@@ -101,6 +107,7 @@ import {
   logoutUser,
   upsertInventoryItem,
   type AuthenticatedUser,
+  type ClaimPlanItemInput,
   type DbStockRow,
   type MobileInventoryEntry,
   type MobileInventoryInput,
@@ -184,6 +191,8 @@ const configuredBlueRateSell = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1
 const useLiveBlueRate = String(process.env.ULTIMOTURNO_BLUE_RATE_MODE || "manual").toLowerCase() === "auto";
 const sharedAccessKey = String(process.env.ULTIMOTURNO_ACCESS_KEY || "").trim();
 const cronSecret = String(process.env.CRON_SECRET || "").trim();
+const openAiApiKey = String(process.env.OPENAI_API_KEY || "").trim();
+const openAiClaimModel = String(process.env.OPENAI_CLAIM_MODEL || "gpt-4o-mini").trim() || "gpt-4o-mini";
 let priceChartingImageCooldownUntil = 0;
 let priceChartingAutoRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let priceChartingAutoRefreshRunning = false;
@@ -2770,6 +2779,143 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
   return text ? JSON.parse(text) as T : {} as T;
 }
 
+type ClaimAiProposal = {
+  title: string;
+  summary: string;
+  items: Array<ClaimPlanItemInput & { reason: string }>;
+};
+
+type ClaimAiStrategy = {
+  title: string;
+  summary: string;
+  sections: Array<{
+    name: string;
+    targetUnits: number;
+    minPriceArs: number;
+    maxPriceArs: number;
+    maxUnitsPerCard: number;
+    keywords: string;
+    preferHighStock: boolean;
+  }>;
+};
+
+function responseOutputText(payload: Record<string, unknown>) {
+  if (typeof payload.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = Array.isArray((item as { content?: unknown[] }).content) ? (item as { content: unknown[] }).content : [];
+    for (const part of content) {
+      if (part && typeof part === "object" && (part as { type?: string }).type === "output_text" && typeof (part as { text?: unknown }).text === "string") {
+        return String((part as { text: string }).text);
+      }
+    }
+  }
+  return "";
+}
+
+async function generateClaimAiProposal(db: Awaited<typeof dbPromise>, prompt: string, actor: AuthenticatedUser): Promise<ClaimAiProposal> {
+  if (!openAiApiKey) throw Object.assign(new Error("La IA todavia no esta configurada. Falta OPENAI_API_KEY en Vercel."), { statusCode: 503 });
+  const cleanPrompt = String(prompt || "").trim();
+  if (cleanPrompt.length < 8) throw new Error("Describe el tipo de claim que queres preparar.");
+  if (cleanPrompt.length > 3000) throw new Error("La instruccion es demasiado larga.");
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["title", "summary", "sections"],
+    properties: {
+      title: { type: "string" },
+      summary: { type: "string" },
+      sections: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "targetUnits", "minPriceArs", "maxPriceArs", "maxUnitsPerCard", "keywords", "preferHighStock"],
+          properties: {
+            name: { type: "string" },
+            targetUnits: { type: "integer" },
+            minPriceArs: { type: "integer" },
+            maxPriceArs: { type: "integer" },
+            maxUnitsPerCard: { type: "integer" },
+            keywords: { type: "string" },
+            preferHighStock: { type: "boolean" }
+          }
+        }
+      }
+    }
+  };
+  const aiResponse = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    signal: AbortSignal.timeout(50000),
+    headers: { Authorization: `Bearer ${openAiApiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: openAiClaimModel,
+      store: false,
+      input: [
+        {
+          role: "system",
+          content: "Sos el planificador comercial de UltimoTurno. Converti la instruccion en secciones cuantificadas y rangos de precio ARS. No conoces ni debes pedir el inventario: la aplicacion seleccionara localmente. Usa maxPriceArs=0 cuando no haya limite."
+        },
+        { role: "user", content: cleanPrompt }
+      ],
+      text: { format: { type: "json_schema", name: "claim_plan_strategy", strict: true, schema } }
+    })
+  });
+  const payload = await aiResponse.json() as Record<string, unknown>;
+  if (!aiResponse.ok) {
+    const apiError = payload.error && typeof payload.error === "object" ? String((payload.error as { message?: unknown }).message || "") : "";
+    throw Object.assign(new Error(apiError || "OpenAI no pudo generar la estrategia."), { statusCode: 502 });
+  }
+  const outputText = responseOutputText(payload);
+  if (!outputText) throw Object.assign(new Error("OpenAI no devolvio una estrategia util."), { statusCode: 502 });
+  const strategy = JSON.parse(outputText) as ClaimAiStrategy;
+  const stock = await listStockForBusiness(db, actor.businessId);
+  const available = stock.items.filter((item) => item.active && item.inventoryStatus === "available" && item.availableQuantity > 0);
+  const selected = new Set<string>();
+  const proposalItems: ClaimAiProposal["items"] = [];
+  for (const rawSection of Array.isArray(strategy.sections) ? strategy.sections.slice(0, 12) : []) {
+    const sectionName = String(rawSection.name || "Seleccion").trim().slice(0, 80);
+    const targetUnits = Math.min(100, Math.max(1, Math.floor(Number(rawSection.targetUnits) || 1)));
+    const minPrice = Math.max(0, Number(rawSection.minPriceArs) || 0);
+    const maxPrice = Math.max(0, Number(rawSection.maxPriceArs) || 0);
+    const maxUnitsPerCard = Math.min(10, Math.max(1, Math.floor(Number(rawSection.maxUnitsPerCard) || 1)));
+    const keywords = String(rawSection.keywords || "").toLocaleLowerCase("es").split(/[^a-z0-9áéíóúñ]+/i).filter((token) => token.length > 2);
+    const ranked = available
+      .filter((item) => !selected.has(item.id) && item.priceArs >= minPrice && (!maxPrice || item.priceArs <= maxPrice))
+      .map((item) => {
+        const searchable = `${item.product.name} ${item.product.expansion} ${item.product.number || ""} ${item.variant.language} ${item.variant.finish} ${item.tags}`.toLocaleLowerCase("es");
+        const keywordScore = keywords.reduce((score, token) => score + (searchable.includes(token) ? 20 : 0), 0);
+        const stockScore = rawSection.preferHighStock ? Math.min(item.availableQuantity, 10) * 3 : Math.min(item.availableQuantity, 3);
+        return { item, score: keywordScore + stockScore + (item.product.imageUrl ? 2 : 0) + (item.priceArs > 0 ? 1 : 0) };
+      })
+      .sort((left, right) => right.score - left.score || right.item.availableQuantity - left.item.availableQuantity || left.item.product.name.localeCompare(right.item.product.name, "es"));
+    let remaining = targetUnits;
+    for (const { item } of ranked) {
+      if (remaining <= 0) break;
+      const quantity = Math.min(remaining, maxUnitsPerCard, item.availableQuantity);
+      if (quantity <= 0) continue;
+      selected.add(item.id);
+      proposalItems.push({
+        inventoryItemId: item.id,
+        quantity,
+        sectionName,
+        finalPriceArs: Math.max(0, Math.round(item.priceArs || 0)),
+        tags: String(item.tags || ""),
+        aiReason: `${sectionName}: coincide con la estrategia y hay ${item.availableQuantity} disponible(s).`,
+        reason: `${sectionName}: coincide con la estrategia y hay ${item.availableQuantity} disponible(s).`
+      });
+      remaining -= quantity;
+    }
+  }
+  if (!proposalItems.length) throw Object.assign(new Error("La estrategia no encontro cartas compatibles con el stock disponible."), { statusCode: 422 });
+  return {
+    title: String(strategy.title || "Propuesta de claim").trim().slice(0, 120),
+    summary: String(strategy.summary || "").trim().slice(0, 800),
+    items: proposalItems
+  };
+}
+
 async function operationalUser(): Promise<AuthenticatedUser> {
   const db = await dbPromise;
   return getDefaultOperationalUser(db);
@@ -3989,6 +4135,59 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/purchases" && request.method === "POST") {
       const body = await readJson<Parameters<typeof createPurchase>[1]>(request);
       sendJson(response, 201, { purchase: await createPurchase(db, body, user) });
+      return;
+    }
+
+    if (url.pathname === "/claim-plans" && request.method === "GET") {
+      sendJson(response, 200, {
+        ...(await listClaimPlans(db, user.businessId)),
+        ai: {
+          configured: Boolean(openAiApiKey),
+          model: openAiClaimModel,
+          privacy: "Solo se envia a OpenAI la instruccion escrita. El inventario y los precios se procesan localmente."
+        }
+      });
+      return;
+    }
+
+    if (url.pathname === "/claim-plans" && request.method === "POST") {
+      const body = await readJson<{ name?: string; targetDate?: string }>(request);
+      sendJson(response, 201, await createClaimPlan(db, body, user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/claim-plans\/[^/]+$/) && request.method === "PUT") {
+      const planId = decodeURIComponent(url.pathname.split("/")[2]);
+      const body = await readJson<{ name?: string; targetDate?: string; aiPrompt?: string; status?: "draft" | "archived" }>(request);
+      sendJson(response, 200, await updateClaimPlan(db, planId, body, user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/claim-plans\/[^/]+\/items$/) && request.method === "POST") {
+      const planId = decodeURIComponent(url.pathname.split("/")[2]);
+      const body = await readJson<{ items?: ClaimPlanItemInput[] }>(request);
+      sendJson(response, 200, await upsertClaimPlanItems(db, planId, body.items || [], user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/claim-plans\/[^/]+\/items\/[^/]+$/) && request.method === "DELETE") {
+      const parts = url.pathname.split("/");
+      sendJson(response, 200, await deleteClaimPlanItem(db, decodeURIComponent(parts[2]), decodeURIComponent(parts[4]), user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/claim-plans\/[^/]+\/ai-proposal$/) && request.method === "POST") {
+      const planId = decodeURIComponent(url.pathname.split("/")[2]);
+      const body = await readJson<{ prompt?: string }>(request);
+      const prompt = String(body.prompt || "").trim();
+      await updateClaimPlan(db, planId, { aiPrompt: prompt }, user);
+      sendJson(response, 200, await generateClaimAiProposal(db, prompt, user));
+      return;
+    }
+
+    if (url.pathname.match(/^\/claim-plans\/[^/]+\/publish$/) && request.method === "POST") {
+      const planId = decodeURIComponent(url.pathname.split("/")[2]);
+      sendJson(response, 200, await publishClaimPlan(db, planId, user));
       return;
     }
 

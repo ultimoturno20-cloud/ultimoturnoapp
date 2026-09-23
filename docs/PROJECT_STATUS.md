@@ -45,6 +45,19 @@ Actualizado: 2026-09-23
 
 ### Claims, catalogo y stock
 
+- Se agrego `/claims/planificar`, un workspace separado para preparar multiples
+  borradores sin modificar ni reservar stock. Incluye selector masivo desde
+  inventario disponible, cantidades, secciones, precios, tags y publicacion
+  transaccional como claim activo.
+- Los planes usan stock existente y no vuelven a ingresarlo al inventario al
+  publicarse. La disponibilidad se revalida antes de publicar y UltimoTurno
+  conserva prioridad mientras el plan siga en borrador.
+- El asistente opcional convierte una instruccion en una estrategia estructurada
+  y luego selecciona las cartas localmente. Solo la instruccion escrita se envia
+  a OpenAI; nombres, precios, cantidades y tags del inventario no salen de la
+  plataforma. Requiere `OPENAI_API_KEY`; el modelo es configurable mediante
+  `OPENAI_CLAIM_MODEL` y por defecto usa `gpt-4o-mini`.
+- Migracion nueva: `0036_claim_planner.sql`.
 - El buscador de cartas del claim se movio arriba de la mesa para evitar bajar
   hasta el final de la pagina.
 - El claim agrupa cantidades: una carta con varias unidades mantiene una sola
@@ -207,6 +220,8 @@ SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=ultimoturno-images
 PRICECHARTING_TOKEN=...
 PRICECHARTING_IMAGE_DIR=D:\UltimoTurno\pricecharting-images
+OPENAI_API_KEY=...
+OPENAI_CLAIM_MODEL=gpt-4o-mini
 ```
 
 Nunca copiar valores reales a Git, logs compartidos o documentacion.

@@ -7,7 +7,23 @@ Actualizado: 2026-09-23
 
 ## Prioridades vigentes
 
-### 0. Observar la sincronizacion sectorial en produccion
+### 0. Activar y pilotear el planificador de claims
+
+- Configurar `OPENAI_API_KEY` en Vercel para habilitar el asistente; no guardar
+  la clave en Git ni exponerla al frontend.
+- Crear un borrador real, sumar cartas manualmente y comprobar que el stock no
+  cambia mientras permanece en planificacion.
+- Probar una propuesta de IA y confirmar que solo se guarda al pulsar
+  `Aplicar propuesta`.
+- Publicar el borrador cuando no haya otro claim activo y confirmar cantidades,
+  secciones, precios y stock sin duplicaciones.
+- Recoger correcciones del operador para ajustar reglas de seleccion y futuros
+  templates de claims.
+
+Senal de exito: un claim completo se prepara en minutos, ninguna sugerencia se
+aplica sola y publicar no crea unidades de inventario inexistentes.
+
+### 1. Observar la sincronizacion sectorial en produccion
 
 - Confirmar con dos sesiones reales que inventario, claims, ordenes, caja y el
   portal reflejen cambios dentro de los 15 segundos esperados.
@@ -23,7 +39,7 @@ Actualizado: 2026-09-23
 Senal de exito: dos operadores ven las altas y cambios sin F5, sin perder lo
 que estaban escribiendo y sin una recarga completa de la interfaz.
 
-### 1. Pilotear revendedores en produccion
+### 2. Pilotear revendedores en produccion
 
 - Crear un revendedor de prueba con comision real y asignarle pocas cartas.
 - Probar una venta central antes que la venta del revendedor para confirmar la
@@ -43,7 +59,7 @@ que estaban escribiendo y sin una recarga completa de la interfaz.
 Senal de exito: el revendedor carga ventas desde su portal, el stock se descuenta
 una sola vez y el saldo a rendir coincide con la comision acordada.
 
-### 2. Completar cobertura de imagenes
+### 3. Completar cobertura de imagenes
 
 - Dejar `Mejorar Calidad Imagenes Online.cmd` ejecutando por lotes.
 - Vigilar que bajen `stock-sin-img` y `claim-sin-img` sin aumentar errores.
@@ -56,7 +72,7 @@ una sola vez y el saldo a rendir coincide con la comision acordada.
 Senal de exito: claim activo y stock operativo sin imagenes rotas, daemon capaz
 de continuar solo y cobertura de catalogo en crecimiento.
 
-### 3. Validar CSV reales de scanner y MonPrice
+### 4. Validar CSV reales de scanner y MonPrice
 
 - Probar archivos con nombres japoneses, BOM UTF-8, comas y comillas.
 - Confirmar que `Generar vista previa` responde dentro del limite de Vercel.
@@ -67,7 +83,7 @@ de continuar solo y cobertura de catalogo en crecimiento.
 Senal de exito: el archivo escaneado genera preview, concilia las cartas y solo
 las filas confirmadas llegan a la seccion elegida.
 
-### 4. Seguir compactando Ordenes con datos intactos
+### 5. Seguir compactando Ordenes con datos intactos
 
 - Verificar el tablero en desktop y movil con volumen real.
 - Si todavia falta espacio vertical, ocultar o colapsar la marca superior solo
@@ -77,7 +93,7 @@ las filas confirmadas llegan a la seccion elegida.
 Senal de exito: mas tarjetas visibles y acciones legibles sin modificar una sola
 orden de produccion.
 
-### 5. Robustecer tareas automaticas
+### 6. Robustecer tareas automaticas
 
 - Confirmar diariamente el cron PriceCharting de las `09:00 UTC`.
 - Revisar errores de pool de Supabase y mantener
@@ -85,7 +101,7 @@ orden de produccion.
 - Evitar tareas monoliticas que excedan los 60 segundos de Vercel; procesar en
   lotes reanudables e idempotentes.
 
-### 6. Mejorar calidad de catalogo
+### 7. Mejorar calidad de catalogo
 
 - Resolver duplicados y variantes ambiguas.
 - Priorizar imagenes visibles para cartas que existen en stock o claims.

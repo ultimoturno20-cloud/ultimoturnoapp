@@ -2,13 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
+type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerPortalTab = "sell" | "orders" | "stock" | "global" | "sales";
 const viewPaths: Record<View, string> = {
   dashboard: "/inicio",
   inventory: "/inventario",
   "stock-intake": "/inventario/cargar-stock",
   claims: "/claims",
+  "claim-planner": "/claims/planificar",
   "claim-live": "/claims/en-vivo",
   orders: "/ordenes",
   sales: "/caja",
@@ -537,6 +538,58 @@ type ClaimsWorkspace = {
   };
 };
 
+type ClaimPlanItem = {
+  id: string;
+  planId: string;
+  inventoryItemId: string;
+  sku: string;
+  productName: string;
+  expansionName: string;
+  cardNumber: string;
+  imageUrl: string;
+  language: string;
+  condition: string;
+  finish: string;
+  availableQuantity: number;
+  quantity: number;
+  sectionName: string;
+  finalPriceArs: number;
+  tags: string;
+  aiReason: string;
+  sortOrder: number;
+};
+
+type ClaimPlan = {
+  id: string;
+  name: string;
+  status: "draft" | "published" | "archived";
+  targetDate: string;
+  aiPrompt: string;
+  publishedClaimId: string;
+  createdAt: string;
+  updatedAt: string;
+  items: ClaimPlanItem[];
+};
+
+type ClaimPlansResponse = {
+  plans: ClaimPlan[];
+  ai?: { configured: boolean; model: string; privacy: string };
+};
+
+type ClaimAiProposal = {
+  title: string;
+  summary: string;
+  items: Array<{
+    inventoryItemId: string;
+    quantity: number;
+    sectionName: string;
+    finalPriceArs: number;
+    tags: string;
+    aiReason: string;
+    reason: string;
+  }>;
+};
+
 type ClaimOrderPreview = {
   claimId: string;
   claimName: string;
@@ -857,6 +910,7 @@ function App() {
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
   const [mobileEntries, setMobileEntries] = useState<MobileInventoryEntry[]>([]);
   const [claims, setClaims] = useState<ClaimsWorkspace>(() => emptyClaimsWorkspace());
+  const [claimPlans, setClaimPlans] = useState<ClaimPlansResponse>({ plans: [] });
   const [priceChartingCache, setPriceChartingCache] = useState<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>({ entries: [], status: emptyPriceChartingStatus() });
   const [priceChartingAutoRefresh, setPriceChartingAutoRefresh] = useState<PriceChartingAutoRefreshStatus>(() => emptyPriceChartingAutoRefreshStatus());
   const [tcgplayerPrices, setTcgplayerPrices] = useState<TcgplayerPriceCacheStatus>(() => emptyTcgplayerPriceStatus());
@@ -995,6 +1049,9 @@ function App() {
       } else if (targetView === "claims" || targetView === "claim-live") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setClaims(claimsData); setStock(stockData);
+      } else if (targetView === "claim-planner") {
+        const [plansData, claimsData, stockData] = await Promise.all([api<ClaimPlansResponse>("/claim-plans"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
+        setClaimPlans(plansData); setClaims(claimsData); setStock(stockData);
       } else if (targetView === "orders") {
         const [salesData, claimsData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<ClaimsWorkspace>("/claims")]);
         setSales(salesData.sales); setClaims(claimsData);
@@ -1090,6 +1147,11 @@ function App() {
     }
     routeInitialized.current = true;
   }, [view]);
+
+  useEffect(() => {
+    if (!initialLoadComplete || accessRequired || view !== "claim-planner") return;
+    void refreshViewData("claim-planner").catch(showError);
+  }, [accessRequired, initialLoadComplete, view]);
 
   useEffect(() => {
     const handlePopState = () => setView(viewFromLocation());
@@ -1591,6 +1653,45 @@ function App() {
     } finally {
       setPurchaseSaving(false);
     }
+  }
+
+  async function createClaimPlanDraft(input: { name?: string; targetDate?: string }) {
+    const result = await api<ClaimPlansResponse>("/claim-plans", { method: "POST", body: input });
+    setClaimPlans((current) => ({ ...result, ai: current.ai }));
+    showMessage("Borrador creado.");
+    return result;
+  }
+
+  async function updateClaimPlanDraft(planId: string, input: { name?: string; targetDate?: string; aiPrompt?: string; status?: "draft" | "archived" }) {
+    const result = await api<ClaimPlansResponse>(`/claim-plans/${planId}`, { method: "PUT", body: input });
+    setClaimPlans((current) => ({ ...result, ai: current.ai }));
+    return result;
+  }
+
+  async function saveClaimPlanItems(planId: string, items: Array<{ inventoryItemId: string; quantity?: number; sectionName?: string; finalPriceArs?: number; tags?: string; aiReason?: string }>) {
+    const result = await api<ClaimPlansResponse>(`/claim-plans/${planId}/items`, { method: "POST", body: { items } });
+    setClaimPlans((current) => ({ ...result, ai: current.ai }));
+    showMessage(`${items.length} carta(s) guardada(s) en el borrador.`);
+    return result;
+  }
+
+  async function removeClaimPlanItem(planId: string, itemId: string) {
+    const result = await api<ClaimPlansResponse>(`/claim-plans/${planId}/items/${itemId}`, { method: "DELETE" });
+    setClaimPlans((current) => ({ ...result, ai: current.ai }));
+  }
+
+  async function generateClaimPlanProposal(planId: string, prompt: string) {
+    const proposal = await api<ClaimAiProposal>(`/claim-plans/${planId}/ai-proposal`, { method: "POST", body: { prompt } });
+    setClaimPlans((current) => ({ ...current, plans: current.plans.map((plan) => plan.id === planId ? { ...plan, aiPrompt: prompt } : plan) }));
+    return proposal;
+  }
+
+  async function publishClaimPlanDraft(planId: string) {
+    const result = await api<{ plans: ClaimPlan[]; workspace: ClaimsWorkspace }>(`/claim-plans/${planId}/publish`, { method: "POST" });
+    setClaimPlans((current) => ({ plans: result.plans, ai: current.ai }));
+    setClaims(result.workspace);
+    showMessage("Borrador publicado como claim activo.");
+    setView("claims");
   }
 
   async function createClaim(name: string) {
@@ -2315,12 +2416,13 @@ function App() {
         <NavButton href={viewPaths.inventory} icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>
         <NavButton href={viewPaths.orders} icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
         <NavButton href={viewPaths.sales} icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
-        <NavButton href={viewPaths.claims} icon="claims" active={view === "claims"} onClick={() => setView("claims")}>Claims</NavButton>
+        <NavButton href={viewPaths.claims} icon="claims" active={view === "claims" || view === "claim-planner"} onClick={() => setView("claims")}>Claims</NavButton>
         <details className="more-nav">
           <summary>Mas</summary>
           <div>
             <NavButton href={viewPaths.purchases} icon="purchases" active={view === "purchases"} onClick={() => setView("purchases")}>Compras</NavButton>
             <NavButton href={viewPaths["claim-live"]} icon="play" active={view === "claim-live"} onClick={() => setView("claim-live")}>Claim en vivo</NavButton>
+            <NavButton href={viewPaths["claim-planner"]} icon="claims" active={view === "claim-planner"} onClick={() => setView("claim-planner")}>Planificar claim</NavButton>
             <NavButton href={viewPaths.import} icon="import" active={view === "import"} onClick={() => setView("import")}>Importar</NavButton>
             <NavButton href={viewPaths["mobile-intake"]} icon="cart" active={view === "mobile-intake"} onClick={() => setView("mobile-intake")}>Carga movil</NavButton>
             <NavButton href={viewPaths.resellers} icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Revendedores</NavButton>
@@ -2477,6 +2579,7 @@ function App() {
       ) : null}
 
       {view === "claims" ? <ClaimsView workspace={claims} stockItems={stock.items} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search, languageGroup) => void searchPriceChartingCache(search, languageGroup)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
+      {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
       {view === "orders" ? <OrdersView sales={sales} claims={claims} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} /> : null}
       {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
@@ -4274,6 +4377,199 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
       <div className="sales-grid">
         <section className="panel"><div className="section-heading"><div><h2>Ultimas cartas vendidas</h2><p>Precios finales, cliente y lugar de venta.</p></div></div>{recentLines.length ? <div className="sold-card-list">{recentLines.map(({ sale, line }) => <article className="sold-card-row" key={`${sale.id}-${line.saleItemId || line.inventoryItemId}-${line.name}`}><CardArt src={line.imageUrl} alt={line.name} label={line.name} className="sold-card-thumb" fallbackClassName="sold-card-thumb image-placeholder" /><div><strong>{line.name}</strong><span>{sale.customerName} - {channelLabel(sale.channel)}</span><small>{formatDate(sale.completedAt || sale.createdAt)}</small></div><div><MoneyStack ars={line.lineTotalArs || null} usd={line.lineTotalUsd || null} blueRate={blueRate} compact /><span>{line.quantity} x {line.priceCurrency === "USD" ? formatUsd(line.unitPriceUsd) : formatArs(line.unitPriceArs)}</span></div></article>)}</div> : <EmptyState title="Sin ventas" body="Confirma una venta desde Inventario / Venta para verla aca." />}</section>
         <aside className="panel sales-side"><h3>Ventas por lugar</h3>{channelTotals.length ? channelTotals.map((row) => <div className="channel-row" key={row.channel}><strong>{channelLabel(row.channel)}</strong><MoneyStack ars={row.total || null} usd={row.totalUsd || null} blueRate={blueRate} compact /></div>) : <p className="muted">Todavia no hay ventas cobradas.</p>}<div className="cash-note"><strong>Mes actual</strong><span>{formatArs(monthly.reduce((sum, sale) => sum + sale.totalArs, 0))}</span><small>Ticket promedio {formatArs(paid.length ? paid.reduce((sum, sale) => sum + sale.totalArs, 0) / paid.length : 0)}</small></div></aside>
+      </div>
+    </section>
+  );
+}
+
+function ClaimPlannerView(props: {
+  plansData: ClaimPlansResponse;
+  stockItems: StockRow[];
+  activeClaim: ClaimSession | null;
+  onCreatePlan: (input: { name?: string; targetDate?: string }) => Promise<ClaimPlansResponse>;
+  onUpdatePlan: (planId: string, input: { name?: string; targetDate?: string; aiPrompt?: string; status?: "draft" | "archived" }) => Promise<ClaimPlansResponse>;
+  onSaveItems: (planId: string, items: Array<{ inventoryItemId: string; quantity?: number; sectionName?: string; finalPriceArs?: number; tags?: string; aiReason?: string }>) => Promise<ClaimPlansResponse>;
+  onRemoveItem: (planId: string, itemId: string) => Promise<void>;
+  onGenerateProposal: (planId: string, prompt: string) => Promise<ClaimAiProposal>;
+  onPublish: (planId: string) => Promise<void>;
+  onError: (error: unknown) => void;
+}) {
+  const drafts = props.plansData.plans.filter((plan) => plan.status === "draft");
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [newPlanName, setNewPlanName] = useState("");
+  const [newPlanDate, setNewPlanDate] = useState("");
+  const [query, setQuery] = useState("");
+  const [selectedStockIds, setSelectedStockIds] = useState<string[]>([]);
+  const [bulkSection, setBulkSection] = useState("General");
+  const [prompt, setPrompt] = useState("");
+  const [proposal, setProposal] = useState<ClaimAiProposal | null>(null);
+  const [busy, setBusy] = useState<"create" | "ai" | "apply" | "publish" | "">("");
+  const plan = drafts.find((item) => item.id === selectedPlanId) || drafts[0] || null;
+  useEffect(() => {
+    if (!plan && drafts[0]) setSelectedPlanId(drafts[0].id);
+    if (selectedPlanId && !drafts.some((item) => item.id === selectedPlanId)) setSelectedPlanId(drafts[0]?.id || "");
+  }, [drafts, plan, selectedPlanId]);
+  useEffect(() => {
+    setPrompt(plan?.aiPrompt || "");
+    setProposal(null);
+    setSelectedStockIds([]);
+  }, [plan?.id]);
+  const planItemIds = new Set(plan?.items.map((item) => item.inventoryItemId) || []);
+  const searchQuery = parseUiSearchQuery(query);
+  const availableStock = props.stockItems
+    .filter((item) => item.active && item.inventoryStatus === "available" && item.availableQuantity > 0 && !planItemIds.has(item.id))
+    .map((item) => ({ item, score: scoreStockSearch(item, searchQuery) }))
+    .filter(({ score }) => !searchQuery.tokens.length || score > 0)
+    .sort((left, right) => right.score - left.score || right.item.availableQuantity - left.item.availableQuantity || left.item.product.name.localeCompare(right.item.product.name, "es"))
+    .slice(0, 120)
+    .map(({ item }) => item);
+  const totalUnits = plan?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
+  const totalValue = plan?.items.reduce((sum, item) => sum + item.quantity * item.finalPriceArs, 0) || 0;
+  const sections = unique(plan?.items.map((item) => item.sectionName || "Sin seccion") || []);
+  const run = async (kind: typeof busy, action: () => Promise<void>) => {
+    setBusy(kind);
+    try { await action(); }
+    catch (error) { props.onError(error); }
+    finally { setBusy(""); }
+  };
+  const createPlan = () => run("create", async () => {
+    const result = await props.onCreatePlan({ name: newPlanName, targetDate: newPlanDate });
+    const created = result.plans.find((candidate) => !drafts.some((draft) => draft.id === candidate.id));
+    if (created) setSelectedPlanId(created.id);
+    setNewPlanName("");
+    setNewPlanDate("");
+  });
+  const addSelectedStock = () => {
+    if (!plan || !selectedStockIds.length) return;
+    void run("apply", async () => {
+      await props.onSaveItems(plan.id, selectedStockIds.map((inventoryItemId) => ({ inventoryItemId, quantity: 1, sectionName: bulkSection })));
+      setSelectedStockIds([]);
+    });
+  };
+  const savePlanItem = (item: ClaimPlanItem, patch: Partial<Pick<ClaimPlanItem, "quantity" | "sectionName" | "finalPriceArs" | "tags">>) => {
+    if (!plan) return;
+    const next = { ...item, ...patch };
+    void props.onSaveItems(plan.id, [{ inventoryItemId: item.inventoryItemId, quantity: next.quantity, sectionName: next.sectionName, finalPriceArs: next.finalPriceArs, tags: next.tags, aiReason: item.aiReason }]).catch(props.onError);
+  };
+  return (
+    <section className="view claim-planner-view">
+      <header className="claim-planner-header">
+        <div>
+          <p className="eyebrow">Claims</p>
+          <h2>Planificador de claims</h2>
+          <p className="muted">Arma borradores desde stock real y publicalos cuando esten listos.</p>
+        </div>
+        <div className="claim-planner-summary">
+          <Metric label="Cartas" value={plan?.items.length || 0} helper="selecciones" />
+          <Metric label="Unidades" value={totalUnits} helper="en el borrador" />
+          <Metric label="Secciones" value={sections.length} helper="ordenadas" />
+          <Metric label="Valor" value={formatArs(totalValue)} helper="precio publicado" />
+        </div>
+      </header>
+
+      {props.activeClaim ? <div className="feedback warning"><span>Hay un claim activo: {props.activeClaim.name}. Podes seguir planificando, pero deberas cerrarlo antes de publicar otro.</span></div> : null}
+
+      <div className="claim-planner-layout">
+        <aside className="claim-plan-sidebar">
+          <section className="panel claim-plan-create">
+            <h3>Nuevo borrador</h3>
+            <input value={newPlanName} onChange={(event) => setNewPlanName(event.target.value)} placeholder="Claim del viernes" />
+            <input type="date" value={newPlanDate} onChange={(event) => setNewPlanDate(event.target.value)} />
+            <button className="primary-action" disabled={busy === "create"} onClick={() => void createPlan()}><Icon name="plus" />{busy === "create" ? "Creando..." : "Crear borrador"}</button>
+          </section>
+          <section className="claim-plan-list" aria-label="Borradores">
+            {drafts.map((draft) => (
+              <button key={draft.id} className={plan?.id === draft.id ? "active" : ""} onClick={() => setSelectedPlanId(draft.id)}>
+                <strong>{draft.name}</strong>
+                <span>{draft.items.length} cartas · {draft.items.reduce((sum, item) => sum + item.quantity, 0)} unidades</span>
+                <small>{draft.targetDate || "Sin fecha"}</small>
+              </button>
+            ))}
+            {!drafts.length ? <p className="muted">Todavia no hay borradores.</p> : null}
+          </section>
+        </aside>
+
+        <div className="claim-planner-main">
+          {plan ? (
+            <>
+              <section className="panel claim-plan-toolbar">
+                <div className="claim-plan-title-fields">
+                  <label>Nombre<input defaultValue={plan.name} key={`${plan.id}-name`} onBlur={(event) => void props.onUpdatePlan(plan.id, { name: event.target.value }).catch(props.onError)} /></label>
+                  <label>Fecha<input type="date" defaultValue={plan.targetDate} key={`${plan.id}-date`} onBlur={(event) => void props.onUpdatePlan(plan.id, { targetDate: event.target.value }).catch(props.onError)} /></label>
+                </div>
+                <div className="claim-plan-toolbar-actions">
+                  <button className="secondary-action danger-action" onClick={() => {
+                    if (window.confirm("Archivar este borrador?")) void props.onUpdatePlan(plan.id, { status: "archived" }).catch(props.onError);
+                  }}><Icon name="close" />Archivar</button>
+                  <button className="primary-action" disabled={!plan.items.length || Boolean(props.activeClaim) || busy === "publish"} onClick={() => {
+                    if (window.confirm(`Publicar ${plan.name} como claim activo?`)) void run("publish", () => props.onPublish(plan.id));
+                  }}><Icon name="play" />{busy === "publish" ? "Publicando..." : "Publicar claim"}</button>
+                </div>
+              </section>
+
+              <section className="claim-planner-ai">
+                <div className="section-heading">
+                  <div><h3>Asistente de armado</h3><p>Describe composicion, cantidades, precios y estilo del claim.</p></div>
+                  <span className={`ai-status ${props.plansData.ai?.configured ? "ready" : "missing"}`}>{props.plansData.ai?.configured ? `IA lista · ${props.plansData.ai.model}` : "IA sin configurar"}</span>
+                </div>
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ej. Armame 40 unidades: 15 jugables, 10 promos, 10 economicas y 5 destacadas. Priorizá cartas con varias unidades." />
+                <div className="claim-ai-actions">
+                  <small>{props.plansData.ai?.privacy || "La seleccion siempre se valida contra stock real."}</small>
+                  <button className="primary-action" disabled={!props.plansData.ai?.configured || prompt.trim().length < 8 || busy === "ai"} onClick={() => void run("ai", async () => setProposal(await props.onGenerateProposal(plan.id, prompt)))}><Icon name="activity" />{busy === "ai" ? "Pensando..." : "Generar propuesta"}</button>
+                </div>
+                {proposal ? (
+                  <div className="claim-ai-proposal">
+                    <div><strong>{proposal.title}</strong><p>{proposal.summary}</p></div>
+                    <span>{proposal.items.length} cartas · {proposal.items.reduce((sum, item) => sum + item.quantity, 0)} unidades</span>
+                    <button className="primary-action" disabled={busy === "apply"} onClick={() => void run("apply", async () => { await props.onSaveItems(plan.id, proposal.items); setProposal(null); })}><Icon name="check" />Aplicar propuesta</button>
+                    <button className="secondary-action" onClick={() => setProposal(null)}><Icon name="close" />Descartar</button>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="claim-stock-picker">
+                <div className="section-heading">
+                  <div><h3>Seleccion masiva desde stock</h3><p>Solo aparecen unidades disponibles; seleccionar no reserva stock.</p></div>
+                  <strong>{availableStock.length} visibles</strong>
+                </div>
+                <div className="claim-stock-picker-tools">
+                  <label className="claim-search-field"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Carta, expansion, numero, idioma o tag" /></label>
+                  <input value={bulkSection} onChange={(event) => setBulkSection(event.target.value)} placeholder="Seccion destino" />
+                  <button className="primary-action" disabled={!selectedStockIds.length || busy === "apply"} onClick={addSelectedStock}><Icon name="plus" />Agregar ({selectedStockIds.length})</button>
+                </div>
+                <div className="claim-stock-picker-grid">
+                  {availableStock.map((item) => {
+                    const selected = selectedStockIds.includes(item.id);
+                    return <button key={item.id} className={selected ? "selected" : ""} onClick={() => setSelectedStockIds((current) => selected ? current.filter((id) => id !== item.id) : [...current, item.id])}>
+                      <CardArt src={item.product.imageUrl} alt={item.product.name} label="ST" className="claim-stock-thumb" fallbackClassName="image-placeholder compact-placeholder claim-stock-thumb" />
+                      <span><strong>{item.product.name}</strong><small>{item.product.expansion} {item.product.number ? `#${item.product.number}` : ""}</small><em>{item.variant.language} · {item.variant.finish}</em></span>
+                      <b>{item.availableQuantity} disp.</b>
+                      <strong>{formatArs(item.priceArs)}</strong>
+                    </button>;
+                  })}
+                </div>
+              </section>
+
+              <section className="claim-plan-table-section">
+                <div className="section-heading"><div><h3>Mesa del borrador</h3><p>Ajusta cantidad, seccion, precio y tags.</p></div></div>
+                <div className="claim-plan-table">
+                  {plan.items.map((item) => (
+                    <article key={item.id}>
+                      <CardArt src={item.imageUrl} alt={item.productName} label="PL" className="claim-plan-thumb" fallbackClassName="image-placeholder compact-placeholder claim-plan-thumb" />
+                      <div className="claim-plan-item-name"><strong>{item.productName}</strong><span>{item.expansionName} {item.cardNumber ? `#${item.cardNumber}` : ""}</span><small>{item.language} · {item.finish} · {item.availableQuantity} disponibles</small>{item.aiReason ? <em>{item.aiReason}</em> : null}</div>
+                      <label>Cant.<input type="number" min={1} max={item.availableQuantity} defaultValue={item.quantity} key={`${item.id}-quantity-${item.quantity}`} onBlur={(event) => savePlanItem(item, { quantity: Math.min(item.availableQuantity, Math.max(1, Number(event.target.value) || 1)) })} /></label>
+                      <label>Seccion<input defaultValue={item.sectionName} key={`${item.id}-section-${item.sectionName}`} onBlur={(event) => savePlanItem(item, { sectionName: event.target.value })} /></label>
+                      <label>Precio ARS<input type="number" min={0} defaultValue={item.finalPriceArs} key={`${item.id}-price-${item.finalPriceArs}`} onBlur={(event) => savePlanItem(item, { finalPriceArs: Math.max(0, Number(event.target.value) || 0) })} /></label>
+                      <label>Tags<input defaultValue={item.tags} key={`${item.id}-tags-${item.tags}`} onBlur={(event) => savePlanItem(item, { tags: event.target.value })} /></label>
+                      <button className="icon-action danger-action" title="Quitar del borrador" aria-label="Quitar del borrador" onClick={() => void props.onRemoveItem(plan.id, item.id).catch(props.onError)}><Icon name="close" /></button>
+                    </article>
+                  ))}
+                  {!plan.items.length ? <EmptyState title="Borrador vacio" body="Selecciona stock manualmente o genera una propuesta con el asistente." /> : null}
+                </div>
+              </section>
+            </>
+          ) : <EmptyState title="Crea el primer borrador" body="Los planes se guardan sin modificar ni reservar el inventario." />}
+        </div>
       </div>
     </section>
   );

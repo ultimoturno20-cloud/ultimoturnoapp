@@ -14,6 +14,7 @@
     { "source": "/api/inventory/:path*", "destination": "/api/dispatch?path=/inventory/:path*" },
     { "source": "/api/sales/:path*", "destination": "/api/dispatch?path=/sales/:path*" },
     { "source": "/api/sale-items/:path*", "destination": "/api/dispatch?path=/sale-items/:path*" },
+    { "source": "/api/claim-plans/:path*", "destination": "/api/dispatch?path=/claim-plans/:path*" },
     { "source": "/api/claims/:path*", "destination": "/api/dispatch?path=/claims/:path*" },
     { "source": "/api/card-index/:path*", "destination": "/api/dispatch?path=/card-index/:path*" },
     { "source": "/api/pricecharting-cache/:path*", "destination": "/api/dispatch?path=/pricecharting-cache/:path*" },
