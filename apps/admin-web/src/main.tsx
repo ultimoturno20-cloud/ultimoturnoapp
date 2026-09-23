@@ -7038,12 +7038,14 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
                         <div className="candidate-card-art">
                           {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.productName} /> : <div className="image-placeholder">{candidate.productName.slice(0, 2).toUpperCase()}</div>}
                         </div>
-                        <strong>{candidate.productName}</strong>
-                        <span>{candidate.expansionName} #{candidate.cardNumber || "-"}</span>
-                        <small>ID {candidate.priceChartingId}</small>
-                        <MoneyStack usd={candidate.loosePriceUsd} blueRate={blueRate} compact />
-                        <div className="confidence"><span>Coincidencia</span><strong>{candidate.confidence}%</strong></div>
-                        <p>{candidate.reasons.join(" · ")}</p>
+                        <div className="candidate-card-body">
+                          <strong>{candidate.productName}</strong>
+                          <span>{candidate.expansionName} #{candidate.cardNumber || "-"}</span>
+                          <small>ID {candidate.priceChartingId}</small>
+                          <MoneyStack usd={candidate.loosePriceUsd} blueRate={blueRate} compact />
+                          <div className="confidence"><span>Coincidencia</span><strong>{candidate.confidence}%</strong></div>
+                          <p>{candidate.reasons.join(" · ")}</p>
+                        </div>
                       </button>
                     ))}</div>
                   </div>
@@ -7056,11 +7058,13 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
                         <div className="candidate-card-art">
                           {candidate.imageUrl ? <img src={candidate.imageUrl} alt={candidate.name} /> : <div className="image-placeholder">{candidate.name.slice(0, 2).toUpperCase()}</div>}
                         </div>
-                        <strong>{candidate.name}</strong>
-                        <span>{candidate.expansion} #{candidate.number || "-"}</span>
-                        <small>{[candidate.language, candidate.gradingCompany || candidate.grade ? [candidate.gradingCompany, candidate.grade].filter(Boolean).join(" ") : candidate.condition].filter(Boolean).join(" / ")}</small>
-                        <div className="confidence"><span>Coincidencia</span><strong>{candidate.confidence}%</strong></div>
-                        <p>{candidate.reasons.join(" · ")}</p>
+                        <div className="candidate-card-body">
+                          <strong>{candidate.name}</strong>
+                          <span>{candidate.expansion} #{candidate.number || "-"}</span>
+                          <small>{[candidate.language, candidate.gradingCompany || candidate.grade ? [candidate.gradingCompany, candidate.grade].filter(Boolean).join(" ") : candidate.condition].filter(Boolean).join(" / ")}</small>
+                          <div className="confidence"><span>Coincidencia</span><strong>{candidate.confidence}%</strong></div>
+                          <p>{candidate.reasons.join(" · ")}</p>
+                        </div>
                       </button>
                     ))}</div> : <p className="muted">No hay una carta igual cargada en tu stock.</p>}
                     <div className="review-actions">
