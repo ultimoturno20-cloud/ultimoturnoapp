@@ -75,6 +75,8 @@ Actualizado: 2026-09-23
   `Reverse Holofoil`, `Holofoil`, etc.).
 - Cuando una imagen ya contiene `/product/{id}`, ese identificador exacto tiene
   prioridad y evita una coincidencia aproximada.
+- El endpoint de sincronizacion acepta `inventoryOnly=true` para recorrer TCGCSV
+  contra las cartas operativas sin reprocesar todo el indice de 120 mil fichas.
 - Vercel ejecuta `/api/cron/tcgplayer-refresh` diariamente a las `09:30 UTC`
   (`06:30` de Argentina), despues del cron de PriceCharting.
 - Migracion nueva: `0035_tcgplayer_price_fallback.sql`.

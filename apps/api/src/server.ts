@@ -581,17 +581,27 @@ function tcgCandidatePreference(entry: Record<string, unknown>): number {
     + (canonicalName.includes("[") ? 0 : 1);
 }
 
-async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, products: TcgCsvProduct[]) {
+async function loadTcgCandidateRowsForProducts(db: Awaited<typeof dbPromise>, products: TcgCsvProduct[], inventoryOnly = false) {
   const numbers = [...new Set(products
     .map((product) => normalizeTcgNumber(tcgCsvExtendedValue(product, "Number", "Card Number")))
     .filter(Boolean))];
   if (!numbers.length) return new Map<string, Record<string, unknown>[]>();
   const params = numbers;
   const placeholders = params.map((_, index) => `$${index + 1}`).join(", ");
+  const inventoryClause = inventoryOnly ? `
+    and exists (
+      select 1
+      from external_identifiers ei
+      join external_sources es on es.id = ei.source_id and es.name = 'pricecharting'
+      join inventory_items ii on ii.product_id = ei.product_id and ii.active = true
+      where ei.external_id = card_index_entries.pricecharting_id
+    )
+  ` : "";
   const rows = await db.query<Record<string, unknown>>(`
     select id, pricecharting_id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
     from card_index_entries
     where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') in (${placeholders})
+    ${inventoryClause}
   `, params);
   const byNumber = new Map<string, Record<string, unknown>[]>();
   for (const row of rows.rows) {
@@ -735,7 +745,7 @@ function inferTcgCsvLanguageGroup(...values: string[]): "english" | "chinese" | 
   return "english";
 }
 
-async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvProduct, group: TcgCsvGroup, candidatesByNumber?: Map<string, Record<string, unknown>[]>, seedMissing?: { priceChartingRunId: string }) {
+async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvProduct, group: TcgCsvGroup, candidatesByNumber?: Map<string, Record<string, unknown>[]>, seedMissing?: { priceChartingRunId: string }, inventoryOnly = false) {
   const number = normalizeTgPrimaryNumber(tcgCsvExtendedValue(product, "Number", "Card Number"));
   const productId = String(product.productId || "").trim();
   const rawName = String(product.name || product.cleanName || "").trim();
@@ -749,6 +759,13 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
       select id, pricecharting_id, canonical_name, canonical_expansion, card_number, tcgplayer_product_id, match_confidence
       from card_index_entries
       where regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '^0+', '') = $1
+        ${inventoryOnly ? `and exists (
+          select 1
+          from external_identifiers ei
+          join external_sources es on es.id = ei.source_id and es.name = 'pricecharting'
+          join inventory_items ii on ii.product_id = ei.product_id and ii.active = true
+          where ei.external_id = card_index_entries.pricecharting_id
+        )` : ""}
       limit 500
     `, [normalizedNumber])).rows;
   let best: { row: Record<string, unknown>; score: number; reasons: string[] } | null = null;
@@ -979,7 +996,7 @@ async function runMissedTcgplayerPriceAutoRefreshOnStartup() {
   }
 }
 
-async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; groupLimit?: number; seedMissing?: boolean }) {
+async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; groupLimit?: number; seedMissing?: boolean; inventoryOnly?: boolean }) {
   const db = await dbPromise;
   const groups = (await fetchTcgCsvJson<TcgCsvGroup[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/groups`))
     .filter((group) => group && group.groupId && group.name);
@@ -1007,10 +1024,10 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
     if (!groupId) continue;
     const groupProducts = await fetchTcgCsvJson<TcgCsvProduct[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/${encodeURIComponent(groupId)}/products`);
     const productsWithGroup = groupProducts.map((product) => ({ ...product, groupId: product.groupId || group.groupId }));
-    const candidatesByNumber = await loadTcgCandidateRowsForProducts(db, productsWithGroup);
+    const candidatesByNumber = await loadTcgCandidateRowsForProducts(db, productsWithGroup, options.inventoryOnly === true);
     for (const rawProduct of productsWithGroup) {
       rowsSeen++;
-      const result = await linkTcgCsvProduct(db, rawProduct, group, candidatesByNumber, options.seedMissing === false ? undefined : { priceChartingRunId });
+      const result = await linkTcgCsvProduct(db, rawProduct, group, candidatesByNumber, options.seedMissing === false ? undefined : { priceChartingRunId }, options.inventoryOnly === true);
       if (result === "matched") rowsMatched++;
       else if (result === "weak") rowsWeak++;
       else if (result === "conflict") rowsConflict++;
@@ -1047,6 +1064,7 @@ async function syncCardIndexTcgCsvInProcess(options: { groupOffset?: number; gro
     groupsProcessed: selectedGroups.length,
     totalGroups: groups.length,
     nextGroupOffset,
+    inventoryOnly: options.inventoryOnly === true,
     complete: nextGroupOffset === null
   };
 }
@@ -4167,8 +4185,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/card-index/sync-tcgcsv" && request.method === "POST") {
-      const body: { groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean } = await readJson<{ groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean }>(request).catch(() => ({}));
-      sendJson(response, 200, await syncCardIndexTcgCsvInProcess({ groupOffset: body.groupOffset, groupLimit: body.groupLimit, seedMissing: body.seedMissing }));
+      const body: { groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean; inventoryOnly?: boolean } = await readJson<{ groupOffset?: number; groupLimit?: number; loop?: boolean; seedMissing?: boolean; inventoryOnly?: boolean }>(request).catch(() => ({}));
+      sendJson(response, 200, await syncCardIndexTcgCsvInProcess({ groupOffset: body.groupOffset, groupLimit: body.groupLimit, seedMissing: body.seedMissing, inventoryOnly: body.inventoryOnly }));
       return;
     }
 
