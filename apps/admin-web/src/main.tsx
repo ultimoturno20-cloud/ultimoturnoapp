@@ -246,6 +246,11 @@ type ImportResolution = {
   priceChartingId?: string;
 };
 
+type AutomaticImportResolution = {
+  resolution: ImportResolution;
+  kind: "update" | "linked" | "local";
+};
+
 type ImportBatchState = {
   name: string;
   defaultLocation: string;
@@ -2701,7 +2706,7 @@ function App() {
       ) : null}
       {view === "movements" ? <MovementsView movements={movements} audit={audit} /> : null}
       {view === "import" ? (
-        <ImportView applying={importApplying} feedback={importFeedback} csvText={csvText} rows={previewRows} resolutions={importResolutions} importBatch={importBatch} importRuns={importRuns} blueRate={blueRate} onTextChange={(text) => { if (importRequest.current) return; setCsvText(text); setPreviewRows([]); setImportFeedback(""); }} onBatchChange={setImportBatch} onPreview={() => void previewSnapshot()} onPreviewText={(text) => void previewSnapshot(text)} onApply={applySnapshot} onLoadExampleCsv={environment.allowExamples ? () => setCsvText(exampleSnapshotCsv) : undefined} onResolve={(rowNumber, resolution) => setImportResolutions((current) => ({ ...current, [rowNumber]: resolution }))} onResolveMany={(nextResolutions) => setImportResolutions((current) => ({ ...current, ...nextResolutions }))} />
+        <ImportView applying={importApplying} feedback={importFeedback} csvText={csvText} rows={previewRows} resolutions={importResolutions} importBatch={importBatch} importRuns={importRuns} blueRate={blueRate} onTextChange={(text) => { if (importRequest.current) return; setCsvText(text); setPreviewRows([]); setImportResolutions({}); setImportFeedback(""); }} onBatchChange={setImportBatch} onPreview={() => void previewSnapshot()} onPreviewText={(text) => void previewSnapshot(text)} onApply={applySnapshot} onLoadExampleCsv={environment.allowExamples ? () => setCsvText(exampleSnapshotCsv) : undefined} onResolve={(rowNumber, resolution) => setImportResolutions((current) => ({ ...current, [rowNumber]: resolution }))} onResolveMany={(nextResolutions) => setImportResolutions((current) => ({ ...current, ...nextResolutions }))} onClearResolutions={() => setImportResolutions({})} />
       ) : null}
       {productModalOpen ? (
         <ProductModal
@@ -6750,7 +6755,32 @@ function MobileIntakeView(props: {
   );
 }
 
-function ImportView({ applying, feedback, csvText, rows, resolutions, importBatch, importRuns, blueRate, onTextChange, onBatchChange, onPreview, onPreviewText, onApply, onLoadExampleCsv, onResolve, onResolveMany }: {
+function clearImportCandidate<T extends { confidence: number }>(candidates: T[], singleThreshold: number, multipleThreshold: number, minimumLead: number): T | undefined {
+  const sorted = [...candidates].sort((left, right) => right.confidence - left.confidence);
+  const first = sorted[0];
+  if (!first) return undefined;
+  if (sorted.length === 1) return first.confidence >= singleThreshold ? first : undefined;
+  return first.confidence >= multipleThreshold && first.confidence - sorted[1].confidence >= minimumLead ? first : undefined;
+}
+
+function automaticImportResolution(row: SnapshotPreviewRow): AutomaticImportResolution | undefined {
+  if (row.action !== "review") return undefined;
+  const inventoryCandidate = clearImportCandidate(row.candidates, 86, 90, 12);
+  const priceChartingCandidate = clearImportCandidate(row.priceChartingCandidates, 88, 92, 10);
+  const priceChartingId = row.priceChartingId || priceChartingCandidate?.priceChartingId;
+  if (inventoryCandidate) {
+    return {
+      kind: "update",
+      resolution: { resolution: "update", matchedInventoryItemId: inventoryCandidate.inventoryItemId, priceChartingId }
+    };
+  }
+  if (row.candidates.length > 0) return undefined;
+  if (priceChartingCandidate) return { kind: "linked", resolution: { resolution: "create", priceChartingId: priceChartingCandidate.priceChartingId } };
+  if (row.priceChartingCandidates.length > 0) return undefined;
+  return { kind: "local", resolution: { resolution: "create" } };
+}
+
+function ImportView({ applying, feedback, csvText, rows, resolutions, importBatch, importRuns, blueRate, onTextChange, onBatchChange, onPreview, onPreviewText, onApply, onLoadExampleCsv, onResolve, onResolveMany, onClearResolutions }: {
   applying: boolean;
   feedback: string;
   csvText: string;
@@ -6767,8 +6797,9 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
   onLoadExampleCsv?: () => void;
   onResolve: (rowNumber: number, resolution: ImportResolution) => void;
   onResolveMany: (resolutions: Record<number, ImportResolution>) => void;
+  onClearResolutions: () => void;
 }) {
-  const [filter, setFilter] = useState<"all" | SnapshotPreviewRow["action"]>("all");
+  const [filter, setFilter] = useState<"all" | "pending" | SnapshotPreviewRow["action"]>("all");
   const [rowSearch, setRowSearch] = useState("");
   const [quickOpen, setQuickOpen] = useState(true);
   const [quickText, setQuickText] = useState("");
@@ -6778,10 +6809,15 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
   const review = rows.filter((row) => row.action === "review").length;
   const unresolved = rows.filter((row) => row.action === "review" && !resolutions[row.rowNumber]).length;
   const quickImport = useMemo(() => buildQuickStockCsv(quickText, { ...quickDefaults, intakeBatch: importBatch.name, inventoryStatus: importBatch.defaultInventoryStatus }), [importBatch.defaultInventoryStatus, importBatch.name, quickText, quickDefaults]);
-  const autoResolvable = rows.filter((row) => row.action === "review" && !resolutions[row.rowNumber] && (
-    (row.candidates.length === 0 && row.priceChartingCandidates.length === 1 && row.priceChartingCandidates[0].confidence >= 88)
-    || (row.candidates.length === 1 && row.candidates[0].confidence >= 86 && row.priceChartingCandidates.length <= 1)
-  ));
+  const automaticPlan = rows.flatMap((row) => {
+    if (resolutions[row.rowNumber]) return [];
+    const automatic = automaticImportResolution(row);
+    return automatic ? [{ rowNumber: row.rowNumber, ...automatic }] : [];
+  });
+  const automaticSummary = automaticPlan.reduce((summary, item) => {
+    summary[item.kind] += 1;
+    return summary;
+  }, { update: 0, linked: 0, local: 0 });
   const importTotals = rows.reduce((totals, row) => {
     totals.units += row.quantityOnHand || 0;
     totals.value += (row.quantityOnHand || 0) * (row.priceArs || 0);
@@ -6790,7 +6826,7 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
     if (!row.priceArs && !row.priceUsd) totals.missingPrice += 1;
     return totals;
   }, { units: 0, value: 0, linked: 0, missingImage: 0, missingPrice: 0 });
-  const visible = (filter === "all" ? rows : rows.filter((row) => row.action === filter))
+  const visible = (filter === "all" ? rows : filter === "pending" ? rows.filter((row) => row.action === "review" && !resolutions[row.rowNumber]) : rows.filter((row) => row.action === filter))
     .filter((row) => {
       const clean = normalize(rowSearch);
       if (!clean) return true;
@@ -6812,15 +6848,9 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
   };
   const acceptAutomaticMatches = () => {
     const next: Record<number, ImportResolution> = {};
-    for (const row of autoResolvable) {
-      const priceChartingId = row.priceChartingCandidates.length === 1 ? row.priceChartingCandidates[0].priceChartingId : row.priceChartingId;
-      if (row.candidates.length === 1 && row.candidates[0].confidence >= 86) {
-        next[row.rowNumber] = { resolution: "update", matchedInventoryItemId: row.candidates[0].inventoryItemId, priceChartingId };
-      } else if (row.priceChartingCandidates.length === 1) {
-        next[row.rowNumber] = { resolution: "create", priceChartingId };
-      }
-    }
+    for (const item of automaticPlan) next[item.rowNumber] = item.resolution;
     onResolveMany(next);
+    setFilter("pending");
   };
   const createVisibleLocal = () => {
     const next: Record<number, ImportResolution> = {};
@@ -6992,12 +7022,14 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
         </label>
         <div className="hero-actions import-main-actions">
           <button className="secondary-action" disabled={applying || !csvText.trim()} onClick={onPreview}><Icon name="search" />Generar vista previa</button>
-          {rows.length ? <button className="secondary-action" disabled={!autoResolvable.length} onClick={acceptAutomaticMatches}><Icon name="check" />Resolver seguras ({autoResolvable.length})</button> : null}
+          {rows.length ? <button className="primary-action" disabled={!automaticPlan.length} title="Elige candidatos con confianza alta y ventaja clara sobre la segunda opcion; las coincidencias ambiguas quedan pendientes." onClick={acceptAutomaticMatches}><Icon name="check" />Resolver lote confiable ({automaticPlan.length})</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!localCreatable} onClick={createVisibleLocal}><Icon name="plus" />Crear locales visibles ({localCreatable})</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!visible.some((row) => row.action === "review" && !resolutions[row.rowNumber])} onClick={ignoreVisibleRows}><Icon name="close" />Ignorar dudas visibles</button> : null}
+          {rows.length ? <button className="secondary-action" disabled={!Object.keys(resolutions).length} onClick={onClearResolutions}><Icon name="refresh" />Deshacer decisiones ({Object.keys(resolutions).length})</button> : null}
           {rows.length ? <button className="secondary-action" disabled={!invalid && !review} onClick={() => exportImportIssuesCsv(rows)}><Icon name="download" />Exportar problemas</button> : null}
           <button className="primary-action" disabled={applying || !canApply} onClick={onApply}><Icon name="check" />{applying ? "Procesando..." : "Confirmar e importar"}</button>
         </div>
+        {rows.length && unresolved ? <div className="bulk-resolution-summary"><strong>{automaticPlan.length ? "Resolucion masiva disponible" : "Solo quedan dudas reales"}</strong><span>{automaticSummary.update} actualizan stock existente · {automaticSummary.linked} crean con PriceCharting · {automaticSummary.local} crean desde el CSV · {Math.max(0, unresolved - automaticPlan.length)} quedan para revisar</span></div> : null}
       </section>
       {feedback ? <p className="intake-feedback" role="status">{feedback}</p> : null}
       {rows.length ? <>
@@ -7012,7 +7044,7 @@ function ImportView({ applying, feedback, csvText, rows, resolutions, importBatc
         </section>
         <section className="panel review-panel">
           <div className="section-heading"><div><h3>Revision fila por fila</h3><p>Los errores quedan siempre visibles; las coincidencias requieren una decision.</p></div></div>
-          <div className="review-controls">{(["all", "review", "invalid", "create", "update"] as const).map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)}>{value === "all" ? "Todas" : snapshotActionLabel(value)}</button>)}</div>
+          <div className="review-controls">{(["all", "pending", "review", "invalid", "create", "update"] as const).map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)}>{value === "all" ? "Todas" : value === "pending" ? `Pendientes (${unresolved})` : snapshotActionLabel(value)}</button>)}</div>
           <label className="review-search">Buscar dentro de la revision<input value={rowSearch} onChange={(event) => setRowSearch(event.target.value)} placeholder="Fila, nombre, expansion, numero, warning..." /></label>
           <div className="review-table">{visible.map((row) => {
             const resolution = resolutions[row.rowNumber];
