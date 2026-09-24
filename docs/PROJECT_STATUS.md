@@ -82,6 +82,9 @@ Actualizado: 2026-09-23
   editar el valor de venta conserva la cantidad existente y no genera unidades.
 - La busqueda interactiva del catalogo se optimizo y dejo de recalcular el total
   completo en cada consulta.
+- La carga de stock muestra coincidencias del inventario de inmediato, reduce el
+  debounce a `180 ms` y usa un indice GIN de texto completo para evitar escanear
+  las mas de 120 mil cartas en cada busqueda (`0037_fast_catalog_search.sql`).
 - Se normalizo el tamano visual de cartas y se agregaron fallbacks seguros para
   imagenes publicas de TCGPlayer/CDN mediante proxy cuando hace falta.
 - `Forzar imagen` en Inventario ya no guarda rutas efimeras como

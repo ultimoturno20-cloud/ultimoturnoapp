@@ -27,6 +27,7 @@ import {
   listMovements,
   listClaimsWorkspace,
   listPriceChartingCache,
+  listUnifiedCatalogCards,
   listStockForBusiness,
   listSales,
   previewActiveClaimOrders,
@@ -1413,6 +1414,12 @@ describe("operational inventory database", () => {
     assert.equal(psyduck.entries[0].priceChartingId, "125");
     const psyduckWithSlash = await listPriceChartingCache(db, "psyduck 44/62", 10);
     assert.equal(psyduckWithSlash.entries[0].priceChartingId, "125");
+    const unifiedPartial = await listUnifiedCatalogCards(db, "pika pro", 10, "all", false);
+    assert.equal(unifiedPartial.entries.length, 1);
+    assert.equal(unifiedPartial.entries[0].priceChartingId, "123");
+    const unifiedNumber = await listUnifiedCatalogCards(db, "psy 44", 10, "all", false);
+    assert.equal(unifiedNumber.entries.length, 1);
+    assert.equal(unifiedNumber.entries[0].priceChartingId, "125");
     assert.equal(cache.status.totalEntries, 4);
     assert.equal(cache.status.lastRun?.status, "completed");
     await db.close();

@@ -2393,6 +2393,13 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
     params.push(safeLanguageGroup);
     clauses.push(`pce.language_group = $${params.length}`);
   }
+  const fullTextTokens = parsedQuery.textTokens
+    .map((token) => token.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean);
+  if (fullTextTokens.length) {
+    params.push(fullTextTokens.map((token) => `${token}:*`).join(" & "));
+    clauses.push(`to_tsvector('simple', pce.search_key || ' ' || lower(pce.pricecharting_id)) @@ to_tsquery('simple', $${params.length})`);
+  }
   for (const token of parsedQuery.textTokens) {
     const variantClauses = searchTokenVariants(token).map((variant) => {
       params.push(`%${variant}%`);

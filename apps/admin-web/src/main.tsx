@@ -3725,8 +3725,9 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     ++pickerSequence.current;
     pickerAbortController.current?.abort();
     if (catalogSearch.trim().length < 2) { setPickerEntries([]); setPickerSearching(false); setPickerError(catalogSearch.trim() ? "Escribi al menos 2 caracteres." : ""); return; }
+    setPickerEntries(searchInventoryCatalogEntries(allItems, catalogSearch, pickerLanguageGroup, 30));
     setPickerSearching(true);
-    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 400);
+    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 180);
     return () => { window.clearTimeout(timer); pickerAbortController.current?.abort(); ++pickerSequence.current; };
   }, [allItems, catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
