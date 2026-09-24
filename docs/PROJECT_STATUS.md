@@ -78,6 +78,8 @@ Actualizado: 2026-09-23
   descuenta la unidad correspondiente.
 - La carga de stock paso a una pagina completa. `Agregar stock y seguir` queda
   en el flujo nuevo y ya no vuelve a abrir el modal anterior.
+- La accion rapida de Inventario separa `Actualizar precio` de `Agregar stock`:
+  editar el valor de venta conserva la cantidad existente y no genera unidades.
 - La busqueda interactiva del catalogo se optimizo y dejo de recalcular el total
   completo en cada consulta.
 - Se normalizo el tamano visual de cartas y se agregaron fallbacks seguros para

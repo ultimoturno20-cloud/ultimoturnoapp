@@ -3071,7 +3071,10 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
   const [saving, setSaving] = useState(false);
   const request = useRef(false);
   const [feedback, setFeedback] = useState("");
-  async function save(event: React.FormEvent) {
+  const nextPriceArs = priceArs === "" ? item.priceArs : Number(priceArs);
+  const nextPriceUsd = priceUsd === "" ? item.priceUsd : Number(priceUsd);
+  const priceChanged = nextPriceArs !== item.priceArs || nextPriceUsd !== item.priceUsd;
+  async function addStock(event: React.FormEvent) {
     event.preventDefault();
     if (request.current) return;
     request.current = true;
@@ -3080,7 +3083,7 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
     try {
       const response = await api<{ item: StockRow }>("/inventory/intake", { method: "POST", body: {
         ...formFromItem(item), quantityOnHand: Number(quantity), quantityReserved: 0,
-        priceArs: priceArs === "" ? item.priceArs : Number(priceArs), priceUsd: priceUsd === "" ? item.priceUsd : Number(priceUsd),
+        priceArs: nextPriceArs, priceUsd: nextPriceUsd,
         purchaseCost: cost === "" ? undefined : Number(cost), purchaseCurrency: costCurrency
       }});
       onSaved(response.item);
@@ -3089,7 +3092,21 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
     } catch (error) { setFeedback(errorMessage(error)); }
     finally { request.current = false; setSaving(false); }
   }
-  return <form className="inventory-inline-intake" aria-label={`Agregar stock de ${item.product.name}`} onSubmit={save}>
+  async function updatePrice() {
+    if (request.current || !priceChanged) return;
+    request.current = true;
+    setSaving(true);
+    setFeedback("");
+    try {
+      const response = await api<{ item: StockRow }>(`/inventory/${item.id}`, { method: "PUT", body: {
+        ...formFromItem(item), priceArs: nextPriceArs, priceUsd: nextPriceUsd
+      }});
+      onSaved(response.item);
+      setFeedback(`Precio actualizado. Stock sin cambios: ${response.item.quantityOnHand}.`);
+    } catch (error) { setFeedback(errorMessage(error)); }
+    finally { request.current = false; setSaving(false); }
+  }
+  return <form className="inventory-inline-intake" aria-label={`Gestionar stock y precio de ${item.product.name}`} onSubmit={addStock}>
     <div className="inline-intake-fields">
       <label>Cantidad<input autoFocus required type="number" min="1" step="1" disabled={saving} value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
       <label>Precio de venta<input type="number" min="0" step="0.01" disabled={saving} value={currency === "ARS" ? priceArs : priceUsd} onChange={(event) => currency === "ARS" ? setPriceArs(event.target.value) : setPriceUsd(event.target.value)} placeholder="Sin cambiar" /></label>
@@ -3098,7 +3115,8 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
     <button className="inline-cost-toggle" type="button" disabled={saving} onClick={() => setCostOpen(!costOpen)}>Costo de compra (opcional)</button>
     {costOpen ? <div className="inline-cost-fields"><label>Costo por unidad<input type="number" min="0" step="0.01" value={cost} disabled={saving} onChange={(event) => setCost(event.target.value)} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={costCurrency} disabled={saving} onChange={(event) => setCostCurrency(event.target.value)}><option>ARS</option><option>USD</option></select></label></div> : null}
     {feedback ? <p role="status" className="inline-intake-feedback">{feedback}</p> : null}
-    <div className="inline-intake-actions"><button className="secondary-action" type="button" disabled={saving} onClick={onClose}>Cerrar</button><button className="primary-action" disabled={saving}>{saving ? "Guardando..." : "Guardar stock"}</button></div>
+    <div className="inline-intake-save-actions"><button className="secondary-action" type="button" disabled={saving || !priceChanged} onClick={() => void updatePrice()}>Actualizar precio</button><button className="primary-action" disabled={saving}><Icon name="plus" />{saving ? "Guardando..." : "Agregar stock"}</button></div>
+    <div className="inline-intake-actions"><button className="secondary-action" type="button" disabled={saving} onClick={onClose}>Cerrar</button></div>
   </form>;
 }
 
