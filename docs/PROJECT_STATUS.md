@@ -446,6 +446,9 @@ Notas:
 
 Cambios recientes:
 
+- El buscador principal conserva el texto local mientras se escribe y aplica el
+  filtro tras `300 ms` de pausa, sin reponer consultas anteriores ni perder
+  letras durante una escritura rapida.
 - Busca en catalogo completo.
 - Muestra contador de catalogo completo.
 - Agrega filtro de idioma.

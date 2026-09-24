@@ -3042,13 +3042,21 @@ function StockQualityPanel({ quality, onIssue }: { quality: StockQualitySummary;
 function InventorySearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   const changeRef = useRef(onChange);
+  const appliedValueRef = useRef(value);
   changeRef.current = onChange;
-  useEffect(() => { setDraft(value); }, [value]);
   useEffect(() => {
-    if (draft === value) return;
-    const timer = window.setTimeout(() => { React.startTransition(() => changeRef.current(draft)); }, 120);
+    if (value === appliedValueRef.current) return;
+    appliedValueRef.current = value;
+    setDraft(value);
+  }, [value]);
+  useEffect(() => {
+    if (draft === appliedValueRef.current) return;
+    const timer = window.setTimeout(() => {
+      appliedValueRef.current = draft;
+      React.startTransition(() => changeRef.current(draft));
+    }, 300);
     return () => window.clearTimeout(timer);
-  }, [draft, value]);
+  }, [draft]);
   return <label className="inventory-search"><span className="visually-hidden">Buscar en el inventario</span><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Buscar carta, expansion, numero..." /></label>;
 }
 
