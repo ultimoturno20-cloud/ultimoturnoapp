@@ -127,6 +127,8 @@ Actualizado: 2026-09-23
 
 - Se publico un sistema de usuarios revendedores con comision configurable,
   stock asignado, ventas, anulaciones, devoluciones y rendiciones auditables.
+- La asignacion administrativa usa busqueda con resultados inline, imagen y
+  datos de variante; elegir una carta ya no requiere abrir un desplegable.
 - La asignacion es blanda: el stock sigue disponible para UltimoTurno, que
   siempre tiene prioridad. La venta del revendedor revalida y descuenta stock
   dentro de una transaccion.

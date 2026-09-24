@@ -5229,7 +5229,11 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
   const replace = (dashboard: ResellerDashboard) => {
     setResellers((current) => current.map((item) => item.reseller.userId === dashboard.reseller.userId ? dashboard : item));
   };
-  const visibleStock = stock.filter((item) => item.quantityOnHand > 0 && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(stockQuery.toLowerCase())).slice(0, 30);
+  const normalizedStockQuery = stockQuery.trim().toLowerCase();
+  const visibleStock = normalizedStockQuery
+    ? stock.filter((item) => item.quantityOnHand > 0 && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(normalizedStockQuery)).slice(0, 8)
+    : [];
+  const assignItem = stock.find((item) => item.id === assignItemId);
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
@@ -5247,6 +5251,7 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
     try {
       replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments`, { method: "POST", body: { inventoryItemId: assignItemId, quantity: assignQuantity } }));
       setAssignItemId("");
+      setStockQuery("");
       setAssignQuantity(1);
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
@@ -5306,11 +5311,22 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
             <section className="panel">
               <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
               <div className="reseller-assign-controls">
-                <input placeholder="Buscar carta" value={stockQuery} onChange={(event) => setStockQuery(event.target.value)} />
-                <select value={assignItemId} onChange={(event) => setAssignItemId(event.target.value)}><option value="">Elegir carta</option>{visibleStock.map((item) => <option key={item.id} value={item.id}>{item.product.name} - {item.product.expansion} #{item.product.number || "-"} ({item.quantityOnHand} stock)</option>)}</select>
-                <input type="number" min="1" value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} />
-                <button className="primary-action" onClick={() => void assign()} disabled={!assignItemId}>Asignar</button>
+                <label className="reseller-stock-search"><span>Buscar carta</span><input placeholder="Nombre, expansion, numero o SKU" value={stockQuery} onChange={(event) => { setStockQuery(event.target.value); setAssignItemId(""); }} /></label>
+                <label><span>Cantidad</span><input type="number" min="1" value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} /></label>
+                <button className="primary-action" onClick={() => void assign()} disabled={!assignItemId}><Icon name="plus" />Asignar</button>
               </div>
+              {assignItem ? <div className="reseller-stock-selected">
+                <CardArt src={assignItem.product.imageUrl} alt={assignItem.product.name} label={assignItem.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                <div><span>Seleccionada</span><strong>{assignItem.product.name}</strong><small>{assignItem.product.expansion} #{assignItem.product.number || "-"} · {assignItem.variant.language} / {assignItem.variant.finish}</small></div>
+                <b>{assignItem.quantityOnHand} en stock</b>
+                <button type="button" className="secondary-action" onClick={() => setAssignItemId("")}>Cambiar</button>
+              </div> : normalizedStockQuery ? <div className="reseller-stock-results" role="listbox" aria-label="Resultados de inventario">
+                {visibleStock.length ? visibleStock.map((item) => <button type="button" role="option" aria-selected="false" key={item.id} onClick={() => setAssignItemId(item.id)}>
+                  <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                  <span><strong>{item.product.name}</strong><small>{item.product.expansion} #{item.product.number || "-"}</small><small>{item.variant.language} · {item.variant.condition} · {item.variant.finish}</small></span>
+                  <b>{item.quantityOnHand} stock</b>
+                </button>) : <p className="muted">No hay cartas con stock para esa busqueda.</p>}
+              </div> : <p className="reseller-stock-hint">Escribi para ver y elegir resultados directamente.</p>}
             </section>
             <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero.</p></div></div>
               <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b><button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button></div>)}</div>

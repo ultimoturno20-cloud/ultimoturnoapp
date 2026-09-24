@@ -11733,7 +11733,23 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-create label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .reseller-workspace { display: grid; gap: 16px; min-width: 0; }
 .reseller-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.reseller-assign-controls { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.5fr) 90px auto; gap: 8px; }
+.reseller-assign-controls { display: grid; grid-template-columns: minmax(260px, 1fr) 110px auto; gap: 8px; align-items: end; }
+.reseller-assign-controls label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 700; }
+.reseller-stock-search input { width: 100%; }
+.reseller-stock-hint { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+.reseller-stock-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.reseller-stock-results > button { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-width: 0; padding: 9px; color: var(--text); text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-stock-results > button:hover, .reseller-stock-results > button:focus-visible { border-color: var(--accent); background: rgba(237, 41, 73, .08); }
+.reseller-stock-results > button > span { display: grid; gap: 2px; min-width: 0; }
+.reseller-stock-results strong, .reseller-stock-results small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reseller-stock-results small { color: var(--muted); font-size: 11px; }
+.reseller-stock-results b { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.reseller-stock-results > p { grid-column: 1 / -1; margin: 0; padding: 12px; border: 1px dashed var(--border); border-radius: 6px; }
+.reseller-stock-selected { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; margin-top: 10px; padding: 9px; background: rgba(237, 41, 73, .08); border: 1px solid var(--accent); border-radius: 6px; }
+.reseller-stock-selected > div { display: grid; gap: 2px; min-width: 0; }
+.reseller-stock-selected span { color: var(--accent-soft); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.reseller-stock-selected small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reseller-stock-selected > b { font-size: 12px; white-space: nowrap; }
 .reseller-table { display: grid; gap: 8px; }
 .reseller-row { display: grid; grid-template-columns: 48px minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
 .reseller-row.sale { grid-template-columns: minmax(260px, 1fr) auto auto auto auto; }
@@ -11889,6 +11905,9 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-sidebar { position: static; }
   .reseller-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reseller-assign-controls { grid-template-columns: 1fr; }
+  .reseller-stock-results { grid-template-columns: 1fr; }
+  .reseller-stock-selected { grid-template-columns: 42px minmax(0, 1fr) auto; }
+  .reseller-stock-selected > .secondary-action { grid-column: 2 / -1; justify-self: start; }
   .reseller-row, .reseller-row.sale { grid-template-columns: 48px minmax(0, 1fr); }
   .reseller-row.sale > :first-child { grid-column: 1 / -1; }
   .reseller-sell-layout { grid-template-columns: 1fr; }
