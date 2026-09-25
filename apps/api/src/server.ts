@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   getOrderBoards,
   changeOrderBoard,
@@ -129,7 +130,7 @@ const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogS
 const catalogSearchCacheTtlMs = 60_000;
 type StockReadResult = Awaited<ReturnType<typeof listStockForBusiness>>;
 type StockReadCacheEntry = { cachedAt: number; expiresAt: number; result: StockReadResult; pending?: Promise<StockReadResult> };
-type StockReadSnapshotRow = { payload: unknown; refreshed_at: string; refresh_started_at: string | null };
+type StockReadSnapshotRow = { payload: unknown; payload_compressed: string | null; refreshed_at: string; refresh_started_at: string | null };
 const stockReadCache = new Map<string, StockReadCacheEntry>();
 const stockReadCacheTtlMs = 15_000;
 
@@ -177,7 +178,14 @@ async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: st
   return pending;
 }
 
-function parseStockSnapshot(payload: unknown): StockReadResult | null {
+function parseStockSnapshot(payload: unknown, compressed?: string | null): StockReadResult | null {
+  if (compressed) {
+    try {
+      payload = JSON.parse(gunzipSync(Buffer.from(compressed, "base64")).toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Partial<StockReadResult>;
   return value.summary && Array.isArray(value.items) ? value as StockReadResult : null;
@@ -191,7 +199,7 @@ function rememberStockSnapshot(businessId: string, result: StockReadResult) {
 
 async function readStockSnapshotRow(db: Awaited<typeof dbPromise>, businessId: string) {
   const snapshot = await db.query<StockReadSnapshotRow>(
-    "select payload, refreshed_at, refresh_started_at from stock_read_snapshots where business_id=$1",
+    "select payload, payload_compressed, refreshed_at, refresh_started_at from stock_read_snapshots where business_id=$1",
     [businessId]
   );
   return snapshot.rows[0];
@@ -199,7 +207,7 @@ async function readStockSnapshotRow(db: Awaited<typeof dbPromise>, businessId: s
 
 async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId: string, memoryFallback?: StockReadResult): Promise<StockReadResult> {
   let row = await readStockSnapshotRow(db, businessId);
-  let shared = parseStockSnapshot(row?.payload);
+  let shared = parseStockSnapshot(row?.payload, row?.payload_compressed);
   const refreshedAt = row?.refreshed_at ? new Date(row.refreshed_at).getTime() : 0;
   if (shared && Date.now() - refreshedAt < stockReadCacheTtlMs) return rememberStockSnapshot(businessId, shared);
 
@@ -208,7 +216,7 @@ async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId
     values ($1, null, '1970-01-01 00:00:00+00'::timestamptz, now())
     on conflict (business_id) do update set refresh_started_at = now()
     where stock_read_snapshots.refreshed_at < now() - interval '15 seconds'
-      and (stock_read_snapshots.refresh_started_at is null or stock_read_snapshots.refresh_started_at < now() - interval '30 seconds')
+      and (stock_read_snapshots.refresh_started_at is null or stock_read_snapshots.refresh_started_at < now() - interval '2 minutes')
     returning business_id
   `, [businessId]);
 
@@ -217,18 +225,23 @@ async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 250));
       row = await readStockSnapshotRow(db, businessId);
-      shared = parseStockSnapshot(row?.payload);
+      shared = parseStockSnapshot(row?.payload, row?.payload_compressed);
       if (shared) return rememberStockSnapshot(businessId, shared);
     }
   }
 
   try {
     const result = await listStockForBusiness(db, businessId);
+    const compressed = gzipSync(Buffer.from(JSON.stringify(result), "utf8"), { level: 6 }).toString("base64");
     await db.query(`
-      insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at)
-      values ($1, $2::jsonb, now(), null)
-      on conflict (business_id) do update set payload=excluded.payload, refreshed_at=excluded.refreshed_at, refresh_started_at=null
-    `, [businessId, JSON.stringify(result)]);
+      insert into stock_read_snapshots (business_id, payload, payload_compressed, refreshed_at, refresh_started_at)
+      values ($1, null, $2, now(), null)
+      on conflict (business_id) do update set
+        payload=null,
+        payload_compressed=excluded.payload_compressed,
+        refreshed_at=excluded.refreshed_at,
+        refresh_started_at=null
+    `, [businessId, compressed]);
     return rememberStockSnapshot(businessId, result);
   } catch (error) {
     await db.query("update stock_read_snapshots set refresh_started_at=null where business_id=$1", [businessId]).catch(() => undefined);
