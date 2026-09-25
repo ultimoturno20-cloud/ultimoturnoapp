@@ -204,6 +204,9 @@ Actualizado: 2026-09-25
   cartas operativas sin URL, prueba localmente las rutas directas de
   PriceCharting y sube cada acierto a Supabase antes de continuar con el backlog
   general. Los `403` de TCGplayer ya no impiden este paso prioritario.
+- El lanzador operativo usa `--priority-only`: mientras existan faltantes en
+  stock procesa tandas chicas contra PriceCharting/PokemonTCG y evita gastar
+  ciclos en URLs TCGplayer que responden `403`.
 - Migracion nueva: `0040_reuse_catalog_stock_images.sql`.
 - Existe un daemon local de produccion en `tools/image-storage-daemon.ts`.
 - Comando: `npm run images:storage:daemon -- --loop`.

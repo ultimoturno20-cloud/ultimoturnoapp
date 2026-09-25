@@ -13,7 +13,7 @@ echo - SUPABASE_STORAGE_BUCKET
 echo - PRICECHARTING_IMAGE_DIR
 echo.
 
-npm run images:storage:daemon -- --loop --api=https://ultimoturnoapp-api.vercel.app/api --sleep-ms=60000 --batch=80 --url-batch=1000 --concurrency=4
+npm run images:storage:daemon -- --loop --priority-only --api=https://ultimoturnoapp-api.vercel.app/api --sleep-ms=60000 --batch=80 --url-batch=1000 --concurrency=4
 
 echo.
 pause

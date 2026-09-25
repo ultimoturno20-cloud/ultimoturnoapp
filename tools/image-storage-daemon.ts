@@ -36,6 +36,7 @@ type Options = {
   serviceKey: string;
   bucket: string;
   skipUpload: boolean;
+  priorityOnly: boolean;
 };
 
 type DownloadedImage = {
@@ -82,7 +83,8 @@ function parseOptions(argv: string[]): Options {
     supabaseUrl: normalizeSupabaseUrl(env("SUPABASE_URL")),
     serviceKey: env("SUPABASE_SERVICE_ROLE_KEY"),
     bucket: process.env.SUPABASE_STORAGE_BUCKET?.trim() || "ultimoturno-images",
-    skipUpload: flags.has("no-upload")
+    skipUpload: flags.has("no-upload"),
+    priorityOnly: flags.has("priority-only")
   };
 }
 
@@ -108,6 +110,7 @@ Opciones:
   --url-batch=1000             URLs a descubrir por ciclo.
   --concurrency=4              Descargas/subidas simultaneas.
   --sleep-ms=60000             Pausa entre ciclos.
+  --priority-only              Procesar solo faltantes de stock/claims.
   --no-upload                  Descargar local sin subir/enlazar.
 
 Variables requeridas:
@@ -250,6 +253,83 @@ async function downloadDirectPriceChartingCandidate(options: Options, candidate:
   throw new Error(errors.slice(-2).join(" / ") || `${candidate.priceChartingId}: sin imagen directa`);
 }
 
+function normalizeMatchText(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function baseCardName(value: string) {
+  return String(value || "")
+    .replace(/\s*\[[^\]]+\]\s*$/g, "")
+    .replace(/\s*-\s*[a-z0-9]+(?:\/[a-z0-9]+)?\s*$/i, "")
+    .trim();
+}
+
+function normalizeMatchNumber(value: string) {
+  const clean = String(value || "").split("/")[0].toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return /^\d+$/.test(clean) ? clean.replace(/^0+(?=\d)/, "") : clean;
+}
+
+function expansionTokens(value: string) {
+  return new Set(normalizeMatchText(value).split(" ").filter(Boolean).map((token) => token.endsWith("s") ? token.slice(0, -1) : token));
+}
+
+async function findPokemonTcgImage(candidate: Candidate): Promise<string> {
+  const name = baseCardName(candidate.productName);
+  const number = normalizeMatchNumber(candidate.cardNumber);
+  if (!name || !number) return "";
+  const query = [`name:"${name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`, `number:"${number}"`].join(" ");
+  const url = new URL("https://api.pokemontcg.io/v2/cards");
+  url.searchParams.set("q", query);
+  url.searchParams.set("pageSize", "30");
+  url.searchParams.set("select", "id,name,number,set.name,images");
+  const apiKey = process.env.POKEMONTCG_API_KEY?.trim() || "";
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "UltimoTurnoImageStorageDaemon/1.0",
+      ...(apiKey ? { "X-Api-Key": apiKey } : {})
+    },
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error(`PokemonTCG HTTP ${response.status}`);
+  const payload = await response.json() as {
+    data?: Array<{ name?: unknown; number?: unknown; set?: { name?: unknown }; images?: { large?: unknown; small?: unknown } }>;
+  };
+  const expectedName = normalizeMatchText(name);
+  const expectedExpansion = expansionTokens(candidate.expansionName);
+  const matches = (payload.data || []).map((card) => {
+    const cardName = normalizeMatchText(String(card.name || ""));
+    const cardNumber = normalizeMatchNumber(String(card.number || ""));
+    const cardExpansion = expansionTokens(String(card.set?.name || ""));
+    const expansionOverlap = [...expectedExpansion].filter((token) => cardExpansion.has(token)).length;
+    const score = (cardName === expectedName ? 50 : 0) + (cardNumber === number ? 35 : 0) + Math.min(15, expansionOverlap * 5);
+    return { score, imageUrl: String(card.images?.large || card.images?.small || "") };
+  }).filter((match) => match.imageUrl && match.score >= 90).sort((left, right) => right.score - left.score);
+  return matches[0]?.imageUrl || "";
+}
+
+async function downloadPriorityCandidate(options: Options, candidate: Candidate): Promise<DownloadedImage> {
+  const errors: string[] = [];
+  try {
+    return await downloadDirectPriceChartingCandidate(options, candidate);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  try {
+    const sourceImageUrl = await findPokemonTcgImage(candidate);
+    if (sourceImageUrl) return await downloadCandidate(options, { ...candidate, sourceImageUrl });
+    errors.push("PokemonTCG sin coincidencia fuerte");
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+  throw new Error(errors.slice(-3).join(" / "));
+}
+
 function retryAfterForDownloadError(error: unknown) {
   if (error instanceof ImageDownloadError && (error.statusCode === 403 || error.statusCode === 404 || error.statusCode === 410)) return 24 * 60;
   if (error instanceof ImageDownloadError && error.statusCode && error.statusCode >= 500) return 180;
@@ -339,13 +419,15 @@ async function runCycle(options: Options) {
     console.log(`Catalogo: ${reused.stockItemsUpdated} item(s) de stock recuperaron una imagen ya conocida.`);
   }
 
+  let priorityProcessed = 0;
   try {
-    const discovery = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/discovery-candidates?limit=${Math.min(40, options.candidateBatch)}`);
+    const discovery = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/discovery-candidates?limit=${Math.min(16, options.candidateBatch)}`);
+    priorityProcessed = discovery.entries.length;
     let directLinked = 0;
     let directFailed = 0;
     await mapConcurrent(discovery.entries, options.concurrency, async (candidate) => {
       try {
-        const image = await downloadDirectPriceChartingCandidate(options, candidate);
+        const image = await downloadPriorityCandidate(options, candidate);
         await uploadToSupabase(options, image);
         await linkPublicUrl(options, candidate, image);
         directLinked++;
@@ -360,6 +442,7 @@ async function runCycle(options: Options) {
   } catch (error) {
     console.warn(`PriceCharting directo: no se pudo completar la tanda (${error instanceof Error ? error.message : String(error)}).`);
   }
+  if (options.priorityOnly) return priorityProcessed;
 
   let candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
   let discovered = 0;

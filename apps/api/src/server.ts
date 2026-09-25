@@ -2177,6 +2177,35 @@ async function listPriceChartingImageDownloadCandidates(db: Awaited<typeof dbPro
 async function listStockImageDiscoveryCandidates(db: Awaited<typeof dbPromise>, businessId: string, limit: number) {
   const safeLimit = Math.max(1, Math.min(200, Math.floor(limit || 40)));
   const result = await db.query<Record<string, unknown>>(`
+    with stock_targets as (
+      select
+        ii.quantity_on_hand,
+        p.id as product_id,
+        coalesce(nullif(ei.external_id, ''), matched_pce.pricecharting_id, '') as pricecharting_id
+      from inventory_items ii
+      join card_products p on p.id = ii.product_id
+      left join external_sources es on es.name = 'pricecharting'
+      left join external_identifiers ei on
+        ei.product_id = p.id
+        and ei.business_id = ii.business_id
+        and ei.source_id = es.id
+      left join lateral (
+        select candidate.pricecharting_id
+        from pricecharting_cache_entries candidate
+        where candidate.normalized_name = trim(regexp_replace(regexp_replace(lower(p.name), '[^a-z0-9]+', ' ', 'g'), '\\s+', ' ', 'g'))
+          and candidate.normalized_expansion = trim(regexp_replace(regexp_replace(lower(p.expansion), '[^a-z0-9]+', ' ', 'g'), '\\s+', ' ', 'g'))
+          and regexp_replace(lower(regexp_replace(split_part(coalesce(candidate.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+              regexp_replace(lower(regexp_replace(split_part(coalesce(p.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
+        order by candidate.imported_at desc
+        limit 1
+      ) matched_pce on coalesce(ei.external_id, '') = ''
+      where ii.business_id = $1
+        and ii.active = true
+        and (
+          coalesce(p.image_url, '') = ''
+          or p.image_url like '/pricecharting-images/%'
+        )
+    )
     select distinct on (pce.pricecharting_id)
       pce.pricecharting_id,
       pce.product_name,
@@ -2185,25 +2214,12 @@ async function listStockImageDiscoveryCandidates(db: Awaited<typeof dbPromise>, 
       pce.canonical_url,
       coalesce(pic.status, 'pending') as status,
       coalesce(pic.attempts, 0)::integer as attempts
-    from inventory_items ii
-    join card_products p on p.id = ii.product_id
-    join external_sources es on es.name = 'pricecharting'
-    join external_identifiers ei on
-      ei.product_id = p.id
-      and ei.business_id = ii.business_id
-      and ei.source_id = es.id
-      and coalesce(ei.external_id, '') <> ''
-    join pricecharting_cache_entries pce on pce.pricecharting_id = ei.external_id
+    from stock_targets target
+    join pricecharting_cache_entries pce on pce.pricecharting_id = target.pricecharting_id
     left join pricecharting_image_cache pic using (pricecharting_id)
-    where ii.business_id = $1
-      and ii.active = true
-      and (
-        coalesce(p.image_url, '') = ''
-        or p.image_url like '/pricecharting-images/%'
-      )
-      and coalesce(nullif(pic.source_image_url, ''), '') = ''
+    where coalesce(nullif(pic.source_image_url, ''), '') = ''
       and coalesce(pic.next_attempt_at, now()) <= now()
-    order by pce.pricecharting_id, ii.quantity_on_hand desc, pce.product_name
+    order by pce.pricecharting_id, target.quantity_on_hand desc, pce.product_name
     limit $2
   `, [businessId, safeLimit]);
   return result.rows.map((row) => ({
