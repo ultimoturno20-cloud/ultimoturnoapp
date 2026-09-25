@@ -287,7 +287,7 @@ async function findPokemonTcgImage(candidate: Candidate): Promise<string> {
   const url = new URL("https://api.pokemontcg.io/v2/cards");
   url.searchParams.set("q", query);
   url.searchParams.set("pageSize", "30");
-  url.searchParams.set("select", "id,name,number,set.name,images");
+  url.searchParams.set("select", "id,name,number,set,images");
   const apiKey = process.env.POKEMONTCG_API_KEY?.trim() || "";
   const response = await fetch(url, {
     headers: {
