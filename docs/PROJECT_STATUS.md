@@ -200,6 +200,10 @@ Actualizado: 2026-09-25
   `Reparar imagenes prioritarias` tambien la aplica antes de consultar fuentes
   externas. Las descargas pendientes se ordenan ahora por prioridad de stock
   antes que por el estado general de la cola.
+- Para evitar los limites de ejecucion de Vercel, el daemon pide una tanda de
+  cartas operativas sin URL, prueba localmente las rutas directas de
+  PriceCharting y sube cada acierto a Supabase antes de continuar con el backlog
+  general. Los `403` de TCGplayer ya no impiden este paso prioritario.
 - Migracion nueva: `0040_reuse_catalog_stock_images.sql`.
 - Existe un daemon local de produccion en `tools/image-storage-daemon.ts`.
 - Comando: `npm run images:storage:daemon -- --loop`.

@@ -236,6 +236,20 @@ async function downloadCandidate(options: Options, candidate: Candidate): Promis
   };
 }
 
+async function downloadDirectPriceChartingCandidate(options: Options, candidate: Candidate): Promise<DownloadedImage> {
+  if (!/^\d+$/.test(candidate.priceChartingId)) throw new Error(`${candidate.priceChartingId}: no tiene ID numerico de PriceCharting`);
+  const errors: string[] = [];
+  for (const size of [1600, 800, 400]) {
+    const sourceImageUrl = `https://storage.googleapis.com/images.pricecharting.com/${candidate.priceChartingId}/${size}.jpg`;
+    try {
+      return await downloadCandidate(options, { ...candidate, sourceImageUrl });
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throw new Error(errors.slice(-2).join(" / ") || `${candidate.priceChartingId}: sin imagen directa`);
+}
+
 function retryAfterForDownloadError(error: unknown) {
   if (error instanceof ImageDownloadError && (error.statusCode === 403 || error.statusCode === 404 || error.statusCode === 410)) return 24 * 60;
   if (error instanceof ImageDownloadError && error.statusCode && error.statusCode >= 500) return 180;
@@ -323,6 +337,24 @@ async function runCycle(options: Options) {
   const reused = await postJson<{ productsUpdated: number; stockItemsUpdated: number }>(options, "/pricecharting-images/reuse-stock", {});
   if (reused.stockItemsUpdated > 0) {
     console.log(`Catalogo: ${reused.stockItemsUpdated} item(s) de stock recuperaron una imagen ya conocida.`);
+  }
+
+  const discovery = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/discovery-candidates?limit=${Math.min(40, options.candidateBatch)}`);
+  let directLinked = 0;
+  let directFailed = 0;
+  await mapConcurrent(discovery.entries, options.concurrency, async (candidate) => {
+    try {
+      const image = await downloadDirectPriceChartingCandidate(options, candidate);
+      await uploadToSupabase(options, image);
+      await linkPublicUrl(options, candidate, image);
+      directLinked++;
+    } catch (error) {
+      directFailed++;
+      await reportDownloadFailure(options, candidate, error);
+    }
+  });
+  if (discovery.entries.length > 0) {
+    console.log(`PriceCharting directo: candidatas=${discovery.entries.length} enlazadas=${directLinked} sin-imagen=${directFailed}`);
   }
 
   let candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);

@@ -4583,6 +4583,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/pricecharting-images/discovery-candidates" && request.method === "GET") {
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 40)));
+      await ensurePriceChartingImageQueueForStock(db, user.businessId);
+      sendJson(response, 200, {
+        ok: true,
+        entries: await claimPriceChartingImageQueue(db, limit, { onlyMissingSourceImageUrl: true })
+      });
+      return;
+    }
+
     const imageLinkPublicPath = url.pathname.match(/^\/pricecharting-images\/([^/]+)\/link-public$/);
     if (imageLinkPublicPath && request.method === "POST") {
       const body: { publicUrl?: string; sourceImageUrl?: string; localPath?: string; contentType?: string; byteSize?: number; contentHash?: string } =
