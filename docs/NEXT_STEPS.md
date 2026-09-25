@@ -30,11 +30,12 @@ aplica sola y publicar no crea unidades de inventario inexistentes.
 - Iniciar `Actualizar Precios CoolStuff.cmd` y dejarlo abierto, o ejecutar:
 
 ```powershell
-npm run coolstuff:prices -- --loop
+npm run coolstuff:prices:daemon
 ```
 
 - Para una tanda unica usar `npm run coolstuff:prices`; para validar sin guardar
-  usar `npm run coolstuff:prices -- --dry-run --batch=5`.
+  y con opciones usar
+  `npx tsx tools/coolstuff-price-worker.ts --dry-run --batch=5`.
 - No bajar `--delay-ms` de `10000`. El worker respeta el sitio publico y guarda
   progreso en Supabase para continuar despues de una interrupcion.
 - Revisar `/api/coolstuff-prices/status` con la clave de acceso y confirmar que

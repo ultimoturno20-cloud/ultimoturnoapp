@@ -536,7 +536,7 @@ datos de prueba sobre produccion durante la implementacion.
 - Nombre, expansion, numero, condicion y acabado se validan antes de aplicar el
   precio. Coincidencias ambiguas no se publican automaticamente.
 - La migracion es `0038_coolstuff_price_cache.sql`; la operacion se inicia con
-  `Actualizar Precios CoolStuff.cmd` o `npm run coolstuff:prices -- --loop`.
+  `Actualizar Precios CoolStuff.cmd` o `npm run coolstuff:prices:daemon`.
 - Vercel aloja la API y Supabase conserva el progreso, pero el scraping debe
   ejecutarse desde un equipo o worker externo de larga duracion.
 

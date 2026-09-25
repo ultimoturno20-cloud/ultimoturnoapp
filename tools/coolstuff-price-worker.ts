@@ -44,14 +44,14 @@ function parseOptions(argv: string[]): Options {
     else flags.add(key.trim());
   }
   return {
-    apiBaseUrl: (values.get("api") || process.env.ULTIMOTURNO_API_URL || "https://ultimoturnoapp-api.vercel.app/api").replace(/\/+$/, ""),
+    apiBaseUrl: (values.get("api") || process.env.npm_config_api || process.env.ULTIMOTURNO_API_URL || "https://ultimoturnoapp-api.vercel.app/api").replace(/\/+$/, ""),
     accessKey: values.get("access-key") || process.env.ULTIMOTURNO_ACCESS_KEY || "",
-    batchSize: clamp(values.get("batch"), 1, 100, 20),
-    delayMs: clamp(values.get("delay-ms"), 5000, 60000, 10000),
-    refreshHours: clamp(values.get("refresh-hours"), 6, 24 * 30, 24),
-    loop: flags.has("loop"),
-    sleepMs: clamp(values.get("sleep-ms"), 60000, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
-    dryRun: flags.has("dry-run")
+    batchSize: clamp(values.get("batch") || process.env.npm_config_batch, 1, 100, 20),
+    delayMs: clamp(values.get("delay-ms") || process.env.npm_config_delay_ms, 5000, 60000, 10000),
+    refreshHours: clamp(values.get("refresh-hours") || process.env.npm_config_refresh_hours, 6, 24 * 30, 24),
+    loop: flags.has("loop") || process.env.npm_config_loop === "true",
+    sleepMs: clamp(values.get("sleep-ms") || process.env.npm_config_sleep_ms, 60000, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
+    dryRun: flags.has("dry-run") || process.env.npm_config_dry_run === "true"
   };
 }
 
@@ -65,7 +65,7 @@ function showHelp() {
 UltimoTurno CoolStuff price worker
 
 Uso recomendado:
-  npm run coolstuff:prices -- --loop
+  npm run coolstuff:prices:daemon
 
 El worker procesa solo cartas inglesas con stock, conserva el progreso en
 Supabase y espera 10 segundos entre consultas a CoolStuff.
@@ -78,6 +78,9 @@ Opciones:
   --sleep-ms=3600000
   --dry-run
   --api=https://ultimoturnoapp-api.vercel.app/api
+
+Para opciones personalizadas con esta version de npm:
+  npx tsx tools/coolstuff-price-worker.ts --batch=5 --dry-run
 
 Variable requerida para produccion:
   ULTIMOTURNO_ACCESS_KEY
