@@ -127,6 +127,11 @@ import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from
 type CatalogSearchResult = Awaited<ReturnType<typeof listUnifiedCatalogCards>>;
 const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogSearchResult }>();
 const catalogSearchCacheTtlMs = 60_000;
+type StockReadResult = Awaited<ReturnType<typeof listStockForBusiness>>;
+type StockReadCacheEntry = { cachedAt: number; expiresAt: number; result: StockReadResult; pending?: Promise<StockReadResult> };
+const stockReadCache = new Map<string, StockReadCacheEntry>();
+const stockReadCacheTtlMs = 15_000;
+const stockReadStaleFallbackMs = 120_000;
 
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,6 +159,38 @@ const dbPromise = createOperationalDatabase({
   ssl: databaseSslEnabled,
   poolMax: databasePoolMax
 });
+
+async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: string): Promise<StockReadResult> {
+  const now = Date.now();
+  const cached = stockReadCache.get(businessId);
+  if (cached && cached.expiresAt > now) return cached.result;
+  if (cached?.pending) return cached.pending;
+
+  const pending = listStockForBusiness(db, businessId)
+    .then((result) => {
+      stockReadCache.set(businessId, {
+        cachedAt: Date.now(),
+        expiresAt: Date.now() + stockReadCacheTtlMs,
+        result
+      });
+      return result;
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (cached && now - cached.cachedAt <= stockReadStaleFallbackMs && /timeout exceeded when trying to connect/i.test(message)) {
+        return cached.result;
+      }
+      throw error;
+    })
+    .finally(() => {
+      const current = stockReadCache.get(businessId);
+      if (current?.pending === pending) stockReadCache.set(businessId, { ...current, pending: undefined });
+    });
+
+  if (cached) stockReadCache.set(businessId, { ...cached, pending });
+  else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 }, items: [] }, pending });
+  return pending;
+}
 const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "pokemon-cards").trim() || "pokemon-cards";
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
 const priceChartingImageDir = process.env.PRICECHARTING_IMAGE_DIR
@@ -3993,7 +4030,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/stock" && request.method === "GET") {
-      sendJson(response, 200, await listStockForBusiness(db, user.businessId));
+      sendJson(response, 200, await readStockForRequest(db, user.businessId));
       return;
     }
 
