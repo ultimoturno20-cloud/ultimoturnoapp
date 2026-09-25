@@ -2174,6 +2174,51 @@ async function listPriceChartingImageDownloadCandidates(db: Awaited<typeof dbPro
   })).filter((row) => row.priceChartingId && row.sourceImageUrl);
 }
 
+async function listStockImageDiscoveryCandidates(db: Awaited<typeof dbPromise>, businessId: string, limit: number) {
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit || 40)));
+  const result = await db.query<Record<string, unknown>>(`
+    select distinct on (pce.pricecharting_id)
+      pce.pricecharting_id,
+      pce.product_name,
+      pce.expansion_name,
+      pce.card_number,
+      pce.canonical_url,
+      coalesce(pic.status, 'pending') as status,
+      coalesce(pic.attempts, 0)::integer as attempts
+    from inventory_items ii
+    join card_products p on p.id = ii.product_id
+    join external_sources es on es.name = 'pricecharting'
+    join external_identifiers ei on
+      ei.product_id = p.id
+      and ei.business_id = ii.business_id
+      and ei.source_id = es.id
+      and coalesce(ei.external_id, '') <> ''
+    join pricecharting_cache_entries pce on pce.pricecharting_id = ei.external_id
+    left join pricecharting_image_cache pic using (pricecharting_id)
+    where ii.business_id = $1
+      and ii.active = true
+      and (
+        coalesce(p.image_url, '') = ''
+        or p.image_url like '/pricecharting-images/%'
+      )
+      and coalesce(nullif(pic.source_image_url, ''), '') = ''
+      and coalesce(pic.next_attempt_at, now()) <= now()
+    order by pce.pricecharting_id, ii.quantity_on_hand desc, pce.product_name
+    limit $2
+  `, [businessId, safeLimit]);
+  return result.rows.map((row) => ({
+    priceChartingId: String(row.pricecharting_id || ""),
+    productName: String(row.product_name || ""),
+    expansionName: String(row.expansion_name || ""),
+    cardNumber: String(row.card_number || ""),
+    canonicalUrl: String(row.canonical_url || ""),
+    sourceImageUrl: "",
+    publicUrl: "",
+    status: String(row.status || "pending"),
+    attempts: Number(row.attempts || 0)
+  }));
+}
+
 async function getBlueExchangeRate(): Promise<BlueExchangeRate> {
   if (!useLiveBlueRate) {
     return {
@@ -4585,10 +4630,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/pricecharting-images/discovery-candidates" && request.method === "GET") {
       const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 40)));
-      await ensurePriceChartingImageQueueForStock(db, user.businessId);
       sendJson(response, 200, {
         ok: true,
-        entries: await claimPriceChartingImageQueue(db, limit, { onlyMissingSourceImageUrl: true })
+        entries: await listStockImageDiscoveryCandidates(db, user.businessId, limit)
       });
       return;
     }

@@ -339,22 +339,26 @@ async function runCycle(options: Options) {
     console.log(`Catalogo: ${reused.stockItemsUpdated} item(s) de stock recuperaron una imagen ya conocida.`);
   }
 
-  const discovery = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/discovery-candidates?limit=${Math.min(40, options.candidateBatch)}`);
-  let directLinked = 0;
-  let directFailed = 0;
-  await mapConcurrent(discovery.entries, options.concurrency, async (candidate) => {
-    try {
-      const image = await downloadDirectPriceChartingCandidate(options, candidate);
-      await uploadToSupabase(options, image);
-      await linkPublicUrl(options, candidate, image);
-      directLinked++;
-    } catch (error) {
-      directFailed++;
-      await reportDownloadFailure(options, candidate, error);
+  try {
+    const discovery = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/discovery-candidates?limit=${Math.min(40, options.candidateBatch)}`);
+    let directLinked = 0;
+    let directFailed = 0;
+    await mapConcurrent(discovery.entries, options.concurrency, async (candidate) => {
+      try {
+        const image = await downloadDirectPriceChartingCandidate(options, candidate);
+        await uploadToSupabase(options, image);
+        await linkPublicUrl(options, candidate, image);
+        directLinked++;
+      } catch (error) {
+        directFailed++;
+        await reportDownloadFailure(options, candidate, error);
+      }
+    });
+    if (discovery.entries.length > 0) {
+      console.log(`PriceCharting directo: candidatas=${discovery.entries.length} enlazadas=${directLinked} sin-imagen=${directFailed}`);
     }
-  });
-  if (discovery.entries.length > 0) {
-    console.log(`PriceCharting directo: candidatas=${discovery.entries.length} enlazadas=${directLinked} sin-imagen=${directFailed}`);
+  } catch (error) {
+    console.warn(`PriceCharting directo: no se pudo completar la tanda (${error instanceof Error ? error.message : String(error)}).`);
   }
 
   let candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
