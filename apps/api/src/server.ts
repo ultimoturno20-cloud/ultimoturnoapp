@@ -129,9 +129,9 @@ const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogS
 const catalogSearchCacheTtlMs = 60_000;
 type StockReadResult = Awaited<ReturnType<typeof listStockForBusiness>>;
 type StockReadCacheEntry = { cachedAt: number; expiresAt: number; result: StockReadResult; pending?: Promise<StockReadResult> };
+type StockReadSnapshotRow = { payload: unknown; refreshed_at: string; refresh_started_at: string | null };
 const stockReadCache = new Map<string, StockReadCacheEntry>();
 const stockReadCacheTtlMs = 15_000;
-const stockReadStaleFallbackMs = 120_000;
 
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -166,22 +166,7 @@ async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: st
   if (cached && cached.expiresAt > now) return cached.result;
   if (cached?.pending) return cached.pending;
 
-  const pending = listStockForBusiness(db, businessId)
-    .then((result) => {
-      stockReadCache.set(businessId, {
-        cachedAt: Date.now(),
-        expiresAt: Date.now() + stockReadCacheTtlMs,
-        result
-      });
-      return result;
-    })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (cached && now - cached.cachedAt <= stockReadStaleFallbackMs && /timeout exceeded when trying to connect/i.test(message)) {
-        return cached.result;
-      }
-      throw error;
-    })
+  const pending = readSharedStockSnapshot(db, businessId, cached?.result)
     .finally(() => {
       const current = stockReadCache.get(businessId);
       if (current?.pending === pending) stockReadCache.set(businessId, { ...current, pending: undefined });
@@ -190,6 +175,67 @@ async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: st
   if (cached) stockReadCache.set(businessId, { ...cached, pending });
   else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 }, items: [] }, pending });
   return pending;
+}
+
+function parseStockSnapshot(payload: unknown): StockReadResult | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as Partial<StockReadResult>;
+  return value.summary && Array.isArray(value.items) ? value as StockReadResult : null;
+}
+
+function rememberStockSnapshot(businessId: string, result: StockReadResult) {
+  const cachedAt = Date.now();
+  stockReadCache.set(businessId, { cachedAt, expiresAt: cachedAt + stockReadCacheTtlMs, result });
+  return result;
+}
+
+async function readStockSnapshotRow(db: Awaited<typeof dbPromise>, businessId: string) {
+  const snapshot = await db.query<StockReadSnapshotRow>(
+    "select payload, refreshed_at, refresh_started_at from stock_read_snapshots where business_id=$1",
+    [businessId]
+  );
+  return snapshot.rows[0];
+}
+
+async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId: string, memoryFallback?: StockReadResult): Promise<StockReadResult> {
+  let row = await readStockSnapshotRow(db, businessId);
+  let shared = parseStockSnapshot(row?.payload);
+  const refreshedAt = row?.refreshed_at ? new Date(row.refreshed_at).getTime() : 0;
+  if (shared && Date.now() - refreshedAt < stockReadCacheTtlMs) return rememberStockSnapshot(businessId, shared);
+
+  const claimed = await db.query<{ business_id: string }>(`
+    insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at)
+    values ($1, null, timestamp with time zone 'epoch', now())
+    on conflict (business_id) do update set refresh_started_at = now()
+    where stock_read_snapshots.refreshed_at < now() - interval '15 seconds'
+      and (stock_read_snapshots.refresh_started_at is null or stock_read_snapshots.refresh_started_at < now() - interval '30 seconds')
+    returning business_id
+  `, [businessId]);
+
+  if (!claimed.rows.length) {
+    if (shared) return rememberStockSnapshot(businessId, shared);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      row = await readStockSnapshotRow(db, businessId);
+      shared = parseStockSnapshot(row?.payload);
+      if (shared) return rememberStockSnapshot(businessId, shared);
+    }
+  }
+
+  try {
+    const result = await listStockForBusiness(db, businessId);
+    await db.query(`
+      insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at)
+      values ($1, $2::jsonb, now(), null)
+      on conflict (business_id) do update set payload=excluded.payload, refreshed_at=excluded.refreshed_at, refresh_started_at=null
+    `, [businessId, JSON.stringify(result)]);
+    return rememberStockSnapshot(businessId, result);
+  } catch (error) {
+    await db.query("update stock_read_snapshots set refresh_started_at=null where business_id=$1", [businessId]).catch(() => undefined);
+    if (shared) return rememberStockSnapshot(businessId, shared);
+    if (memoryFallback) return rememberStockSnapshot(businessId, memoryFallback);
+    throw error;
+  }
 }
 const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "pokemon-cards").trim() || "pokemon-cards";
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
