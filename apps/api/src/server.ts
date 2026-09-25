@@ -338,7 +338,8 @@ function nextDailyRunAt(time: string, from = new Date()): Date {
   return next;
 }
 
-async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof dbPromise>, options: { token?: string; preserveExisting?: boolean } = {}) {
+async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof dbPromise>, options: { token?: string; preserveExisting?: boolean; startedAt?: string } = {}) {
+  const startedAt = options.startedAt || new Date().toISOString();
   const token = normalizePriceChartingToken(String(options.token || process.env.PRICECHARTING_TOKEN || ""));
   if (!token) throw new Error("Falta configurar PRICECHARTING_TOKEN en el entorno de la API.");
   if (token.length !== 40) {
@@ -362,7 +363,8 @@ async function refreshPriceChartingCacheFromConfiguredToken(db: Awaited<typeof d
     rowsReceived: parsed.rowsReceived,
     rowsSkipped: parsed.rowsSkipped,
     rows: parsed.rows,
-    pruneMissing: options.preserveExisting === true ? false : undefined
+    pruneMissing: options.preserveExisting === true ? false : undefined,
+    startedAt
   });
 }
 
@@ -406,7 +408,7 @@ async function runPriceChartingAutoRefresh(reason: "schedule" | "startup") {
   priceChartingAutoRefreshLastError = "";
   try {
     const db = await dbPromise;
-    const status = await refreshPriceChartingCacheFromConfiguredToken(db);
+    const status = await refreshPriceChartingCacheFromConfiguredToken(db, { startedAt: priceChartingAutoRefreshLastStartedAt });
     priceChartingAutoRefreshLastStatus = "success";
     priceChartingAutoRefreshLastEntries = status.totalEntries;
     priceChartingAutoRefreshLastCompletedAt = new Date().toISOString();
@@ -414,7 +416,7 @@ async function runPriceChartingAutoRefresh(reason: "schedule" | "startup") {
   } catch (error) {
     const db = await dbPromise.catch(() => null);
     const message = error instanceof Error ? error.message : String(error);
-    if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message }).catch(() => undefined);
+    if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message, startedAt: priceChartingAutoRefreshLastStartedAt }).catch(() => undefined);
     priceChartingAutoRefreshLastStatus = "failed";
     priceChartingAutoRefreshLastError = message;
     priceChartingAutoRefreshLastCompletedAt = new Date().toISOString();
@@ -869,7 +871,8 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
   return isConflict ? "conflict" as const : matchStatus === "matched" ? "matched" as const : "weak" as const;
 }
 
-async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, options: { force?: boolean } = {}) {
+async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, options: { force?: boolean; startedAt?: string } = {}) {
+  const startedAt = options.startedAt || new Date().toISOString();
   const sourceVersion = await fetchTcgCsvLastUpdated().catch(() => "");
   if (sourceVersion && !options.force) {
     const lastVersion = await getLatestTcgplayerPriceSourceVersion(db, "tcgcsv", tcgplayerPriceCategoryId);
@@ -924,7 +927,8 @@ async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, o
     groupsSeen: groups.length,
     rowsReceived,
     rowsSkipped,
-    rows
+    rows,
+    startedAt
   });
 }
 
@@ -969,7 +973,7 @@ async function runTcgplayerPriceAutoRefresh(reason: "schedule" | "startup") {
   tcgplayerPriceAutoRefreshLastError = "";
   try {
     const db = await dbPromise;
-    const status = await refreshTcgplayerPricesFromTcgCsv(db);
+    const status = await refreshTcgplayerPricesFromTcgCsv(db, { startedAt: tcgplayerPriceAutoRefreshLastStartedAt });
     tcgplayerPriceAutoRefreshLastStatus = status.lastRun?.status === "skipped" ? "skipped" : "success";
     tcgplayerPriceAutoRefreshLastEntries = status.totalEntries;
     tcgplayerPriceAutoRefreshLastCompletedAt = new Date().toISOString();
@@ -977,7 +981,7 @@ async function runTcgplayerPriceAutoRefresh(reason: "schedule" | "startup") {
   } catch (error) {
     const db = await dbPromise.catch(() => null);
     const message = error instanceof Error ? error.message : String(error);
-    if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message }).catch(() => undefined);
+    if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt: tcgplayerPriceAutoRefreshLastStartedAt }).catch(() => undefined);
     tcgplayerPriceAutoRefreshLastStatus = "failed";
     tcgplayerPriceAutoRefreshLastError = message;
     tcgplayerPriceAutoRefreshLastCompletedAt = new Date().toISOString();
@@ -3719,9 +3723,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
         return;
       }
+      const startedAt = new Date().toISOString();
       try {
         const db = await dbPromise;
-        const status = await refreshPriceChartingCacheFromConfiguredToken(db);
+        const status = await refreshPriceChartingCacheFromConfiguredToken(db, { startedAt });
         sendJson(response, 200, {
           ok: true,
           job: "pricecharting-refresh",
@@ -3730,7 +3735,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const db = await dbPromise.catch(() => null);
-        if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message }).catch(() => undefined);
+        if (db) await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message, startedAt }).catch(() => undefined);
         sendJson(response, 502, { ok: false, job: "pricecharting-refresh", error: message });
       }
       return;
@@ -3741,9 +3746,10 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
         return;
       }
+      const startedAt = new Date().toISOString();
       try {
         const db = await dbPromise;
-        const status = await refreshTcgplayerPricesFromTcgCsv(db, { force: false });
+        const status = await refreshTcgplayerPricesFromTcgCsv(db, { force: false, startedAt });
         sendJson(response, 200, {
           ok: true,
           job: "tcgplayer-refresh",
@@ -3752,7 +3758,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const db = await dbPromise.catch(() => null);
-        if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message }).catch(() => undefined);
+        if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt }).catch(() => undefined);
         sendJson(response, 502, { ok: false, job: "tcgplayer-refresh", error: message });
       }
       return;
@@ -4466,12 +4472,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/tcgplayer-prices/refresh" && request.method === "POST") {
       const body: { force?: boolean } = await readJson<{ force?: boolean }>(request).catch(() => ({}));
+      const startedAt = new Date().toISOString();
       try {
-        const status = await refreshTcgplayerPricesFromTcgCsv(db, { force: body.force !== false });
+        const status = await refreshTcgplayerPricesFromTcgCsv(db, { force: body.force !== false, startedAt });
         sendJson(response, 200, { ok: true, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message });
+        await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt });
         sendJson(response, 502, { ok: false, error: message });
       }
       return;
@@ -4632,16 +4639,18 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/pricecharting-cache/refresh" && request.method === "POST") {
+      const startedAt = new Date().toISOString();
       try {
         const body: { token?: string; preserveExisting?: boolean } = await readJson<{ token?: string; preserveExisting?: boolean }>(request).catch(() => ({}));
         const status = await refreshPriceChartingCacheFromConfiguredToken(db, {
           token: body.token,
-          preserveExisting: body.preserveExisting !== false
+          preserveExisting: body.preserveExisting !== false,
+          startedAt
         });
         sendJson(response, 200, { ok: true, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message });
+        await recordPriceChartingCacheFailure(db, { category: priceChartingCategory, errorMessage: message, startedAt });
         sendJson(response, 502, { ok: false, error: message });
       }
       return;

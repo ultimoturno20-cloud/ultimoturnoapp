@@ -7194,6 +7194,70 @@ select {
   gap: 10px;
 }
 
+.automation-alert,
+.source-health-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgba(245, 197, 66, 0.42);
+  border-radius: var(--panel-radius);
+  padding: 10px 12px;
+  background: rgba(245, 197, 66, 0.09);
+}
+
+.automation-alert {
+  width: 100%;
+  max-width: 1760px;
+  margin-inline: auto;
+}
+
+.automation-alert .ui-icon,
+.source-health-warning .ui-icon {
+  color: var(--yellow);
+}
+
+.automation-alert div,
+.source-health-warning {
+  min-width: 0;
+}
+
+.automation-alert strong,
+.automation-alert span,
+.source-health-warning span {
+  display: block;
+}
+
+.automation-alert span,
+.source-health-warning span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-health-warning {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+@media (max-width: 720px) {
+  .automation-alert {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .automation-alert .secondary-action {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .automation-alert span,
+  .source-health-warning span {
+    white-space: normal;
+  }
+}
+
 .image-quality-panel {
   display: grid;
   gap: 14px;

@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-09-23
+Actualizado: 2026-09-25
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -12,7 +12,7 @@ Actualizado: 2026-09-23
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
 - Ultimo commit funcional desplegado y verificado al iniciar esta mejora:
-  `271933f`.
+  `937aa82`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
@@ -47,6 +47,22 @@ Actualizado: 2026-09-23
 - Verificacion local: una carga externa de 5 cartas aparecio sola en Inventario
   durante el siguiente ciclo, sin recargar la pagina; rutas directas, historial,
   desktop, movil y consola del navegador verificados.
+
+### Automatizaciones y alertas
+
+- Se agregaron rewrites explicitos para `/api/cron/*` y
+  `/api/database-quality/*`. Sin esas reglas Vercel devolvia su `404` antes de
+  que las rutas anidadas llegaran al servidor, por lo que los cron diarios no
+  estaban ejecutando PriceCharting ni TCGplayer.
+- La aplicacion muestra una alerta global cuando la ultima corrida de alguna
+  fuente fallo, nunca existio o tiene mas de 24 horas.
+- `Mas > Administracion` muestra por fuente la programacion, ultima ejecucion,
+  duracion real, resultado y error persistido. Los reintentos quedan bloqueados
+  mientras estan corriendo; TCGplayer consulta primero la version de TCGCSV y
+  salta la descarga completa cuando no hubo cambios.
+- Las corridas nuevas guardan `started_at` y `completed_at` reales, incluyendo
+  fallos, para que el diagnostico no dependa del estado efimero de una funcion
+  serverless.
 
 ### Claims, catalogo y stock
 

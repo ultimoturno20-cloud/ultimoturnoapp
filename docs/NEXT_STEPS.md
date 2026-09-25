@@ -103,7 +103,12 @@ orden de produccion.
 
 ### 6. Robustecer tareas automaticas
 
-- Confirmar diariamente el cron PriceCharting de las `09:00 UTC`.
+- Despues del proximo despliegue, confirmar que las rutas de cron sin
+  credenciales responden JSON `401` en vez del `404` de Vercel; eso valida que
+  el rewrite llega a la API sin disparar una sincronizacion.
+- Confirmar que el cron PriceCharting de las `09:00 UTC` y el de TCGplayer de
+  las `09:30 UTC` dejan una corrida `completed` o `skipped` dentro de las 24
+  horas siguientes.
 - Revisar errores de pool de Supabase y mantener
   `ULTIMOTURNO_DATABASE_POOL_MAX=1`.
 - Evitar tareas monoliticas que excedan los 60 segundos de Vercel; procesar en

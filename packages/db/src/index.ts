@@ -842,6 +842,7 @@ export type PriceChartingCacheStatus = {
     rowsImported: number;
     rowsSkipped: number;
     errorMessage: string;
+    startedAt: string;
     completedAt: string;
   };
 };
@@ -874,6 +875,7 @@ export type TcgplayerPriceCacheStatus = {
     rowsImported: number;
     rowsSkipped: number;
     errorMessage: string;
+    startedAt: string;
     completedAt: string;
   };
 };
@@ -1562,6 +1564,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
   rowsSkipped: number;
   rows: PriceChartingCacheInput[];
   pruneMissing?: boolean;
+  startedAt?: string;
 }): Promise<PriceChartingCacheStatus> {
   if (!input.rows.length) throw new Error("El cache de PriceCharting no contiene filas validas.");
   const runId = crypto.randomUUID();
@@ -1574,8 +1577,8 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       insert into pricecharting_cache_runs (
         id, category, status, rows_received, rows_imported, rows_skipped,
         source_hash, started_at, completed_at
-      ) values ($1, $2, 'completed', $3, $4, $5, $6, now(), now())
-    `, [runId, input.category, input.rowsReceived, uniqueRows.length, input.rowsSkipped + duplicateRows, input.sourceHash]);
+      ) values ($1, $2, 'completed', $3, $4, $5, $6, $7::timestamptz, clock_timestamp())
+    `, [runId, input.category, input.rowsReceived, uniqueRows.length, input.rowsSkipped + duplicateRows, input.sourceHash, input.startedAt || new Date().toISOString()]);
 
     for (let offset = 0; offset < uniqueRows.length; offset += 200) {
       const chunk = uniqueRows.slice(offset, offset + 200);
@@ -1616,6 +1619,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
     if (input.pruneMissing !== false) {
       await db.query("delete from pricecharting_cache_entries where sync_run_id <> $1", [runId]);
     }
+    await db.query("update pricecharting_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback");
@@ -1628,12 +1632,13 @@ export async function replacePriceChartingCache(db: PGlite, input: {
 export async function recordPriceChartingCacheFailure(db: PGlite, input: {
   category: string;
   errorMessage: string;
+  startedAt?: string;
 }): Promise<void> {
   await db.query(`
     insert into pricecharting_cache_runs (
       id, category, status, error_message, started_at, completed_at
-    ) values ($1, $2, 'failed', $3, now(), now())
-  `, [crypto.randomUUID(), input.category, input.errorMessage.slice(0, 1000)]);
+    ) values ($1, $2, 'failed', $3, $4::timestamptz, clock_timestamp())
+  `, [crypto.randomUUID(), input.category, input.errorMessage.slice(0, 1000), input.startedAt || new Date().toISOString()]);
 }
 
 export async function getPriceChartingCacheStatus(db: PGlite): Promise<PriceChartingCacheStatus> {
@@ -1644,7 +1649,7 @@ export async function getPriceChartingCacheStatus(db: PGlite): Promise<PriceChar
   `);
   const runs = await db.query<Record<string, unknown>>(`
     select id, category, status, rows_received, rows_imported, rows_skipped,
-      error_message, completed_at
+      error_message, started_at, completed_at
     from pricecharting_cache_runs
     order by completed_at desc
     limit 1
@@ -1661,6 +1666,7 @@ export async function getPriceChartingCacheStatus(db: PGlite): Promise<PriceChar
       rowsImported: Number(row.rows_imported || 0),
       rowsSkipped: Number(row.rows_skipped || 0),
       errorMessage: String(row.error_message || ""),
+      startedAt: String(row.started_at),
       completedAt: String(row.completed_at)
     } : null
   };
@@ -1674,6 +1680,7 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
   rowsReceived: number;
   rowsSkipped: number;
   rows: TcgplayerPriceCacheInput[];
+  startedAt?: string;
 }): Promise<TcgplayerPriceCacheStatus> {
   const runId = crypto.randomUUID();
   const validRows = input.rows
@@ -1693,7 +1700,7 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
       insert into tcgplayer_price_cache_runs (
         id, source, category_id, source_version, status, groups_seen,
         rows_received, rows_imported, rows_skipped, started_at, completed_at
-      ) values ($1, $2, $3, $4, 'completed', $5, $6, $7, $8, now(), now())
+      ) values ($1, $2, $3, $4, 'completed', $5, $6, $7, $8, $9::timestamptz, clock_timestamp())
     `, [
       runId,
       input.source,
@@ -1702,7 +1709,8 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
       input.groupsSeen,
       input.rowsReceived,
       uniqueRows.length,
-      input.rowsSkipped + duplicateRows + invalidRows
+      input.rowsSkipped + duplicateRows + invalidRows,
+      input.startedAt || new Date().toISOString()
     ]);
 
     for (let offset = 0; offset < uniqueRows.length; offset += 250) {
@@ -1742,6 +1750,7 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
     }
 
     await db.query("delete from tcgplayer_price_cache_entries where sync_run_id <> $1", [runId]);
+    await db.query("update tcgplayer_price_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback");
@@ -1756,12 +1765,13 @@ export async function recordTcgplayerPriceCacheFailure(db: PGlite, input: {
   categoryId: string;
   sourceVersion?: string;
   errorMessage: string;
+  startedAt?: string;
 }): Promise<void> {
   await db.query(`
     insert into tcgplayer_price_cache_runs (
       id, source, category_id, source_version, status, error_message, started_at, completed_at
-    ) values ($1, $2, $3, $4, 'failed', $5, now(), now())
-  `, [crypto.randomUUID(), input.source, input.categoryId, input.sourceVersion || "", input.errorMessage.slice(0, 1000)]);
+    ) values ($1, $2, $3, $4, 'failed', $5, $6::timestamptz, clock_timestamp())
+  `, [crypto.randomUUID(), input.source, input.categoryId, input.sourceVersion || "", input.errorMessage.slice(0, 1000), input.startedAt || new Date().toISOString()]);
 }
 
 export async function recordTcgplayerPriceCacheSkipped(db: PGlite, input: {
@@ -1820,7 +1830,7 @@ export async function getTcgplayerPriceCacheStatus(db: PGlite): Promise<Tcgplaye
   `);
   const runs = await db.query<Record<string, unknown>>(`
     select id, source, category_id, source_version, status, groups_seen,
-      rows_received, rows_imported, rows_skipped, error_message, completed_at
+      rows_received, rows_imported, rows_skipped, error_message, started_at, completed_at
     from tcgplayer_price_cache_runs
     order by completed_at desc
     limit 1
@@ -1844,6 +1854,7 @@ export async function getTcgplayerPriceCacheStatus(db: PGlite): Promise<Tcgplaye
       rowsImported: Number(run.rows_imported || 0),
       rowsSkipped: Number(run.rows_skipped || 0),
       errorMessage: String(run.error_message || ""),
+      startedAt: String(run.started_at),
       completedAt: String(run.completed_at)
     } : null
   };

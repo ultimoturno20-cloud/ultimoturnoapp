@@ -680,6 +680,7 @@ type PriceChartingCacheStatus = {
     rowsImported: number;
     rowsSkipped: number;
     errorMessage: string;
+    startedAt: string;
     completedAt: string;
   };
 };
@@ -748,6 +749,7 @@ type TcgplayerPriceCacheStatus = {
     rowsImported: number;
     rowsSkipped: number;
     errorMessage: string;
+    startedAt: string;
     completedAt: string;
   };
 };
@@ -2014,7 +2016,7 @@ function App() {
   async function syncTcgplayerPriceCache() {
     setTcgplayerPriceSyncing(true);
     try {
-      const result = await api<{ status: TcgplayerPriceCacheStatus }>("/tcgplayer-prices/refresh", { method: "POST", body: { force: true } });
+      const result = await api<{ status: TcgplayerPriceCacheStatus }>("/tcgplayer-prices/refresh", { method: "POST", body: { force: false } });
       setTcgplayerPrices(result.status);
       setTcgplayerPriceAutoRefresh(await api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status").catch(() => emptyTcgplayerPriceAutoRefreshStatus()));
       showMessage(`Precios TCGplayer actualizados: ${result.status.totalEntries.toLocaleString("es-AR")} filas, ${result.status.linkedProductEntries.toLocaleString("es-AR")} productos cruzados.`);
@@ -2397,6 +2399,10 @@ function App() {
     .filter((sale) => new Date(sale.completedAt || sale.createdAt).getTime() >= todayStart.getTime())
     .reduce((sum, sale) => sum + (sale.amountPaidArs || sale.totalArs), 0);
   const openPurchaseArs = purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.totalArs, 0);
+  const staleAutomaticSources = [
+    automaticSourceHealth("PriceCharting", priceChartingCache.status.lastRun),
+    automaticSourceHealth("TCGplayer", tcgplayerPrices.lastRun)
+  ].filter((source) => source.status !== "ok");
   const startQuickOrder = (mode: "sale" | "reservation") => {
     setCartMode(mode);
     setSaleChannel("mostrador");
@@ -2473,6 +2479,17 @@ function App() {
           </div>
         </details>
       </nav>
+
+      {staleAutomaticSources.length ? (
+        <section className="automation-alert" role="alert">
+          <Icon name="activity" />
+          <div>
+            <strong>Fuentes automaticas requieren atencion</strong>
+            <span>{staleAutomaticSources.map((source) => `${source.label}: ${source.summary}`).join(" · ")}</span>
+          </div>
+          <button className="secondary-action" onClick={() => setView("admin")}>Revisar</button>
+        </section>
+      ) : null}
 
       <OperationsDock
         collectedTodayArs={collectedTodayArs}
@@ -5629,6 +5646,8 @@ function AdminView(props: {
   const imageProgress = Math.round((imageReady / imageTotal) * 100);
   const qualityImageCoverage = percent(props.imageQuality.summary.catalogEntriesWithAnyImage, Math.max(1, props.imageQuality.summary.catalogEntries));
   const catalogBusy = props.priceChartingSyncing || props.cardIndexSyncing || props.priceChartingImageProcessing;
+  const priceChartingHealth = automaticSourceHealth("PriceCharting", props.priceChartingCache.status.lastRun);
+  const tcgplayerHealth = automaticSourceHealth("TCGplayer", props.tcgplayerPrices.lastRun);
   const [priceRepairScope, setPriceRepairScope] = useState<InventoryPriceRepairScope>("floor");
   const [priceRepairPreview, setPriceRepairPreview] = useState<InventoryPriceRepairPreview | null>(null);
   const [priceRepairBusy, setPriceRepairBusy] = useState(false);
@@ -5693,9 +5712,15 @@ function AdminView(props: {
         <div className="section-heading compact-heading">
           <div><h3>Estado de fuentes</h3><p>Semaforo rapido para saber si los datos base estan listos antes de vender o cargar stock.</p></div>
         </div>
+        {priceChartingHealth.status !== "ok" || tcgplayerHealth.status !== "ok" ? (
+          <div className="source-health-warning">
+            <Icon name="activity" />
+            <span>{[priceChartingHealth, tcgplayerHealth].filter((source) => source.status !== "ok").map((source) => `${source.label}: ${source.summary}`).join(" · ")}</span>
+          </div>
+        ) : null}
         <div className="source-health-grid">
-          <SourceHealthCard label="PriceCharting" status={props.priceChartingCache.status.lastRun?.status === "completed" ? "ok" : "warn"} value={props.priceChartingCache.status.totalEntries.toLocaleString("es-AR")} helper={props.priceChartingCache.status.lastRun ? formatShortDate(props.priceChartingCache.status.lastRun.completedAt) : "Sin corrida"} />
-          <SourceHealthCard label="TCGplayer" status={props.tcgplayerPrices.lastRun?.status === "completed" ? "ok" : "warn"} value={props.tcgplayerPrices.totalEntries.toLocaleString("es-AR")} helper={props.tcgplayerPrices.lastRun ? formatShortDate(props.tcgplayerPrices.lastRun.completedAt) : "Sin corrida"} />
+          <SourceHealthCard label="PriceCharting" status={priceChartingHealth.status} value={props.priceChartingCache.status.totalEntries.toLocaleString("es-AR")} helper={priceChartingHealth.summary} />
+          <SourceHealthCard label="TCGplayer" status={tcgplayerHealth.status} value={props.tcgplayerPrices.totalEntries.toLocaleString("es-AR")} helper={tcgplayerHealth.summary} />
           <SourceHealthCard label="Indice maestro" status={props.cardIndexStatus.totalEntries > 0 ? props.cardIndexStatus.conflictEntries > 0 ? "warn" : "ok" : "bad"} value={props.cardIndexStatus.totalEntries.toLocaleString("es-AR")} helper={`${props.cardIndexStatus.tcgplayerLinkedEntries.toLocaleString("es-AR")} con TCG`} />
           <SourceHealthCard label="Imagenes" status={props.priceChartingImages.failedEntries > 0 ? "warn" : "ok"} value={Math.max(props.priceChartingImages.urlEntries, props.priceChartingImages.downloadedEntries).toLocaleString("es-AR")} helper={`${props.priceChartingImages.failedEntries.toLocaleString("es-AR")} fallidas`} />
         </div>
@@ -5828,13 +5853,14 @@ function AdminView(props: {
             <strong>{props.priceChartingCache.status.lastRun ? formatShortDate(props.priceChartingCache.status.lastRun.completedAt) : "Sin datos"}</strong>
           </div>
           <div className="auto-refresh-box">
-            <div><span>Automatico</span><strong>{props.priceChartingAutoRefresh.enabled ? `${props.priceChartingAutoRefresh.time} hs` : "Desactivado"}</strong></div>
-            <div><span>Proxima</span><strong>{props.priceChartingAutoRefresh.nextRunAt ? formatShortDate(props.priceChartingAutoRefresh.nextRunAt) : "-"}</strong></div>
-            <div><span>Ultimo estado</span><strong>{autoRefreshLabel(props.priceChartingAutoRefresh)}</strong></div>
+            <div><span>Programacion</span><strong>Diaria · 06:00 AR</strong></div>
+            <div><span>Ultima ejecucion</span><strong>{props.priceChartingCache.status.lastRun ? formatShortDate(props.priceChartingCache.status.lastRun.completedAt) : "Nunca"}</strong></div>
+            <div><span>Duracion</span><strong>{formatRunDuration(props.priceChartingCache.status.lastRun)}</strong></div>
+            <div><span>Resultado</span><strong>{priceChartingHealth.summary}</strong></div>
           </div>
-          {props.priceChartingAutoRefresh.lastError ? <p className="image-warning">{props.priceChartingAutoRefresh.lastError}</p> : null}
+          {props.priceChartingCache.status.lastRun?.errorMessage || props.priceChartingAutoRefresh.lastError ? <p className="image-warning">{props.priceChartingCache.status.lastRun?.errorMessage || props.priceChartingAutoRefresh.lastError}</p> : null}
           <button className="primary-action" disabled={props.priceChartingSyncing} onClick={props.onPriceChartingSync}>
-            <Icon name="refresh" />{props.priceChartingSyncing ? "Actualizando..." : "Actualizar CSV"}
+            <Icon name="refresh" />{props.priceChartingSyncing ? "Reintentando..." : "Reintentar ahora"}
           </button>
         </section>
 
@@ -5859,13 +5885,14 @@ function AdminView(props: {
             <strong>{props.tcgplayerPrices.linkedCardIndexEntries.toLocaleString("es-AR")}</strong>
           </div>
           <div className="auto-refresh-box">
-            <div><span>Automatico</span><strong>{props.tcgplayerPriceAutoRefresh.enabled ? `${props.tcgplayerPriceAutoRefresh.time} hs` : "Desactivado"}</strong></div>
-            <div><span>Proxima</span><strong>{props.tcgplayerPriceAutoRefresh.nextRunAt ? formatShortDate(props.tcgplayerPriceAutoRefresh.nextRunAt) : "-"}</strong></div>
-            <div><span>Ultimo estado</span><strong>{tcgplayerRefreshLabel(props.tcgplayerPriceAutoRefresh, props.tcgplayerPrices)}</strong></div>
+            <div><span>Programacion</span><strong>Diaria · 06:30 AR</strong></div>
+            <div><span>Ultima ejecucion</span><strong>{props.tcgplayerPrices.lastRun ? formatShortDate(props.tcgplayerPrices.lastRun.completedAt) : "Nunca"}</strong></div>
+            <div><span>Duracion</span><strong>{formatRunDuration(props.tcgplayerPrices.lastRun)}</strong></div>
+            <div><span>Resultado</span><strong>{tcgplayerHealth.summary}</strong></div>
           </div>
           {props.tcgplayerPriceAutoRefresh.lastError || props.tcgplayerPrices.lastRun?.errorMessage ? <p className="image-warning">{props.tcgplayerPriceAutoRefresh.lastError || props.tcgplayerPrices.lastRun?.errorMessage}</p> : null}
           <button className="primary-action" disabled={props.tcgplayerPriceSyncing} onClick={props.onTcgplayerPriceSync}>
-            <Icon name="refresh" />{props.tcgplayerPriceSyncing ? "Actualizando..." : "Actualizar precios"}
+            <Icon name="refresh" />{props.tcgplayerPriceSyncing ? "Reintentando..." : "Reintentar ahora"}
           </button>
         </section>
 
@@ -7384,6 +7411,40 @@ function Metric({ label, value, helper }: { label: string; value: React.ReactNod
 
 function SourceHealthCard({ label, status, value, helper }: { label: string; status: "ok" | "warn" | "bad"; value: React.ReactNode; helper: React.ReactNode }) {
   return <article className={`source-health-card ${status}`}><span>{label}</span><strong>{value}</strong><small>{helper}</small></article>;
+}
+
+type AutomaticSourceRun = null | {
+  status: "completed" | "failed" | "skipped";
+  errorMessage: string;
+  startedAt: string;
+  completedAt: string;
+};
+
+function automaticSourceHealth(label: string, run: AutomaticSourceRun) {
+  if (!run) return { label, status: "bad" as const, summary: "nunca ejecutada" };
+  if (run.status === "failed") return { label, status: "bad" as const, summary: "ultima corrida con error" };
+  const completedAt = new Date(run.completedAt).getTime();
+  if (!Number.isFinite(completedAt)) return { label, status: "bad" as const, summary: "fecha invalida" };
+  const ageMs = Math.max(0, Date.now() - completedAt);
+  const age = formatElapsedTime(ageMs);
+  if (ageMs > 24 * 60 * 60 * 1000) return { label, status: "warn" as const, summary: `atrasada · hace ${age}` };
+  return { label, status: "ok" as const, summary: run.status === "skipped" ? `sin cambios · hace ${age}` : `al dia · hace ${age}` };
+}
+
+function formatRunDuration(run: AutomaticSourceRun) {
+  if (!run?.startedAt || !run.completedAt) return "-";
+  const duration = new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
+  return Number.isFinite(duration) && duration >= 0 ? formatElapsedTime(duration) : "-";
+}
+
+function formatElapsedTime(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.round(hours / 24)} dias`;
 }
 
 function MoneyStack({ ars, usd, blueRate, compact = false, label, className = "" }: { ars?: number | null; usd?: number | null; blueRate: BlueExchangeRate; compact?: boolean; label?: string; className?: string }) {
