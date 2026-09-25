@@ -23,6 +23,29 @@ Actualizado: 2026-09-23
 Senal de exito: un claim completo se prepara en minutos, ninguna sugerencia se
 aplica sola y publicar no crea unidades de inventario inexistentes.
 
+### Activar precios CoolStuff
+
+- Desplegar la API para aplicar `0038_coolstuff_price_cache.sql`.
+- Configurar `ULTIMOTURNO_ACCESS_KEY` en el equipo que ejecutara el worker.
+- Iniciar `Actualizar Precios CoolStuff.cmd` y dejarlo abierto, o ejecutar:
+
+```powershell
+npm run coolstuff:prices -- --loop
+```
+
+- Para una tanda unica usar `npm run coolstuff:prices`; para validar sin guardar
+  usar `npm run coolstuff:prices -- --dry-run --batch=5`.
+- No bajar `--delay-ms` de `10000`. El worker respeta el sitio publico y guarda
+  progreso en Supabase para continuar despues de una interrupcion.
+- Revisar `/api/coolstuff-prices/status` con la clave de acceso y confirmar que
+  crezcan `matchedEntries` sin un aumento sostenido de `failedEntries`.
+- Comparar manualmente una muestra por expansion, especialmente Reverse Foil,
+  Cosmos, Poke Ball, Master Ball y 1st Edition.
+
+Senal de exito: el inventario muestra precio y enlace CoolStuff en las cartas
+inglesas con stock, sin cruzar acabados y sin depender de mantener Vercel activo
+durante el scraping.
+
 ### 1. Observar la sincronizacion sectorial en produccion
 
 - Revisar visualmente las rutas principales en desktop y movil despues de la

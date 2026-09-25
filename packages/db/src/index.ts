@@ -209,7 +209,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -878,6 +878,44 @@ export type TcgplayerPriceCacheStatus = {
     startedAt: string;
     completedAt: string;
   };
+};
+
+export type CoolstuffPriceTarget = {
+  priceChartingId: string;
+  name: string;
+  expansion: string;
+  number: string;
+  condition: string;
+  finish: string;
+  quantityOnHand: number;
+  lastStatus: string;
+  lastAttemptAt: string;
+};
+
+export type CoolstuffPriceObservation = {
+  priceChartingId: string;
+  condition: string;
+  finish: string;
+  status: "matched" | "not_found" | "ambiguous" | "failed";
+  coolstuffUrl?: string;
+  productName?: string;
+  expansionName?: string;
+  cardNumber?: string;
+  sourceCondition?: string;
+  priceUsd?: number | null;
+  quantity?: number;
+  confidence?: number;
+  errorMessage?: string;
+};
+
+export type CoolstuffPriceStatus = {
+  totalEntries: number;
+  matchedEntries: number;
+  notFoundEntries: number;
+  ambiguousEntries: number;
+  failedEntries: number;
+  staleEntries: number;
+  lastAttemptAt: string;
 };
 
 export type PriceChartingImageCacheStatus = {
@@ -1858,6 +1896,166 @@ export async function getTcgplayerPriceCacheStatus(db: PGlite): Promise<Tcgplaye
       completedAt: String(run.completed_at)
     } : null
   };
+}
+
+export async function listCoolstuffPriceTargets(db: PGlite, businessId: string, options: { limit?: number; refreshHours?: number } = {}): Promise<{ targets: CoolstuffPriceTarget[]; status: CoolstuffPriceStatus }> {
+  const limit = Math.max(1, Math.min(100, Math.floor(options.limit || 20)));
+  const refreshHours = Math.max(6, Math.min(24 * 30, Math.floor(options.refreshHours || 24)));
+  const result = await db.query<Record<string, unknown>>(`
+    select distinct on (pc_identifier.external_id, v.condition, v.finish)
+      pc_identifier.external_id as pricecharting_id,
+      p.name,
+      p.expansion,
+      p.card_number,
+      v.condition,
+      v.finish,
+      ii.quantity_on_hand,
+      coalesce(cpc.status, '') as last_status,
+      cpc.last_attempt_at
+    from inventory_items ii
+    join card_products p on p.id = ii.product_id
+    join card_variants v on v.id = ii.variant_id
+    join lateral (
+      select ei.external_id
+      from external_identifiers ei
+      join external_sources es on es.id = ei.source_id
+      where ei.business_id = ii.business_id
+        and es.name = 'pricecharting'
+        and (ei.product_id = p.id or ei.variant_id = v.id)
+      order by case when ei.variant_id = v.id then 0 else 1 end, ei.id
+      limit 1
+    ) pc_identifier on true
+    left join coolstuff_price_cache cpc
+      on cpc.pricecharting_id = pc_identifier.external_id
+      and lower(cpc.condition) = lower(v.condition)
+      and lower(cpc.finish) = lower(v.finish)
+    where ii.business_id = $1
+      and ii.active = true
+      and ii.quantity_on_hand > 0
+      and lower(v.language) in ('en', 'english')
+      and (
+        cpc.pricecharting_id is null
+        or case
+          when cpc.status = 'matched' then cpc.updated_at < now() - ($3::text || ' hours')::interval
+          else cpc.next_attempt_at <= now()
+        end
+      )
+    order by pc_identifier.external_id, v.condition, v.finish,
+      ii.quantity_on_hand desc, cpc.last_attempt_at nulls first
+    limit $2
+  `, [businessId, limit, refreshHours]);
+  return {
+    targets: result.rows.map((row) => ({
+      priceChartingId: String(row.pricecharting_id || ""),
+      name: String(row.name || ""),
+      expansion: String(row.expansion || ""),
+      number: String(row.card_number || ""),
+      condition: String(row.condition || "NM"),
+      finish: String(row.finish || "normal"),
+      quantityOnHand: Number(row.quantity_on_hand || 0),
+      lastStatus: String(row.last_status || ""),
+      lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : ""
+    })),
+    status: await getCoolstuffPriceStatus(db)
+  };
+}
+
+export async function recordCoolstuffPriceObservation(db: PGlite, input: CoolstuffPriceObservation): Promise<void> {
+  const priceChartingId = String(input.priceChartingId || "").trim();
+  if (!priceChartingId) throw new Error("Falta PriceCharting ID para guardar el precio CoolStuff.");
+  const status = input.status;
+  const priceUsd = optionalNumber(input.priceUsd) ?? null;
+  if (status === "matched" && (!(priceUsd && priceUsd > 0) || !isAllowedCoolstuffUrl(input.coolstuffUrl || ""))) {
+    throw new Error("Una coincidencia CoolStuff requiere precio USD positivo y URL publica de coolstuffinc.com.");
+  }
+  const retryHours = status === "matched" ? 24 : status === "not_found" ? 24 * 7 : status === "ambiguous" ? 24 * 3 : 2;
+  await db.exec("begin");
+  try {
+    await db.query(`
+      insert into coolstuff_price_cache (
+        pricecharting_id, condition, finish, status, coolstuff_url,
+        product_name, expansion_name, card_number, source_condition,
+        price_usd, quantity, confidence, error_message,
+        last_attempt_at, next_attempt_at, updated_at
+      ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, now(), now() + ($14::text || ' hours')::interval, now()
+      )
+      on conflict (pricecharting_id, condition, finish) do update set
+        status = case when excluded.status = 'matched' then 'matched' when coolstuff_price_cache.status = 'matched' then 'matched' else excluded.status end,
+        coolstuff_url = case when excluded.status = 'matched' then excluded.coolstuff_url else coolstuff_price_cache.coolstuff_url end,
+        product_name = case when excluded.status = 'matched' then excluded.product_name else coolstuff_price_cache.product_name end,
+        expansion_name = case when excluded.status = 'matched' then excluded.expansion_name else coolstuff_price_cache.expansion_name end,
+        card_number = case when excluded.status = 'matched' then excluded.card_number else coolstuff_price_cache.card_number end,
+        source_condition = case when excluded.status = 'matched' then excluded.source_condition else coolstuff_price_cache.source_condition end,
+        price_usd = case when excluded.status = 'matched' then excluded.price_usd else coolstuff_price_cache.price_usd end,
+        quantity = case when excluded.status = 'matched' then excluded.quantity else coolstuff_price_cache.quantity end,
+        confidence = greatest(coolstuff_price_cache.confidence, excluded.confidence),
+        error_message = excluded.error_message,
+        last_attempt_at = now(),
+        next_attempt_at = excluded.next_attempt_at,
+        updated_at = now()
+    `, [
+      priceChartingId,
+      String(input.condition || "NM"),
+      String(input.finish || "normal"),
+      status,
+      String(input.coolstuffUrl || ""),
+      String(input.productName || ""),
+      String(input.expansionName || ""),
+      String(input.cardNumber || ""),
+      String(input.sourceCondition || ""),
+      priceUsd,
+      Math.max(0, Math.floor(Number(input.quantity || 0))),
+      Math.max(0, Math.min(100, Math.floor(Number(input.confidence || 0)))),
+      String(input.errorMessage || "").slice(0, 1000),
+      retryHours
+    ]);
+    if (status === "matched") {
+      await db.query(`
+        update card_index_entries
+        set coolstuff_url = $2, last_verified_at = now(), updated_at = now()
+        where pricecharting_id = $1
+      `, [priceChartingId, String(input.coolstuffUrl || "")]);
+    }
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+}
+
+export async function getCoolstuffPriceStatus(db: PGlite): Promise<CoolstuffPriceStatus> {
+  const result = await db.query<Record<string, unknown>>(`
+    select
+      count(*)::integer as total_entries,
+      count(*) filter (where status = 'matched' and price_usd > 0)::integer as matched_entries,
+      count(*) filter (where status = 'not_found')::integer as not_found_entries,
+      count(*) filter (where status = 'ambiguous')::integer as ambiguous_entries,
+      count(*) filter (where status = 'failed')::integer as failed_entries,
+      count(*) filter (where updated_at < now() - interval '24 hours')::integer as stale_entries,
+      max(last_attempt_at) as last_attempt_at
+    from coolstuff_price_cache
+  `);
+  const row = result.rows[0] || {};
+  return {
+    totalEntries: Number(row.total_entries || 0),
+    matchedEntries: Number(row.matched_entries || 0),
+    notFoundEntries: Number(row.not_found_entries || 0),
+    ambiguousEntries: Number(row.ambiguous_entries || 0),
+    failedEntries: Number(row.failed_entries || 0),
+    staleEntries: Number(row.stale_entries || 0),
+    lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : ""
+  };
+}
+
+function isAllowedCoolstuffUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname === "coolstuffinc.com" || url.hostname === "www.coolstuffinc.com");
+  } catch {
+    return false;
+  }
 }
 
 export async function refreshCardIndexFromPriceChartingBatch(db: PGlite, options: {
@@ -3297,6 +3495,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       tpce.high_price_usd as tcgplayer_high_price_usd,
       tpce.market_price_usd as tcgplayer_market_price_usd,
       tpce.direct_low_price_usd as tcgplayer_direct_low_price_usd,
+      cpc.price_usd as coolstuff_price_usd,
+      coalesce(cpc.coolstuff_url, cie.coolstuff_url, '') as coolstuff_url,
       (
         select pi.unit_cost_ars
         from purchase_items pi
@@ -3388,6 +3588,11 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       end, candidate_price.market_price_usd desc nulls last
       limit 1
     ) tpce on true
+    left join coolstuff_price_cache cpc
+      on cpc.pricecharting_id = pc_identifier.external_id
+      and lower(cpc.condition) = lower(v.condition)
+      and lower(cpc.finish) = lower(v.finish)
+      and cpc.status = 'matched'
     left join external_identifiers ei on ei.product_id = p.id
     left join external_sources es on es.id = ei.source_id
     where ii.business_id = $1
@@ -3395,7 +3600,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
       cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
       sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
-      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd
+      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd,
+      cpc.price_usd, cpc.coolstuff_url, cie.coolstuff_url
     order by p.name, v.language, v.condition
   `, [demoBusinessId]);
 
@@ -3558,6 +3764,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       tpce.high_price_usd as tcgplayer_high_price_usd,
       tpce.market_price_usd as tcgplayer_market_price_usd,
       tpce.direct_low_price_usd as tcgplayer_direct_low_price_usd,
+      cpc.price_usd as coolstuff_price_usd,
+      coalesce(cpc.coolstuff_url, cie.coolstuff_url, '') as coolstuff_url,
       (
         select pi.unit_cost_ars
         from purchase_items pi
@@ -3649,6 +3857,11 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       end, candidate_price.market_price_usd desc nulls last
       limit 1
     ) tpce on true
+    left join coolstuff_price_cache cpc
+      on cpc.pricecharting_id = pc_identifier.external_id
+      and lower(cpc.condition) = lower(v.condition)
+      and lower(cpc.finish) = lower(v.finish)
+      and cpc.status = 'matched'
     left join external_identifiers ei on ei.product_id = p.id
     left join external_sources es on es.id = ei.source_id
     where ii.business_id = $1
@@ -3656,7 +3869,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
       cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
       sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
-      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd
+      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd,
+      cpc.price_usd, cpc.coolstuff_url, cie.coolstuff_url
     order by p.name, v.language, v.condition
   `, [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
@@ -6350,8 +6564,8 @@ function toStockRow(row: Record<string, unknown>): DbStockRow {
         directLowPriceUsd: optionalNumber(row.tcgplayer_direct_low_price_usd) ?? null
       },
       coolstuff: {
-        usd: null,
-        url: ""
+        usd: optionalNumber(row.coolstuff_price_usd) ?? null,
+        url: String(row.coolstuff_url || "")
       }
     },
     lastPurchaseArs: optionalNumber(row.last_purchase_ars) ?? null,

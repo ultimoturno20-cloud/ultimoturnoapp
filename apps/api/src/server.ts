@@ -42,6 +42,7 @@ import {
   ensurePriceChartingImageQueueForStock,
   getAuditLog,
   getCardIndexStatus,
+  getCoolstuffPriceStatus,
   getDefaultOperationalUser,
   getAuthenticatedUserContext,
   getResellerDashboard,
@@ -59,6 +60,7 @@ import {
   listClaimPlans,
   listClaimsWorkspace,
   listCardIndex,
+  listCoolstuffPriceTargets,
   listMobileInventoryEntries,
   listActiveClaimMissingPriceChartingImages,
   listPriceChartingCache,
@@ -76,6 +78,7 @@ import {
   markSaleDelivered,
   mergeDuplicateCustomerOrders,
   recordPriceChartingCacheFailure,
+  recordCoolstuffPriceObservation,
   recordPriceChartingImageFailure,
   recordPriceChartingImageSuccess,
   recordPriceChartingImageUrlDiscovered,
@@ -110,6 +113,7 @@ import {
   upsertInventoryItem,
   type AuthenticatedUser,
   type ClaimPlanItemInput,
+  type CoolstuffPriceObservation,
   type DbStockRow,
   type MobileInventoryEntry,
   type MobileInventoryInput,
@@ -4462,6 +4466,30 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/tcgplayer-prices/status" && request.method === "GET") {
       sendJson(response, 200, await getTcgplayerPriceCacheStatus(db));
+      return;
+    }
+
+    if (url.pathname === "/coolstuff-prices/status" && request.method === "GET") {
+      sendJson(response, 200, await getCoolstuffPriceStatus(db));
+      return;
+    }
+
+    if (url.pathname === "/coolstuff-prices/targets" && request.method === "GET") {
+      const limit = Number(url.searchParams.get("limit") || 20);
+      const refreshHours = Number(url.searchParams.get("refreshHours") || 24);
+      sendJson(response, 200, await listCoolstuffPriceTargets(db, user.businessId, { limit, refreshHours }));
+      return;
+    }
+
+    if (url.pathname === "/coolstuff-prices/observations" && request.method === "POST") {
+      const body = await readJson<{ observations?: CoolstuffPriceObservation[] }>(request);
+      const observations = Array.isArray(body.observations) ? body.observations.slice(0, 100) : [];
+      if (!observations.length) {
+        sendJson(response, 400, { ok: false, error: "Faltan observaciones CoolStuff." });
+        return;
+      }
+      for (const observation of observations) await recordCoolstuffPriceObservation(db, observation);
+      sendJson(response, 200, { ok: true, imported: observations.length, status: await getCoolstuffPriceStatus(db) });
       return;
     }
 

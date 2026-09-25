@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "cheerio": "1.2.0",
     "csv-parse": "^6.2.1"
   }
 }

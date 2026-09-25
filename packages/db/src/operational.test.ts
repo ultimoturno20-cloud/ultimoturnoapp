@@ -21,11 +21,13 @@ import {
   getImageDatabaseQuality,
   enrichCardIndexFromTcgCsv,
   getCardIndexStatus,
+  getCoolstuffPriceStatus,
   getPriceChartingImageCacheStatus,
   getTcgplayerPriceCacheStatus,
   loadExampleInventory,
   listMovements,
   listClaimsWorkspace,
+  listCoolstuffPriceTargets,
   listPriceChartingCache,
   listUnifiedCatalogCards,
   listStockForBusiness,
@@ -37,6 +39,7 @@ import {
   recordPriceChartingImageFailure,
   recordPriceChartingImageSuccess,
   recordPriceChartingImageUrlDiscovered,
+  recordCoolstuffPriceObservation,
   replacePriceChartingCache,
   replaceTcgplayerPriceCache,
   refreshActiveClaimPricesFromPriceCharting,
@@ -1558,6 +1561,29 @@ describe("operational inventory database", () => {
     assert.equal(siblingVariant?.priceReferences.tcgplayer.marketPriceUsd, 5.5);
     assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.productId, "555");
     assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.marketPriceUsd, null);
+
+    const coolstuffTargets = await listCoolstuffPriceTargets(db, user.businessId, { limit: 20 });
+    assert.ok(coolstuffTargets.targets.some((target) => target.priceChartingId === "pc-pikachu-25-reverse"));
+    await recordCoolstuffPriceObservation(db, {
+      priceChartingId: "pc-pikachu-25-reverse",
+      condition: "NM",
+      finish: "reverse_holo",
+      status: "matched",
+      coolstuffUrl: "https://www.coolstuffinc.com/p/Pokemon/Pikachu+-+025+%28Reverse+Foil%29",
+      productName: "Pikachu",
+      expansionName: "Pokemon Promo",
+      cardNumber: "025",
+      sourceCondition: "Near Mint",
+      priceUsd: 8.75,
+      quantity: 3,
+      confidence: 100
+    });
+    const stockWithCoolstuff = await listStockForBusiness(db, user.businessId);
+    const coolstuffVariant = stockWithCoolstuff.items.find((item) => item.sku === "TEST-TCG-SIBLING-025");
+    assert.equal(coolstuffVariant?.priceReferences.coolstuff.usd, 8.75);
+    assert.equal(coolstuffVariant?.priceReferences.coolstuff.url, "https://www.coolstuffinc.com/p/Pokemon/Pikachu+-+025+%28Reverse+Foil%29");
+    const coolstuffStatus = await getCoolstuffPriceStatus(db);
+    assert.equal(coolstuffStatus.matchedEntries, 1);
 
     await replaceTcgplayerPriceCache(db, {
       source: "tcgcsv",

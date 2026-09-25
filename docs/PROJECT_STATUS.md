@@ -12,7 +12,7 @@ Actualizado: 2026-09-25
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
 - Ultimo commit funcional desplegado y verificado al iniciar esta mejora:
-  `937aa82`.
+  `4f498b0`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
@@ -520,13 +520,33 @@ Las migraciones son `0032_reseller_consignment.sql`,
 `0033_reseller_orders.sql` y `0034_reseller_order_workflow.sql`. No se aplicaron cambios ni
 datos de prueba sobre produccion durante la implementacion.
 
+## Precios CoolStuff
+
+- Se agrego una cache persistente de precios retail CoolStuff por
+  `pricecharting_id`, condicion y acabado.
+- El inventario expone CoolStuff como fuente real cuando existe una
+  coincidencia confiable, incluyendo precio USD y enlace canonico.
+- El worker externo procesa solo cartas inglesas con stock positivo cuyo dato
+  falta o esta vencido. No intenta descargar todo el sitio.
+- El descubrimiento usa el indice publico de expansiones y sus paginas
+  paginadas. Las paginas se reutilizan dentro de cada tanda para reducir
+  solicitudes.
+- Las consultas son secuenciales y esperan al menos 10 segundos. Una respuesta
+  vacia o bloqueada se registra como fallo reintentable, no como carta ausente.
+- Nombre, expansion, numero, condicion y acabado se validan antes de aplicar el
+  precio. Coincidencias ambiguas no se publican automaticamente.
+- La migracion es `0038_coolstuff_price_cache.sql`; la operacion se inicia con
+  `Actualizar Precios CoolStuff.cmd` o `npm run coolstuff:prices -- --loop`.
+- Vercel aloja la API y Supabase conserva el progreso, pero el scraping debe
+  ejecutarse desde un equipo o worker externo de larga duracion.
+
 Verificacion del MVP:
 
 ```text
 typecheck OK
 lint OK
 build OK
-tests OK: 42 pass, 0 fail
+tests OK: 48 pass, 0 fail
 alta/login/portal API local OK
 revision visual desktop OK
 revision visual movil OK

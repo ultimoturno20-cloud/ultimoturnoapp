@@ -18,6 +18,7 @@
     "images-worker": "tsx tools/pricecharting-image-worker.ts",
     "images:quality:daemon": "tsx tools/image-quality-daemon.ts",
     "images:storage:daemon": "tsx tools/image-storage-daemon.ts",
+    "coolstuff:prices": "tsx tools/coolstuff-price-worker.ts",
     "db:postgres:check": "tsx scripts/check-postgres-connection.mts",
     "db:postgres:init": "tsx scripts/init-postgres-schema.mts",
     "db:migrate:pglite-to-postgres": "tsx scripts/migrate-pglite-to-postgres.mts",

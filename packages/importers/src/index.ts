@@ -1,4 +1,211 @@
 import { parse } from "csv-parse/sync";
+import { load } from "cheerio";
+
+export type CoolstuffPriceTarget = {
+  priceChartingId: string;
+  name: string;
+  expansion: string;
+  number: string;
+  condition: string;
+  finish: string;
+};
+
+export type CoolstuffOffer = {
+  condition: string;
+  priceUsd: number;
+  quantity: number;
+};
+
+export type CoolstuffProduct = {
+  name: string;
+  expansion: string;
+  number: string;
+  finish: string;
+  url: string;
+  offers: CoolstuffOffer[];
+};
+
+export type CoolstuffExpansionLink = {
+  name: string;
+  url: string;
+};
+
+export type CoolstuffMatch = {
+  status: "matched" | "not_found" | "ambiguous";
+  confidence: number;
+  product?: CoolstuffProduct;
+  offer?: CoolstuffOffer;
+  message: string;
+};
+
+export function parseCoolstuffProducts(html: string, baseUrl = "https://www.coolstuffinc.com"): CoolstuffProduct[] {
+  const $ = load(html);
+  return $(".product-search-row[itemtype='https://schema.org/Product']").toArray().map((element) => {
+    const row = $(element);
+    const name = row.find("[itemprop='name']").first().text().replace(/\s+/g, " ").trim();
+    const breadcrumb = row.find(".breadcrumb-trail").first().text().replace(/\s+/g, " ").trim();
+    const expansion = breadcrumb.split("»").slice(1).join("»").trim();
+    const relativeUrl = row.find("a.productLink").first().attr("href") || "";
+    const parsedIdentity = parseCoolstuffProductIdentity(name);
+    const offers = row.find("[itemprop='offers'][itemtype='https://schema.org/Offer']").toArray().map((offerElement) => {
+      const offer = $(offerElement);
+      const priceUsd = Number(offer.find("[itemprop='price']").first().attr("content") || 0);
+      const quantityText = offer.find(".card-qty").first().text().trim();
+      const quantity = quantityText.includes("+") ? Number(quantityText.replace(/\D/g, "")) : Number(quantityText || 0);
+      const conditionCell = offer.find(".card-qty").first().parent();
+      const condition = conditionCell.clone().children("span,meta").remove().end().text().replace(/\s+/g, " ").trim();
+      return { condition, priceUsd, quantity };
+    }).filter((offer) => offer.priceUsd > 0 && offer.condition);
+    return {
+      name: parsedIdentity.name,
+      expansion,
+      number: parsedIdentity.number,
+      finish: parsedIdentity.finish,
+      url: relativeUrl ? new URL(relativeUrl, baseUrl).toString() : "",
+      offers
+    };
+  }).filter((product) => product.name && product.url && product.offers.length);
+}
+
+export function parseCoolstuffExpansionLinks(html: string, baseUrl = "https://www.coolstuffinc.com"): CoolstuffExpansionLink[] {
+  const $ = load(html);
+  const unique = new Map<string, CoolstuffExpansionLink>();
+  $("a[href^='/page/']").each((_, element) => {
+    const link = $(element);
+    const name = link.text().replace(/\s+/g, " ").trim();
+    const relativeUrl = link.attr("href") || "";
+    if (!name || !/^\/page\/\d+$/i.test(relativeUrl)) return;
+    const url = new URL(relativeUrl, baseUrl).toString();
+    unique.set(`${normalizeCoolstuffExpansion(name)}|${url}`, { name, url });
+  });
+  return [...unique.values()];
+}
+
+export function findCoolstuffExpansionUrl(expansion: string, links: CoolstuffExpansionLink[]) {
+  const target = normalizeCoolstuffExpansion(expansion);
+  if (!target) return "";
+  const ranked = links.map((link) => {
+    const candidate = normalizeCoolstuffExpansion(link.name);
+    let score = target === candidate ? 100 : 0;
+    if (!score && (target.includes(candidate) || candidate.includes(target))) score = 75;
+    if (!score) {
+      const targetWords = new Set(target.split(" ").filter(Boolean));
+      const candidateWords = candidate.split(" ").filter(Boolean);
+      const shared = candidateWords.filter((word) => targetWords.has(word)).length;
+      score = candidateWords.length ? Math.round((shared / Math.max(targetWords.size, candidateWords.length)) * 70) : 0;
+    }
+    return { link, score };
+  }).sort((left, right) => right.score - left.score);
+  if (!ranked[0] || ranked[0].score < 70) return "";
+  if (ranked[1] && ranked[0].score === ranked[1].score) return "";
+  return ranked[0].link.url;
+}
+
+export function parseCoolstuffPageCount(html: string, pageUrl: string) {
+  const $ = load(html);
+  let maximum = 1;
+  $("a[href]").each((_, element) => {
+    const href = $(element).attr("href") || "";
+    let candidate: URL;
+    try {
+      candidate = new URL(href, pageUrl);
+    } catch {
+      return;
+    }
+    const page = Number(candidate.searchParams.get("page") || 1);
+    if (Number.isInteger(page)) maximum = Math.max(maximum, Math.min(page, 50));
+  });
+  return maximum;
+}
+
+export function matchCoolstuffProduct(target: CoolstuffPriceTarget, products: CoolstuffProduct[]): CoolstuffMatch {
+  const ranked = products.map((product) => {
+    let confidence = 0;
+    const targetName = normalizeCoolstuffText(target.name);
+    const productName = normalizeCoolstuffText(product.name);
+    const targetNumber = normalizeCoolstuffNumber(target.number);
+    const productNumber = normalizeCoolstuffNumber(product.number);
+    const targetExpansion = normalizeCoolstuffExpansion(target.expansion);
+    const productExpansion = normalizeCoolstuffExpansion(product.expansion);
+    if (targetName === productName) confidence += 50;
+    else if (targetName && productName && (targetName.includes(productName) || productName.includes(targetName))) confidence += 30;
+    if (targetNumber && productNumber === targetNumber) confidence += 35;
+    else if (targetNumber && productNumber && primaryCoolstuffNumber(productNumber) === primaryCoolstuffNumber(targetNumber)) confidence += 22;
+    if (targetExpansion && productExpansion === targetExpansion) confidence += 20;
+    else if (targetExpansion && productExpansion && (targetExpansion.includes(productExpansion) || productExpansion.includes(targetExpansion))) confidence += 10;
+    const finishCompatible = isCoolstuffFinishCompatible(target.finish, product.finish);
+    confidence += finishCompatible ? coolstuffFinishScore(target.finish, product.finish) : -100;
+    const offer = chooseCoolstuffOffer(target.condition, product.offers);
+    if (offer) confidence += 8;
+    return { product, offer, confidence };
+  }).filter((candidate) => candidate.offer && candidate.confidence >= 78)
+    .sort((left, right) => right.confidence - left.confidence);
+  if (!ranked.length) return { status: "not_found", confidence: 0, message: "Sin coincidencia confiable en CoolStuff." };
+  if (ranked[1] && ranked[0].confidence - ranked[1].confidence < 12) {
+    return { status: "ambiguous", confidence: ranked[0].confidence, message: `Coincidencias cercanas: ${ranked[0].product.name} / ${ranked[1].product.name}.` };
+  }
+  return { status: "matched", confidence: Math.min(100, ranked[0].confidence), product: ranked[0].product, offer: ranked[0].offer, message: "Coincidencia confiable." };
+}
+
+export function buildCoolstuffSearchQuery(target: CoolstuffPriceTarget) {
+  return [target.name, target.number].filter(Boolean).join(" ").trim();
+}
+
+function parseCoolstuffProductIdentity(value: string) {
+  const match = value.match(/^(.*?)\s+-\s+([a-z0-9]+(?:\/[a-z0-9]+)?)(?:\s+\(([^)]+)\))?$/i);
+  return match ? { name: match[1].trim(), number: match[2].trim(), finish: String(match[3] || "normal").trim() } : { name: value.trim(), number: "", finish: "normal" };
+}
+
+function normalizeCoolstuffText(value: string) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function normalizeCoolstuffExpansion(value: string) {
+  return normalizeCoolstuffText(String(value || "").replace(/^[a-z]{1,4}:\s*/i, "").replace(/\bpokemon\b/gi, "").replace(/\bcollection\b/gi, ""));
+}
+
+function normalizeCoolstuffNumber(value: string) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9/]+/g, "").replace(/^0+(?=\d)/, "");
+}
+
+function primaryCoolstuffNumber(value: string) {
+  return value.split("/")[0].replace(/^0+(?=\d)/, "");
+}
+
+function coolstuffFinishScore(targetFinish: string, productFinish: string) {
+  const target = normalizeCoolstuffText(targetFinish);
+  const product = normalizeCoolstuffText(productFinish);
+  if (target.includes("reverse")) return product.includes("reverse") ? 18 : -30;
+  if (target.includes("cosmos")) return product.includes("cosmo") ? 18 : -30;
+  if (target.includes("master") && target.includes("ball")) return product.includes("master") && product.includes("ball") ? 18 : -30;
+  if (target.includes("poke") && target.includes("ball")) return product.includes("poke") && product.includes("ball") ? 18 : -30;
+  if (target.includes("1st") || target.includes("first edition")) return product.includes("1st") || product.includes("first edition") ? 18 : -30;
+  if (target.includes("holo")) return product.includes("holo") || product === "normal" ? 6 : -12;
+  return product === "normal" || product.includes("non holo") ? 10 : -8;
+}
+
+function isCoolstuffFinishCompatible(targetFinish: string, productFinish: string) {
+  const target = normalizeCoolstuffText(targetFinish);
+  const product = normalizeCoolstuffText(productFinish);
+  if (target.includes("reverse")) return product.includes("reverse");
+  if (target.includes("cosmos")) return product.includes("cosmo");
+  if (target.includes("master") && target.includes("ball")) return product.includes("master") && product.includes("ball");
+  if (target.includes("poke") && target.includes("ball")) return product.includes("poke") && product.includes("ball") && !product.includes("master");
+  if (target.includes("1st") || target.includes("first edition")) return product.includes("1st") || product.includes("first edition");
+  if (target.includes("holo")) return !product.includes("reverse");
+  return !product.includes("reverse")
+    && !product.includes("cosmo")
+    && !product.includes("master ball")
+    && !product.includes("poke ball")
+    && !product.includes("1st")
+    && !product.includes("first edition");
+}
+
+function chooseCoolstuffOffer(condition: string, offers: CoolstuffOffer[]) {
+  const expectedNearMint = ["nm", "mint", "near mint"].includes(normalizeCoolstuffText(condition));
+  const preferred = offers.find((offer) => expectedNearMint ? normalizeCoolstuffText(offer.condition).includes("near mint") : normalizeCoolstuffText(offer.condition).includes("played"));
+  return preferred || (expectedNearMint ? undefined : offers.find((offer) => normalizeCoolstuffText(offer.condition).includes("near mint")));
+}
 
 export type ParsedImportRow = {
   localRowId: string;
