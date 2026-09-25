@@ -2049,7 +2049,7 @@ async function forcePriceChartingCatalogImage(
       pce.canonical_url,
       coalesce(nullif(pic.source_image_url, ''), nullif(pic.public_url, ''), nullif(pce.image_url, '')) as cached_image_url
     from pricecharting_cache_entries pce
-    left join pricecharting_image_cache pic using (pricecharting_id)
+    left join pricecharting_image_cache pic on pic.pricecharting_id = pce.pricecharting_id
     where pce.pricecharting_id = $1
     limit 1
   `, [cleanId]);
@@ -2216,7 +2216,7 @@ async function listStockImageDiscoveryCandidates(db: Awaited<typeof dbPromise>, 
       coalesce(pic.attempts, 0)::integer as attempts
     from stock_targets target
     join pricecharting_cache_entries pce on pce.pricecharting_id = target.pricecharting_id
-    left join pricecharting_image_cache pic using (pricecharting_id)
+    left join pricecharting_image_cache pic on pic.pricecharting_id = pce.pricecharting_id
     where coalesce(nullif(pic.source_image_url, ''), '') = ''
       and coalesce(pic.next_attempt_at, now()) <= now()
     order by pce.pricecharting_id, target.quantity_on_hand desc, pce.product_name
