@@ -44,12 +44,19 @@ test("does not confuse reverse foil with a normal target", () => {
 
 test("discovers the exact expansion page and pagination", () => {
   const html = `
-    <a href="/page/9126">Mega Evolution</a>
-    <a href="/page/9796">Mega Evolution Promos</a>
+    <a href="/page/219">Pokemon</a>
+    <div class="set-list">
+      <a href="/page/9126">Mega Evolution</a>
+      <a href="/page/9796">Mega Evolution Promos</a>
+      <a href="/page/9001">Black Bolt and White Flare</a>
+      <a href="/page/361">Black &amp; White</a>
+    </div>
     <a href="/page/9126?resultsperpage=25&sh=1&page=2">2</a>
     <a href="/page/9126?resultsperpage=25&sh=1&page=11">11</a>
   `;
   const links = parseCoolstuffExpansionLinks(html);
   assert.equal(findCoolstuffExpansionUrl("ME: Mega Evolution", links), "https://www.coolstuffinc.com/page/9126");
+  assert.equal(findCoolstuffExpansionUrl("White Flare", links), "https://www.coolstuffinc.com/page/9001");
+  assert.equal(findCoolstuffExpansionUrl("Black Bolt", links), "https://www.coolstuffinc.com/page/9001");
   assert.equal(parseCoolstuffPageCount(html, "https://www.coolstuffinc.com/page/9126?sh=1"), 11);
 });

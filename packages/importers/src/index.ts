@@ -70,7 +70,7 @@ export function parseCoolstuffProducts(html: string, baseUrl = "https://www.cool
 export function parseCoolstuffExpansionLinks(html: string, baseUrl = "https://www.coolstuffinc.com"): CoolstuffExpansionLink[] {
   const $ = load(html);
   const unique = new Map<string, CoolstuffExpansionLink>();
-  $("a[href^='/page/']").each((_, element) => {
+  $(".set-list a[href^='/page/']").each((_, element) => {
     const link = $(element);
     const name = link.text().replace(/\s+/g, " ").trim();
     const relativeUrl = link.attr("href") || "";
@@ -86,8 +86,12 @@ export function findCoolstuffExpansionUrl(expansion: string, links: CoolstuffExp
   if (!target) return "";
   const ranked = links.map((link) => {
     const candidate = normalizeCoolstuffExpansion(link.name);
+    if (!candidate) return { link, score: 0 };
     let score = target === candidate ? 100 : 0;
-    if (!score && (target.includes(candidate) || candidate.includes(target))) score = 75;
+    if (!score && (target.includes(candidate) || candidate.includes(target))) {
+      const extraWords = Math.abs(target.split(" ").length - candidate.split(" ").length);
+      score = Math.max(80, 90 - extraWords);
+    }
     if (!score) {
       const targetWords = new Set(target.split(" ").filter(Boolean));
       const candidateWords = candidate.split(" ").filter(Boolean);
