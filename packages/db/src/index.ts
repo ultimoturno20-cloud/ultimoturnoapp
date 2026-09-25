@@ -209,7 +209,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2537,8 +2537,8 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
         and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
         and candidate_pce.language_group = pce.language_group
         and candidate_pce.normalized_expansion = pce.normalized_expansion
-        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
-            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+            regexp_replace(lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
         and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
             regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
       order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
@@ -2664,8 +2664,8 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
         and (coalesce(cie.image_url, '') <> '' or coalesce(cie.tcgplayer_product_id, '') <> '')
         and candidate_pce.language_group = pce.language_group
         and candidate_pce.normalized_expansion = pce.normalized_expansion
-        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
-            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+            regexp_replace(lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
         and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
             regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
       order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
@@ -2780,6 +2780,67 @@ export async function ensurePriceChartingImageQueueForStock(db: PGlite, business
     select count(*)::integer as queued from upserted
   `, [businessId]);
   return { queued: Number(result.rows[0]?.queued || 0) };
+}
+
+export async function repairStockImagesFromCatalog(db: PGlite, businessId: string): Promise<{ productsUpdated: number; stockItemsUpdated: number }> {
+  const result = await db.query<{ products_updated: number; stock_items_updated: number }>(`
+    with targets as (
+      select distinct
+        p.id as product_id,
+        coalesce(nullif(ei.external_id, ''), '') as pricecharting_id
+      from inventory_items ii
+      join card_products p on p.id = ii.product_id
+      left join external_sources es on es.name = 'pricecharting'
+      left join external_identifiers ei on
+        ei.product_id = p.id
+        and ei.business_id = ii.business_id
+        and ei.source_id = es.id
+      where ii.business_id = $1
+        and ii.active = true
+        and (
+          coalesce(p.image_url, '') = ''
+          or p.image_url like '/pricecharting-images/%'
+        )
+    ),
+    replacements as (
+      select distinct on (targets.product_id)
+        targets.product_id,
+        ucc.image_url
+      from targets
+      join unified_catalog_cards ucc on ucc.pricecharting_id = targets.pricecharting_id
+      where targets.pricecharting_id <> ''
+        and (ucc.image_url like 'http://%' or ucc.image_url like 'https://%')
+      order by
+        targets.product_id,
+        case when ucc.image_url like '%/storage/v1/object/public/%' then 0 else 1 end,
+        ucc.updated_at desc
+    ),
+    updated as (
+      update card_products p
+      set image_url = replacements.image_url,
+        updated_at = now()
+      from replacements
+      where p.id = replacements.product_id
+        and (
+          coalesce(p.image_url, '') = ''
+          or p.image_url like '/pricecharting-images/%'
+        )
+      returning p.id
+    )
+    select
+      (select count(*)::integer from updated) as products_updated,
+      (
+        select count(*)::integer
+        from inventory_items ii
+        where ii.business_id = $1
+          and ii.active = true
+          and ii.product_id in (select id from updated)
+      ) as stock_items_updated
+  `, [businessId]);
+  return {
+    productsUpdated: Number(result.rows[0]?.products_updated || 0),
+    stockItemsUpdated: Number(result.rows[0]?.stock_items_updated || 0)
+  };
 }
 
 export async function ensurePriceChartingImageQueueForActiveClaim(db: PGlite, businessId: string): Promise<{ queued: number; missing: number }> {
@@ -3557,8 +3618,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
         and coalesce(tcg_image.product_id, '') = ''
         and candidate_pce.language_group = pce.language_group
         and candidate_pce.normalized_expansion = pce.normalized_expansion
-        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
-            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+            regexp_replace(lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
         and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
             regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
       order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,
@@ -3826,8 +3887,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
         and coalesce(tcg_image.product_id, '') = ''
         and candidate_pce.language_group = pce.language_group
         and candidate_pce.normalized_expansion = pce.normalized_expansion
-        and lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')) =
-            lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g'))
+        and regexp_replace(lower(regexp_replace(split_part(coalesce(candidate_pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+            regexp_replace(lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
         and regexp_replace(lower(candidate_pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '') =
             regexp_replace(lower(pce.product_name), '\\s*\\[[^]]+\\]\\s*$', '')
       order by case when candidate_pce.product_name !~ '\\[' then 0 else 1 end,

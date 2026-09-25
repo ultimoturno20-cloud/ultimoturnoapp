@@ -320,6 +320,11 @@ async function runCycle(options: Options) {
   const quality = await getJson<ImageQuality>(options, "/database-quality/images");
   console.log(`[${new Date().toLocaleTimeString("es-AR", { hour12: false })}] ${formatQuality(quality)}`);
 
+  const reused = await postJson<{ productsUpdated: number; stockItemsUpdated: number }>(options, "/pricecharting-images/reuse-stock", {});
+  if (reused.stockItemsUpdated > 0) {
+    console.log(`Catalogo: ${reused.stockItemsUpdated} item(s) de stock recuperaron una imagen ya conocida.`);
+  }
+
   let candidates = await getJson<{ entries: Candidate[] }>(options, `/pricecharting-images/download-candidates?limit=${options.candidateBatch}`);
   let discovered = 0;
   if (candidates.entries.length >= options.candidateBatch) {

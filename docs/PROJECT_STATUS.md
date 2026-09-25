@@ -192,6 +192,15 @@ Actualizado: 2026-09-25
 ### Imagenes online
 
 - El bucket esperado es `ultimoturno-images`.
+- La reparacion prioritaria reutiliza primero imagenes confiables que ya existen
+  en el catalogo para la misma carta. Acepta diferencias inocuas de numero como
+  `26` / `026`, exige coincidencia de nombre, expansion e idioma y persiste la
+  URL publica en el producto de stock; no vuelve a descargar la misma imagen.
+- El daemon ejecuta esa reutilizacion al comienzo de cada ciclo y la accion
+  `Reparar imagenes prioritarias` tambien la aplica antes de consultar fuentes
+  externas. Las descargas pendientes se ordenan ahora por prioridad de stock
+  antes que por el estado general de la cola.
+- Migracion nueva: `0040_reuse_catalog_stock_images.sql`.
 - Existe un daemon local de produccion en `tools/image-storage-daemon.ts`.
 - Comando: `npm run images:storage:daemon -- --loop`.
 - Lanzador: `Mejorar Calidad Imagenes Online.cmd`.

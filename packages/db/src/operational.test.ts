@@ -44,6 +44,7 @@ import {
   replaceTcgplayerPriceCache,
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
+  repairStockImagesFromCatalog,
   repairInventorySalePrices,
   resetInventoryStock,
   updateClaimCard,
@@ -1428,6 +1429,69 @@ describe("operational inventory database", () => {
     assert.equal(unifiedNumberWithSlash.entries[0].priceChartingId, "125");
     assert.equal(cache.status.totalEntries, 4);
     assert.equal(cache.status.lastRun?.status, "completed");
+    await db.close();
+  });
+
+  it("reuses a trusted catalog image for matching stock with a zero-padded card number", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-stock-image-reuse-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const stableImageUrl = "https://example.supabase.co/storage/v1/object/public/ultimoturno-images/tcgcsv-451657.jpg";
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "stock-image-reuse",
+      rowsReceived: 2,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "4277145",
+        canonicalUrl: "https://www.pricecharting.com/game/silver-tempest/braixen-26",
+        sourceUrl: "https://www.pricecharting.com/game/silver-tempest/braixen-26",
+        productName: "Braixen",
+        normalizedName: "braixen",
+        expansionName: "Silver Tempest",
+        normalizedExpansion: "silver tempest",
+        cardNumber: "26",
+        loosePriceUsd: 0.25,
+        imageUrl: "",
+        searchKey: "braixen silver tempest 26"
+      }, {
+        priceChartingId: "tcgcsv-451657",
+        canonicalUrl: "https://www.tcgplayer.com/product/451657/pokemon-swsh12-silver-tempest-braixen",
+        sourceUrl: "https://www.tcgplayer.com/product/451657/pokemon-swsh12-silver-tempest-braixen",
+        productName: "Braixen",
+        normalizedName: "braixen",
+        expansionName: "SWSH12: Silver Tempest",
+        normalizedExpansion: "silver tempest",
+        cardNumber: "026",
+        loosePriceUsd: null,
+        imageUrl: stableImageUrl,
+        searchKey: "braixen swsh12 silver tempest 026 451657"
+      }]
+    });
+    await refreshCardIndexFromPriceCharting(db);
+    const item = await upsertInventoryItem(db, {
+      sku: "TEST-IMAGE-REUSE-026",
+      name: "Braixen",
+      expansion: "Silver Tempest",
+      number: "26",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      imageUrl: "",
+      priceChartingId: "4277145",
+      priceChartingUrl: "https://www.pricecharting.com/game/silver-tempest/braixen-26",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 1000
+    }, user);
+
+    const catalog = await listUnifiedCatalogCards(db, "braixen 26", 10, "english", false);
+    assert.equal(catalog.entries.find((entry) => entry.priceChartingId === "4277145")?.imageUrl, stableImageUrl);
+    const repaired = await repairStockImagesFromCatalog(db, user.businessId);
+    assert.equal(repaired.productsUpdated, 1);
+    assert.equal(repaired.stockItemsUpdated, 1);
+    const stock = await listStockForBusiness(db, user.businessId);
+    assert.equal(stock.items.find((entry) => entry.id === item.id)?.product.imageUrl, stableImageUrl);
     await db.close();
   });
 

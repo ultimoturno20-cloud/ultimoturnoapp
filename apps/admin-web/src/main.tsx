@@ -2075,7 +2075,7 @@ function App() {
     setPriceChartingImageProcessing(true);
     try {
       const endpoint = mode === "external-index" ? "/pricecharting-images/external-index" : "/pricecharting-images/process";
-      const result = await api<{ processed: number; urlFound?: number; downloaded?: number; skipped?: number; failed: number; mode?: ImageResolverMode; rateLimited?: boolean; cooldownUntil?: string; items?: ImageBatchResult["items"]; status: PriceChartingImageCacheStatus }>(endpoint, {
+      const result = await api<{ processed: number; urlFound?: number; downloaded?: number; skipped?: number; failed: number; reused?: { productsUpdated: number; stockItemsUpdated: number }; mode?: ImageResolverMode; rateLimited?: boolean; cooldownUntil?: string; items?: ImageBatchResult["items"]; status: PriceChartingImageCacheStatus }>(endpoint, {
         method: "POST",
         body: mode === "external-index"
           ? { includeAll, batchSize: includeAll ? 1000 : 300 }
@@ -2112,9 +2112,11 @@ function App() {
         setPriceChartingImageBackfillRunning(false);
         showMessage("No hay imagenes pendientes listas para procesar ahora.");
       } else if (mode === "external-index") {
-        showMessage(`URLs masivas: ${result.urlFound || 0} encontradas, ${result.skipped || 0} sin match fuerte en esta tanda.`);
+        const reused = result.reused?.stockItemsUpdated || 0;
+        showMessage(`Imagenes prioritarias: ${reused} recuperadas del catalogo, ${result.urlFound || 0} URLs nuevas, ${result.skipped || 0} sin match fuerte.`);
       } else {
-        showMessage(`Imagenes${mode === "pokemon-tcg" ? " Pokemon TCG" : ""}: ${result.downloaded || 0} guardadas, ${result.failed} fallidas en esta tanda.`);
+        const reused = result.reused?.stockItemsUpdated || 0;
+        showMessage(`Imagenes${mode === "pokemon-tcg" ? " Pokemon TCG" : ""}: ${reused} reutilizadas, ${result.downloaded || 0} guardadas, ${result.failed} fallidas.`);
       }
     } catch (nextError) {
       setPriceChartingImageBackfillRunning(false);

@@ -95,6 +95,10 @@ una sola vez y el saldo a rendir coincide con la comision acordada.
 ### 3. Completar cobertura de imagenes
 
 - Dejar `Mejorar Calidad Imagenes Online.cmd` ejecutando por lotes.
+- Confirmar despues del despliegue cuantas de las cartas de stock sin imagen se
+  resolvieron reutilizando el catalogo y dejar el scraping solo para el remanente.
+- Vigilar que nuevas altas hereden automaticamente imagenes equivalentes aunque
+  el numero venga con ceros a la izquierda (`26` / `026`).
 - Confirmar que las cartas reparadas manualmente conservan una URL publica
   `http/https` y no vuelven a `/pricecharting-images/files/...` despues de un
   nuevo despliegue de Vercel.

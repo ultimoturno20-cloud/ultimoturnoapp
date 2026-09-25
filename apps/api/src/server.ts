@@ -86,6 +86,7 @@ import {
   recordTcgplayerPriceCacheSkipped,
   replacePriceChartingCache,
   replaceTcgplayerPriceCache,
+  repairStockImagesFromCatalog,
   refreshCardIndexFromPriceChartingBatch,
   refreshActiveClaimPricesFromPriceCharting,
   refreshCardIndexFromPriceCharting,
@@ -2150,12 +2151,12 @@ async function listPriceChartingImageDownloadCandidates(db: Awaited<typeof dbPro
       and coalesce(pic.next_attempt_at, now()) <= now()
       and coalesce(nullif(case when pic.public_url like 'http://%' or pic.public_url like 'https://%' then pic.public_url else '' end, ''), '') = ''
     order by
+      coalesce(pic.priority, 100),
       case
         when coalesce(pic.status, '') = 'url_found' then 0
         when coalesce(pic.status, '') = 'pending' then 1
         else 2
       end,
-      coalesce(pic.priority, 100),
       coalesce(pic.updated_at, pce.imported_at),
       pce.product_name
     limit $1
@@ -4535,9 +4536,21 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/pricecharting-images/reuse-stock" && request.method === "POST") {
+      const reused = await repairStockImagesFromCatalog(db, user.businessId);
+      sendJson(response, 200, {
+        ok: true,
+        ...reused,
+        status: await getPriceChartingImageCacheStatus(db, user.businessId),
+        imageQuality: await getImageDatabaseQuality(db, user.businessId)
+      });
+      return;
+    }
+
     if (url.pathname === "/pricecharting-images/queue-stock" && request.method === "POST") {
+      const reused = await repairStockImagesFromCatalog(db, user.businessId);
       const queued = await ensurePriceChartingImageQueueForStock(db, user.businessId);
-      sendJson(response, 200, { ok: true, ...queued, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      sendJson(response, 200, { ok: true, reused, ...queued, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
       return;
     }
 
@@ -4638,6 +4651,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/pricecharting-images/process" && request.method === "POST") {
       const body = await readJson<{ batchSize?: number; delayMs?: number; concurrency?: number; includeAll?: boolean; mode?: ImageResolverMode; onlyWithSourceImageUrl?: boolean }>(request);
+      const reused = await repairStockImagesFromCatalog(db, user.businessId);
       await ensurePriceChartingImageQueueForStock(db, user.businessId);
       const batchSize = Math.max(1, Math.min(100, Number(body.batchSize || 10)));
       const concurrency = Math.max(1, Math.min(10, Number(body.concurrency || 4)));
@@ -4646,12 +4660,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const result = await processPriceChartingImageQueue(batchSize, concurrency, mode, {
         onlyWithSourceImageUrl: !!body.onlyWithSourceImageUrl
       });
-      sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      sendJson(response, 200, { ok: true, reused, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
       return;
     }
 
     if (url.pathname === "/pricecharting-images/discover" && request.method === "POST") {
       const body = await readJson<{ batchSize?: number; concurrency?: number; delayMs?: number; includeAll?: boolean; sourceMode?: ImageDiscoverySourceMode }>(request);
+      const reused = await repairStockImagesFromCatalog(db, user.businessId);
       await ensurePriceChartingImageQueueForStock(db, user.businessId);
       const batchSize = Math.max(1, Math.min(1000, Number(body.batchSize || 100)));
       const sourceMode: ImageDiscoverySourceMode = body.sourceMode === "pricecharting-storage" || body.sourceMode === "auto" ? body.sourceMode : "pricecharting-url";
@@ -4660,12 +4675,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const delayMs = usesPriceChartingHtml ? Math.max(1000, Number(body.delayMs || 1100)) : 0;
       if (body.includeAll) await ensurePriceChartingImageQueueForAll(db, Math.max(1000, batchSize * 20));
       const result = await processPriceChartingImageUrlQueue(batchSize, concurrency, sourceMode, delayMs);
-      sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      sendJson(response, 200, { ok: true, reused, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
       return;
     }
 
     if (url.pathname === "/pricecharting-images/external-index" && request.method === "POST") {
       const body = await readJson<{ batchSize?: number; includeAll?: boolean; rebuild?: boolean; providers?: ExternalImageProvider[] }>(request);
+      const reused = await repairStockImagesFromCatalog(db, user.businessId);
       await ensurePriceChartingImageQueueForStock(db, user.businessId);
       const batchSize = Math.max(1, Math.min(5000, Number(body.batchSize || 1000)));
       const providers = (body.providers || []).filter((provider): provider is ExternalImageProvider => provider === "pokemontcg" || provider === "tcgdex");
@@ -4675,7 +4691,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         providers,
         rebuild: !!body.rebuild
       });
-      sendJson(response, 200, { ok: true, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
+      sendJson(response, 200, { ok: true, reused, ...result, status: await getPriceChartingImageCacheStatus(db, user.businessId) });
       return;
     }
 
