@@ -209,7 +209,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2602,27 +2602,22 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
     params.push(safeLanguageGroup);
     clauses.push(`pce.language_group = $${params.length}`);
   }
-  const fullTextTokens = parsedQuery.textTokens
-    .map((token) => token.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter(Boolean);
-  if (fullTextTokens.length) {
-    params.push(fullTextTokens.map((token) => `${token}:*`).join(" & "));
+  const fullTextGroups = parsedQuery.textTokens
+    .map((token) => searchTokenVariants(token)
+      .map((variant) => variant.replace(/[^\p{L}\p{N}]/gu, ""))
+      .filter(Boolean))
+    .filter((variants) => variants.length);
+  if (fullTextGroups.length) {
+    params.push(fullTextGroups.map((variants) => variants.length === 1
+      ? `${variants[0]}:*`
+      : `(${variants.map((variant) => `${variant}:*`).join(" | ")})`).join(" & "));
     clauses.push(`to_tsvector('simple', pce.search_key || ' ' || lower(pce.pricecharting_id)) @@ to_tsquery('simple', $${params.length})`);
-  }
-  for (const token of parsedQuery.textTokens) {
-    const variantClauses = searchTokenVariants(token).map((variant) => {
-      params.push(`%${variant}%`);
-      const placeholder = `$${params.length}`;
-      return `(pce.search_key like ${placeholder} or lower(pce.pricecharting_id) like ${placeholder})`;
-    });
-    clauses.push(`(${variantClauses.join(" or ")})`);
   }
   if (parsedQuery.numberTokens.length) {
     const numberClauses = parsedQuery.numberTokens.map((token) => {
-      params.push(token, `%${token}%`);
-      const exact = `$${params.length - 1}`;
-      const fuzzy = `$${params.length}`;
-      return `(regexp_replace(lower(split_part(pce.card_number, '/', 1)), '^0+', '') = ${exact} or lower(regexp_replace(pce.card_number, '[^a-z0-9]+', '', 'g')) like ${fuzzy} or lower(pce.pricecharting_id) like ${fuzzy})`;
+      params.push(token);
+      const exact = `$${params.length}`;
+      return `(regexp_replace(lower(split_part(pce.card_number, '/', 1)), '^0+', '') = ${exact} or pce.pricecharting_id = ${exact})`;
     });
     clauses.push(`(${numberClauses.join(" or ")})`);
   }
@@ -7356,11 +7351,11 @@ function mapUnifiedCatalogRow(row: Record<string, unknown>): UnifiedCatalogEntry
 function parseSearchQuery(value: string): { raw: string; rawLike: string; tokens: string[]; textTokens: string[]; numberTokens: string[] } {
   const raw = normalizeImportText(value);
   const tokens = raw.split(" ").filter((token) => token && token !== "s");
+  const isCardNumberToken = (token: string) => /^[0-9]+[a-z]?(?:\/[0-9]+[a-z]?)?$/i.test(token.replace(/^#/, ""));
   const numberTokens = [...new Set(tokens
-    .map((token) => token.replace(/^#/, ""))
-    .filter((token) => /^[0-9]+[a-z]?$/i.test(token))
-    .map((token) => token.replace(/^0+([0-9])/, "$1")))].slice(0, 1);
-  const textTokens = [...new Set(tokens.filter((token) => !/^[0-9]+[a-z]?$/i.test(token.replace(/^#/, ""))))];
+    .filter(isCardNumberToken)
+    .map((token) => token.replace(/^#/, "").split("/")[0].replace(/^0+([0-9])/, "$1")))].slice(0, 1);
+  const textTokens = [...new Set(tokens.filter((token) => !isCardNumberToken(token)))];
   return { raw, rawLike: `%${raw}%`, tokens, textTokens, numberTokens };
 }
 

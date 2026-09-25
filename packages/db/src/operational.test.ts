@@ -1423,6 +1423,9 @@ describe("operational inventory database", () => {
     const unifiedNumber = await listUnifiedCatalogCards(db, "psy 44", 10, "all", false);
     assert.equal(unifiedNumber.entries.length, 1);
     assert.equal(unifiedNumber.entries[0].priceChartingId, "125");
+    const unifiedNumberWithSlash = await listUnifiedCatalogCards(db, "psy 44/62", 10, "all", false);
+    assert.equal(unifiedNumberWithSlash.entries.length, 1);
+    assert.equal(unifiedNumberWithSlash.entries[0].priceChartingId, "125");
     assert.equal(cache.status.totalEntries, 4);
     assert.equal(cache.status.lastRun?.status, "completed");
     await db.close();

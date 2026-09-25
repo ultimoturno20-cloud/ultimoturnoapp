@@ -5876,7 +5876,7 @@ select {
 
 .stock-intake-view {
   display: grid;
-  gap: 14px;
+  gap: 8px;
   padding-bottom: 24px;
 }
 
@@ -5885,17 +5885,19 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 18px 0 16px;
+  padding: 4px 0 8px;
   border-bottom: 1px solid var(--border-soft);
 }
 
 .stock-intake-header > div {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .stock-intake-header p {
   color: var(--muted);
+  font-size: 13px;
 }
 
 .stock-intake-feedback {
@@ -5914,12 +5916,30 @@ select {
 }
 
 .stock-intake-view .inventory-edit-layout.catalog-choosing {
-  max-width: 1120px;
+  max-width: none;
 }
 
 .stock-intake-view .catalog-picker-results {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   max-height: none;
+}
+
+.stock-intake-mode .app-header {
+  min-height: 48px;
+  padding-block: 3px 7px;
+}
+
+.stock-intake-mode .brand-mark {
+  width: 42px;
+  height: 42px;
+}
+
+.stock-intake-mode .nav {
+  padding-bottom: 5px;
+}
+
+.stock-intake-mode .catalog-picker {
+  padding: 12px;
 }
 
 .stock-intake-view .catalog-picker-row {
@@ -6132,6 +6152,12 @@ select {
   max-height: min(52vh, 520px);
   overflow-y: auto;
   padding: 2px 4px 2px 0;
+}
+
+.catalog-picker-syncing {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .catalog-picker-row {
@@ -6518,6 +6544,11 @@ select {
   .stock-intake-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .stock-intake-header > div {
+    display: grid;
+    gap: 3px;
   }
 
   .stock-intake-header .secondary-action {

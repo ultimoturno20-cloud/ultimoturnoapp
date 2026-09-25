@@ -2437,7 +2437,7 @@ function App() {
   }
 
   return (
-    <main className={`shell ${view === "mobile-intake" ? "mobile-mode" : ""} ${view === "orders" ? "orders-mode" : ""}`}>
+    <main className={`shell ${view === "mobile-intake" ? "mobile-mode" : ""} ${view === "orders" ? "orders-mode" : ""} ${view === "stock-intake" ? "stock-intake-mode" : ""}`}>
       <header className="app-header">
         <div className="brand-lockup">
           <img className="brand-mark" src="/brand/ultimo-turno-logo.jpeg" alt="UltimoTurno" />
@@ -2480,7 +2480,7 @@ function App() {
         </details>
       </nav>
 
-      {staleAutomaticSources.length ? (
+      {view !== "stock-intake" && staleAutomaticSources.length ? (
         <section className="automation-alert" role="alert">
           <Icon name="activity" />
           <div>
@@ -2491,7 +2491,7 @@ function App() {
         </section>
       ) : null}
 
-      <OperationsDock
+      {view !== "stock-intake" ? <OperationsDock
         collectedTodayArs={collectedTodayArs}
         pendingDebtArs={pendingDebtArs}
         overdueDebtCount={overdueDebtCount}
@@ -2504,7 +2504,7 @@ function App() {
         onNewOrder={() => startQuickOrder("reservation")}
         onGoOrders={() => setView("orders")}
         onGoCash={() => setView("sales")}
-      />
+      /> : null}
 
       <div className="toast-stack" aria-live="polite">
         {message ? <div className="feedback ok"><span>{message}</span><button aria-label="Cerrar mensaje" onClick={() => setMessage("")}><Icon name="close" /></button></div> : null}
@@ -3694,6 +3694,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const [pickerCurrency, setPickerCurrency] = useState<"USD" | "ARS">("USD");
   const pickerSequence = useRef(0);
   const pickerAbortController = useRef<AbortController | null>(null);
+  const allItemsRef = useRef(allItems);
+  useEffect(() => { allItemsRef.current = allItems; }, [allItems]);
   async function searchPicker(search: string) {
     const normalizedSearch = search.trim().toLocaleLowerCase("es");
     if (normalizedSearch.length < 2) {
@@ -3720,7 +3722,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     setPickerError("");
     try {
       const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=30&includeStatus=false`, { signal: controller.signal });
-      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 30);
+      const fallbackEntries = searchInventoryCatalogEntries(allItemsRef.current, search, pickerLanguageGroup, 30);
       if (sequence === pickerSequence.current) {
         const entries = mergeCatalogPickerEntries(result.entries, fallbackEntries, 30);
         const totalEntries = result.status?.totalEntries ?? priceChartingCache.status.totalEntries;
@@ -3731,7 +3733,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      const fallbackEntries = searchInventoryCatalogEntries(allItems, search, pickerLanguageGroup, 60);
+      const fallbackEntries = searchInventoryCatalogEntries(allItemsRef.current, search, pickerLanguageGroup, 60);
       if (sequence === pickerSequence.current) {
         setPickerEntries(fallbackEntries);
         setPickerError(fallbackEntries.length ? "" : errorMessage(error));
@@ -3742,11 +3744,11 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     ++pickerSequence.current;
     pickerAbortController.current?.abort();
     if (catalogSearch.trim().length < 2) { setPickerEntries([]); setPickerSearching(false); setPickerError(catalogSearch.trim() ? "Escribi al menos 2 caracteres." : ""); return; }
-    setPickerEntries(searchInventoryCatalogEntries(allItems, catalogSearch, pickerLanguageGroup, 30));
+    setPickerEntries(searchInventoryCatalogEntries(allItemsRef.current, catalogSearch, pickerLanguageGroup, 30));
     setPickerSearching(true);
-    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 180);
+    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 100);
     return () => { window.clearTimeout(timer); pickerAbortController.current?.abort(); ++pickerSequence.current; };
-  }, [allItems, catalogSearch, pickerLanguageGroup]);
+  }, [catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
   const [showDetails, setShowDetails] = useState(editing || fullPage);
   useEffect(() => { if (!editing && !form.name) setCatalogPickerOpen(true); }, [editing, form.name]);
@@ -3837,7 +3839,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
               <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)}><Icon name="search" />Buscar</button>
             </div>
-            {!pickerSearching && pickerEntries.length ? <div className="catalog-picker-results">
+            {pickerEntries.length ? <div className="catalog-picker-results">
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
                 <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="PC" className="" fallbackClassName="image-placeholder compact-placeholder" />
                 <div className="catalog-picker-card-copy">
@@ -3854,6 +3856,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                 </div>
               </button>)}
             </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
+            {pickerSearching && pickerEntries.length ? <span className="catalog-picker-syncing">Actualizando resultados...</span> : null}
           </section> : null}
           {!editing && !catalogPickerOpen ? <section className="selected-catalog-card">
             <div><span className="eyebrow">Carta elegida</span><strong>{form.name}</strong><span>{form.expansion}{form.number ? ` #${form.number}` : ""}</span></div>

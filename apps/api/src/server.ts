@@ -123,6 +123,10 @@ import {
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 
+type CatalogSearchResult = Awaited<ReturnType<typeof listUnifiedCatalogCards>>;
+const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogSearchResult }>();
+const catalogSearchCacheTtlMs = 60_000;
+
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..", "..", "..");
@@ -4450,7 +4454,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const limit = Number(url.searchParams.get("limit") || 50);
       const languageGroup = url.searchParams.get("languageGroup") || "all";
       const includeStatus = url.searchParams.get("includeStatus") !== "false";
-      sendJson(response, 200, await listUnifiedCatalogCards(db, query, limit, languageGroup, includeStatus));
+      const cacheKey = `${query.trim().toLocaleLowerCase("es")}\n${languageGroup}\n${limit}\n${includeStatus}`;
+      const cached = catalogSearchCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        sendJson(response, 200, cached.result);
+        return;
+      }
+      const result = await listUnifiedCatalogCards(db, query, limit, languageGroup, includeStatus);
+      if (catalogSearchCache.size >= 400) catalogSearchCache.delete(catalogSearchCache.keys().next().value || "");
+      catalogSearchCache.set(cacheKey, { expiresAt: Date.now() + catalogSearchCacheTtlMs, result });
+      sendJson(response, 200, result);
       return;
     }
 

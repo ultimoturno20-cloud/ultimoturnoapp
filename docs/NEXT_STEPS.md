@@ -54,6 +54,12 @@ durante el scraping.
   confirmando que ninguna barra tape contenido.
 - Confirmar con dos sesiones reales que inventario, claims, ordenes, caja y el
   portal reflejen cambios dentro de los 15 segundos esperados.
+- Durante una carga simultanea, dejar abierta
+  `/inventario/cargar-stock`, escribir una busqueda y esperar al menos dos
+  ciclos: el texto, los resultados y la posicion vertical deben permanecer
+  estables.
+- Medir consultas de nombre y nombre+numero con varias sesiones. Las busquedas
+  repetidas dentro de 60 segundos deben aprovechar la cache de la API.
 - Vigilar latencia y cantidad de consultas durante el uso diario.
 - Mantener el refresco acotado al sector visible; no volver a descargar toda la
   aplicacion para actualizar una sola pantalla.

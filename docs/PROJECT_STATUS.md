@@ -12,7 +12,7 @@ Actualizado: 2026-09-25
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
 - Ultimo commit funcional desplegado y verificado al iniciar esta mejora:
-  `4f498b0`.
+  `6fe23cf`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
@@ -98,6 +98,19 @@ Actualizado: 2026-09-25
   editar el valor de venta conserva la cantidad existente y no genera unidades.
 - La busqueda interactiva del catalogo se optimizo y dejo de recalcular el total
   completo en cada consulta.
+- La carga masiva de stock conserva sus resultados y posicion durante la
+  sincronizacion sectorial: actualizar `allItems` ya no reinicia el buscador ni
+  contrae la grilla, evitando el salto de scroll cada 15 segundos.
+- Las coincidencias del inventario aparecen inmediatamente y permanecen
+  visibles mientras llega el catalogo completo. El debounce bajo a `100 ms`.
+- La consulta de catalogo usa GIN para prefijos y un indice funcional para el
+  numero principal de carta; se eliminaron comparaciones `%texto%` redundantes.
+  Busquedas como `psy 44/62` se normalizan a `44` sin perder precision.
+- La API conserva durante 60 segundos hasta 400 busquedas recientes, útil para
+  varias personas cargando las mismas expansiones al mismo tiempo.
+- En `/inventario/cargar-stock` se ocultan temporalmente la alerta automatica y
+  la barra operativa, la cabecera es compacta y la grilla usa todo el ancho.
+- Migracion nueva: `0039_catalog_search_number_index.sql`.
 - La carga de stock muestra coincidencias del inventario de inmediato, reduce el
   debounce a `180 ms` y usa un indice GIN de texto completo para evitar escanear
   las mas de 120 mil cartas en cada busqueda (`0037_fast_catalog_search.sql`).
