@@ -4435,6 +4435,223 @@ select option {
   }
 }
 
+/* Stock intake: compact mobile workspace that stays usable above the keyboard. */
+@media (max-width: 620px) {
+  .stock-intake-mode {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .stock-intake-mode .app-header,
+  .stock-intake-mode .nav {
+    display: none;
+  }
+
+  .stock-intake-view {
+    gap: 6px;
+    padding-bottom: max(72px, env(safe-area-inset-bottom));
+  }
+
+  .stock-intake-header {
+    min-height: 40px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 5px;
+  }
+
+  .stock-intake-header > div {
+    display: block;
+    min-width: 0;
+  }
+
+  .stock-intake-header .eyebrow,
+  .stock-intake-header p {
+    display: none;
+  }
+
+  .stock-intake-header h2 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.1;
+  }
+
+  .stock-intake-header .stock-intake-back {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    margin-left: auto;
+    padding: 0;
+  }
+
+  .stock-intake-back span {
+    display: none;
+  }
+
+  .stock-intake-mode .catalog-picker {
+    gap: 7px;
+    border-radius: 8px;
+    padding: 8px;
+  }
+
+  .stock-intake-mode .catalog-picker .edit-section-heading {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stock-intake-mode .catalog-picker .edit-section-heading h3 {
+    font-size: 16px;
+  }
+
+  .stock-intake-mode .catalog-picker .edit-section-heading span {
+    display: none;
+  }
+
+  .stock-intake-mode .catalog-picker .edit-section-heading > strong {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .stock-intake-mode .catalog-picker-tools {
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 1px;
+    scrollbar-width: none;
+  }
+
+  .stock-intake-mode .catalog-picker-tools::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stock-intake-mode .language-group-row,
+  .stock-intake-mode .catalog-currency-toggle {
+    flex: 0 0 auto;
+    gap: 4px;
+  }
+
+  .stock-intake-mode .language-group-row > span:first-child,
+  .stock-intake-mode .catalog-currency-toggle > span {
+    display: none;
+  }
+
+  .stock-intake-mode .language-group-row button,
+  .stock-intake-mode .catalog-currency-toggle button {
+    min-height: 30px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .stock-intake-mode .catalog-picker-search {
+    position: sticky;
+    top: 0;
+    z-index: 12;
+    grid-template-columns: minmax(0, 1fr) 42px;
+    gap: 6px;
+    margin-inline: -2px;
+    padding: 2px;
+    background: #15151a;
+  }
+
+  .stock-intake-mode .catalog-picker-search input {
+    min-height: 42px;
+    padding-inline: 12px;
+    font-size: 16px;
+  }
+
+  .stock-intake-mode .catalog-picker-search .primary-action {
+    width: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0;
+  }
+
+  .stock-intake-mode .catalog-picker-search .primary-action span {
+    display: none;
+  }
+
+  .stock-intake-view .catalog-picker-results {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    max-height: calc(100dvh - 188px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 2px max(88px, env(safe-area-inset-bottom)) 0;
+    scroll-padding-bottom: max(88px, env(safe-area-inset-bottom));
+  }
+
+  .stock-intake-view .catalog-picker-row {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 66px;
+    padding: 7px;
+  }
+
+  .stock-intake-view .catalog-picker-row img,
+  .stock-intake-view .catalog-picker-row .image-placeholder {
+    width: 48px;
+    height: 48px;
+  }
+
+  .stock-intake-view .catalog-picker-card-copy {
+    gap: 1px;
+  }
+
+  .stock-intake-view .catalog-picker-card-copy strong {
+    font-size: 14px;
+  }
+
+  .stock-intake-view .catalog-picker-card-copy span,
+  .stock-intake-view .catalog-picker-card-copy small {
+    font-size: 11px;
+  }
+
+  .stock-intake-view .catalog-picker-meta {
+    grid-column: 3;
+    grid-template-columns: 1fr;
+    align-self: stretch;
+    min-width: 82px;
+    gap: 2px;
+  }
+
+  .stock-intake-view .catalog-picker-badges {
+    display: none;
+  }
+
+  .stock-intake-view .catalog-picker-prices {
+    min-width: 82px;
+    justify-content: center;
+  }
+
+  .stock-intake-view .catalog-picker-price-line {
+    gap: 2px;
+  }
+
+  .stock-intake-view .catalog-picker-price-line small {
+    font-size: 9px;
+  }
+
+  .stock-intake-view .catalog-picker-price-line strong {
+    font-size: 11px;
+  }
+
+  .stock-intake-view .catalog-picker-syncing {
+    position: fixed;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 30;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 9px;
+    background: rgba(8, 8, 10, 0.94);
+  }
+
+  .stock-intake-view .modal-footer {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 760px) {
   .claims-side {
     position: static;
@@ -12402,4 +12619,74 @@ textarea {
   .claim-plan-table article > .claim-plan-thumb { width: 52px; height: 72px; }
   .claim-plan-table article > label { grid-column: 1 / -1; }
   .claim-plan-table article > .icon-action { grid-column: 3; grid-row: 1; }
+}
+
+/* Keep the mobile stock-intake layout authoritative over legacy responsive layers. */
+@media (max-width: 620px) {
+  .shell.stock-intake-mode {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .stock-intake-mode .app-header,
+  .stock-intake-mode .nav {
+    display: none;
+  }
+
+  .stock-intake-header {
+    min-height: 40px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 5px;
+  }
+
+  .stock-intake-header > div {
+    display: block;
+  }
+
+  .stock-intake-header .stock-intake-back {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+
+  .stock-intake-mode .catalog-picker {
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .stock-intake-mode .catalog-picker-search {
+    grid-template-columns: minmax(0, 1fr) 42px;
+  }
+
+  .stock-intake-mode .catalog-picker-search .primary-action {
+    width: 42px;
+    min-width: 42px;
+  }
+
+  .stock-intake-view .catalog-picker-results {
+    grid-template-columns: 1fr;
+    max-height: calc(100dvh - 188px);
+  }
+
+  .stock-intake-view .catalog-picker-row {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+  }
+
+  .stock-intake-view .catalog-picker-row img,
+  .stock-intake-view .catalog-picker-row .image-placeholder {
+    width: 48px;
+    height: 48px;
+  }
+
+  .stock-intake-view .catalog-picker-meta {
+    grid-column: 3;
+    grid-template-columns: 1fr;
+  }
+
+  .stock-intake-view .catalog-picker-prices {
+    min-width: 82px;
+  }
 }

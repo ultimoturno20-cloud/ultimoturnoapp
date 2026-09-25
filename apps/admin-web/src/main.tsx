@@ -3662,7 +3662,7 @@ function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, blueRate,
           <h2>Cargar stock</h2>
           <p>Busca una carta, registra sus datos y continua con la siguiente.</p>
         </div>
-        <button className="secondary-action" type="button" onClick={onClose}><Icon name="close" />Volver al inventario</button>
+        <button className="secondary-action stock-intake-back" type="button" onClick={onClose} aria-label="Volver al inventario" title="Volver al inventario"><Icon name="close" /><span>Volver al inventario</span></button>
       </header>
       {receipt ? <p className="intake-feedback stock-intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
       <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} onSearchPriceCharting={onSearchPriceCharting} />
@@ -3838,8 +3838,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <CurrencyToggle value={pickerCurrency} onChange={setPickerCurrency} />
             </div>
             <div className="catalog-picker-search">
-              <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoFocus />
-              <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)}><Icon name="search" />Buscar</button>
+              <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoComplete="off" enterKeyHint="search" autoFocus />
+              <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)} aria-label="Buscar cartas" title="Buscar cartas"><Icon name="search" /><span>Buscar</span></button>
             </div>
             {pickerEntries.length ? <div className="catalog-picker-results">
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
