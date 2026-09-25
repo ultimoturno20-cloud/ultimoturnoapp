@@ -3575,22 +3575,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       tpce.direct_low_price_usd as tcgplayer_direct_low_price_usd,
       cpc.price_usd as coolstuff_price_usd,
       coalesce(cpc.coolstuff_url, cie.coolstuff_url, '') as coolstuff_url,
-      (
-        select pi.unit_cost_ars
-        from purchase_items pi
-        join purchases pu on pu.id = pi.purchase_id
-        where pi.inventory_item_id = ii.id and pu.status = 'received'
-        order by pu.created_at desc
-        limit 1
-      ) as last_purchase_ars,
-      (
-        select pu.created_at
-        from purchase_items pi
-        join purchases pu on pu.id = pi.purchase_id
-        where pi.inventory_item_id = ii.id and pu.status = 'received'
-        order by pu.created_at desc
-        limit 1
-      ) as last_purchase_at,
+      latest_purchase.unit_cost_ars as last_purchase_ars,
+      latest_purchase.created_at as last_purchase_at,
       p.id as product_id,
       p.name as product_name,
       p.expansion,
@@ -3603,11 +3589,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       v.grading_company,
       v.grade,
       v.grading_cert,
-      coalesce(json_agg(json_build_object(
-        'source', es.name,
-        'externalId', ei.external_id,
-        'url', ei.external_url
-      )) filter (where ei.id is not null), '[]'::json) as identifiers
+      coalesce(identifier_data.identifiers, '[]'::json) as identifiers
     from inventory_items ii
     join card_products p on p.id = ii.product_id
     join card_variants v on v.id = ii.variant_id
@@ -3660,6 +3642,14 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       limit 1
     ) sibling_tcg on true
     left join lateral (
+      select pi.unit_cost_ars, pu.created_at
+      from purchase_items pi
+      join purchases pu on pu.id = pi.purchase_id
+      where pi.inventory_item_id = ii.id and pu.status = 'received'
+      order by pu.created_at desc
+      limit 1
+    ) latest_purchase on true
+    left join lateral (
       select *
       from tcgplayer_price_cache_entries candidate_price
       where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
@@ -3682,15 +3672,17 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       and lower(cpc.condition) = lower(v.condition)
       and lower(cpc.finish) = lower(v.finish)
       and cpc.status = 'matched'
-    left join external_identifiers ei on ei.product_id = p.id
-    left join external_sources es on es.id = ei.source_id
+    left join lateral (
+      select json_agg(json_build_object(
+        'source', es.name,
+        'externalId', ei.external_id,
+        'url', ei.external_url
+      ) order by es.name, ei.id) as identifiers
+      from external_identifiers ei
+      join external_sources es on es.id = ei.source_id
+      where ei.business_id = ii.business_id and ei.product_id = p.id
+    ) identifier_data on true
     where ii.business_id = $1
-    group by ii.id, cp.price_ars, cp.price_usd, p.id, v.id,
-      pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
-      cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
-      sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
-      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd,
-      cpc.price_usd, cpc.coolstuff_url, cie.coolstuff_url
     order by p.name, v.language, v.condition
   `, [demoBusinessId]);
 
@@ -3855,22 +3847,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       tpce.direct_low_price_usd as tcgplayer_direct_low_price_usd,
       cpc.price_usd as coolstuff_price_usd,
       coalesce(cpc.coolstuff_url, cie.coolstuff_url, '') as coolstuff_url,
-      (
-        select pi.unit_cost_ars
-        from purchase_items pi
-        join purchases pu on pu.id = pi.purchase_id
-        where pi.inventory_item_id = ii.id and pu.status = 'received'
-        order by pu.created_at desc
-        limit 1
-      ) as last_purchase_ars,
-      (
-        select pu.created_at
-        from purchase_items pi
-        join purchases pu on pu.id = pi.purchase_id
-        where pi.inventory_item_id = ii.id and pu.status = 'received'
-        order by pu.created_at desc
-        limit 1
-      ) as last_purchase_at,
+      latest_purchase.unit_cost_ars as last_purchase_ars,
+      latest_purchase.created_at as last_purchase_at,
       p.id as product_id,
       p.name as product_name,
       p.expansion,
@@ -3883,11 +3861,7 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       v.grading_company,
       v.grade,
       v.grading_cert,
-      coalesce(json_agg(json_build_object(
-        'source', es.name,
-        'externalId', ei.external_id,
-        'url', ei.external_url
-      )) filter (where ei.id is not null), '[]'::json) as identifiers
+      coalesce(identifier_data.identifiers, '[]'::json) as identifiers
     from inventory_items ii
     join card_products p on p.id = ii.product_id
     join card_variants v on v.id = ii.variant_id
@@ -3940,6 +3914,14 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       limit 1
     ) sibling_tcg on true
     left join lateral (
+      select pi.unit_cost_ars, pu.created_at
+      from purchase_items pi
+      join purchases pu on pu.id = pi.purchase_id
+      where pi.inventory_item_id = ii.id and pu.status = 'received'
+      order by pu.created_at desc
+      limit 1
+    ) latest_purchase on true
+    left join lateral (
       select *
       from tcgplayer_price_cache_entries candidate_price
       where candidate_price.tcgplayer_product_id = coalesce(nullif(cie.tcgplayer_product_id, ''), nullif(tcg_image.product_id, ''), nullif(sibling_tcg.tcgplayer_product_id, ''))
@@ -3962,15 +3944,17 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       and lower(cpc.condition) = lower(v.condition)
       and lower(cpc.finish) = lower(v.finish)
       and cpc.status = 'matched'
-    left join external_identifiers ei on ei.product_id = p.id
-    left join external_sources es on es.id = ei.source_id
+    left join lateral (
+      select json_agg(json_build_object(
+        'source', es.name,
+        'externalId', ei.external_id,
+        'url', ei.external_url
+      ) order by es.name, ei.id) as identifiers
+      from external_identifiers ei
+      join external_sources es on es.id = ei.source_id
+      where ei.business_id = ii.business_id and ei.product_id = p.id
+    ) identifier_data on true
     where ii.business_id = $1
-    group by ii.id, cp.price_ars, cp.price_usd, p.id, v.id,
-      pc_identifier.external_id, pc_identifier.external_url, pce.canonical_url, pce.loose_price_usd,
-      cie.tcgplayer_product_id, cie.tcgplayer_url, tcg_image.product_id, sibling_tcg.tcgplayer_product_id,
-      sibling_tcg.tcgplayer_url, tpce.sub_type_name, tpce.low_price_usd,
-      tpce.mid_price_usd, tpce.high_price_usd, tpce.market_price_usd, tpce.direct_low_price_usd,
-      cpc.price_usd, cpc.coolstuff_url, cie.coolstuff_url
     order by p.name, v.language, v.condition
   `, [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
