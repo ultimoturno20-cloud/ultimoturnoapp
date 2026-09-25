@@ -205,7 +205,7 @@ async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId
 
   const claimed = await db.query<{ business_id: string }>(`
     insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at)
-    values ($1, null, timestamp with time zone 'epoch', now())
+    values ($1, null, '1970-01-01 00:00:00+00'::timestamptz, now())
     on conflict (business_id) do update set refresh_started_at = now()
     where stock_read_snapshots.refreshed_at < now() - interval '15 seconds'
       and (stock_read_snapshots.refresh_started_at is null or stock_read_snapshots.refresh_started_at < now() - interval '30 seconds')
