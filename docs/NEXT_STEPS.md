@@ -9,11 +9,13 @@ Actualizado: 2026-09-26
 
 ### Verificar reparacion prioritaria de imagenes
 
-- Ejecutar `Resolver stock primero` despues del despliegue y confirmar que la
-  creacion de la cola termina sin `statement timeout`.
-- Registrar cantidad encolada, URLs encontradas y cartas de stock reparadas.
-- Repetir la operacion para comprobar que las entradas con URL existente no se
-  vuelvan a procesar.
+- Verificacion completada: la cola respondio en `1,7 s`, se encontraron `107`
+  URLs y el faltante de stock bajo de `188` a `81`, sin errores de proceso.
+- Revisar las `81` cartas restantes, principalmente ediciones japonesas,
+  chinas o expansiones con nombres no equivalentes entre fuentes. Mejorar el
+  mapeo de expansiones antes de bajar el umbral de confianza.
+- Repetir la operacion tras ampliar esos aliases y comprobar que las entradas
+  con URL existente no se vuelvan a procesar.
 
 Senal de exito: `/pricecharting-images/queue-stock` responde en segundos y la
 reparacion avanza sobre las cartas activas sin imagen, sin recorrer ni

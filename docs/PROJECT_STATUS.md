@@ -97,6 +97,11 @@ Actualizado: 2026-09-26
 - El indice masivo externo usa `/tmp/ultimoturno-external-image-index.json` en
   Vercel (o `EXTERNAL_IMAGE_INDEX_PATH` si se configura). Ya no intenta escribir
   dentro de `/var/task`, que es de solo lectura en funciones serverless.
+- Verificacion productiva del 26 de septiembre: la cola prioritaria respondio
+  en `1,7 s` y encolo las `188` cartas de stock sin imagen. El indice externo
+  proceso `300` pendientes en `126,6 s`, encontro `107` URLs confiables y no
+  registro fallos. El stock sin imagen bajo de `188` a `81`; las restantes se
+  conservaron pendientes porque no hubo coincidencia fuerte.
 - La pantalla `Calidad` se simplifico para el trabajo diario: conserva las
   metricas y la bandeja de revision, pero muestra solo `Sincronizar fuentes` y
   `Reparar imagenes prioritarias`. La sincronizacion ejecuta PriceCharting,
