@@ -3824,7 +3824,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
 
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
-            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length) ? `${Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas` : "Catalogo completo"}</strong></div>
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries) ? `${Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries).toLocaleString("es-AR")} cartas` : "Catalogo completo"}</strong></div>
             <div className="catalog-picker-tools">
               <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
               <CurrencyToggle value={pickerCurrency} onChange={setPickerCurrency} />

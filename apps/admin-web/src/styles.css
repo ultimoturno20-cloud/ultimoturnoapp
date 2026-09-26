@@ -12336,6 +12336,7 @@ body {
 
 .shell {
   display: grid;
+  align-content: start;
   gap: var(--app-gap);
   padding: 14px clamp(12px, 1.6vw, 24px) 24px;
 }
