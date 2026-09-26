@@ -75,6 +75,10 @@ Actualizado: 2026-09-26
   estaban ejecutando PriceCharting ni TCGplayer.
 - La aplicacion muestra una alerta global cuando la ultima corrida de alguna
   fuente fallo, nunca existio o tiene mas de 24 horas.
+- La alerta ya no confunde estados aun no cargados por la navegacion sectorial
+  con fuentes nunca ejecutadas. Administracion carga sus ocho indicadores en
+  tandas acotadas y conserva cada resultado exitoso aunque otro endpoint falle,
+  mostrando un aviso puntual para la fuente que no respondio.
 - `Mas > Administracion` muestra por fuente la programacion, ultima ejecucion,
   duracion real, resultado y error persistido. Los reintentos quedan bloqueados
   mientras estan corriendo; TCGplayer consulta primero la version de TCGCSV y

@@ -970,6 +970,7 @@ function App() {
   const [priceChartingAutoRefresh, setPriceChartingAutoRefresh] = useState<PriceChartingAutoRefreshStatus>(() => emptyPriceChartingAutoRefreshStatus());
   const [tcgplayerPrices, setTcgplayerPrices] = useState<TcgplayerPriceCacheStatus>(() => emptyTcgplayerPriceStatus());
   const [tcgplayerPriceAutoRefresh, setTcgplayerPriceAutoRefresh] = useState<TcgplayerPriceAutoRefreshStatus>(() => emptyTcgplayerPriceAutoRefreshStatus());
+  const [adminDataWarning, setAdminDataWarning] = useState("");
   const [tcgplayerPriceSyncing, setTcgplayerPriceSyncing] = useState(false);
   const [priceChartingImages, setPriceChartingImages] = useState<PriceChartingImageCacheStatus>(() => emptyPriceChartingImageStatus());
   const [cardIndexStatus, setCardIndexStatus] = useState<CardIndexStatus>(() => emptyCardIndexStatus());
@@ -1117,19 +1118,26 @@ function App() {
         setCardIndexStatus(indexListData.status.totalEntries || indexListData.entries.length ? indexListData.status : indexData);
         setCardIndexEntries(indexListData.entries);
       } else if (targetView === "admin") {
-        const [stockData, priceData, priceAutoData, tcgData, tcgAutoData, indexData, imageData, qualityData] = await Promise.all([
-          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
-          api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
-          api<PriceChartingAutoRefreshStatus>("/pricecharting-cache/auto-refresh/status"),
-          api<TcgplayerPriceCacheStatus>("/tcgplayer-prices/status"),
-          api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status"),
-          api<CardIndexStatus>("/card-index/status"),
-          api<PriceChartingImageCacheStatus>("/pricecharting-images/status"),
-          api<ImageDatabaseQuality>("/database-quality/images")
+        const failures: string[] = [];
+        const loadAdminResource = async <T,>(label: string, request: () => Promise<T>, apply: (value: T) => void) => {
+          try { apply(await request()); }
+          catch (nextError) { failures.push(`${label}: ${errorMessage(nextError)}`); }
+        };
+        await Promise.all([
+          loadAdminResource("PriceCharting", () => api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"), setPriceChartingCache),
+          loadAdminResource("TCGplayer", () => api<TcgplayerPriceCacheStatus>("/tcgplayer-prices/status"), setTcgplayerPrices),
+          loadAdminResource("Indice maestro", () => api<CardIndexStatus>("/card-index/status"), setCardIndexStatus)
         ]);
-        setStock(stockData); setPriceChartingCache(priceData); setPriceChartingAutoRefresh(priceAutoData);
-        setTcgplayerPrices(tcgData); setTcgplayerPriceAutoRefresh(tcgAutoData); setCardIndexStatus(indexData);
-        setPriceChartingImages(imageData); setImageQuality(qualityData);
+        await Promise.all([
+          loadAdminResource("Stock", () => api<{ summary: StockSummary; items: StockRow[] }>("/stock"), setStock),
+          loadAdminResource("Imagenes", () => api<PriceChartingImageCacheStatus>("/pricecharting-images/status"), setPriceChartingImages),
+          loadAdminResource("Calidad de imagenes", () => api<ImageDatabaseQuality>("/database-quality/images"), setImageQuality)
+        ]);
+        await Promise.all([
+          loadAdminResource("Automatizacion PriceCharting", () => api<PriceChartingAutoRefreshStatus>("/pricecharting-cache/auto-refresh/status"), setPriceChartingAutoRefresh),
+          loadAdminResource("Automatizacion TCGplayer", () => api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status"), setTcgplayerPriceAutoRefresh)
+        ]);
+        setAdminDataWarning(failures.length ? `No se pudieron actualizar ${failures.length} fuente(s): ${failures.join(" · ")}` : "");
       }
       loadedViewsAt.current.set(targetView, Date.now());
       setLastSyncedAt(new Date().toISOString());
@@ -2426,10 +2434,11 @@ function App() {
     .filter((sale) => new Date(sale.completedAt || sale.createdAt).getTime() >= todayStart.getTime())
     .reduce((sum, sale) => sum + (sale.amountPaidArs || sale.totalArs), 0);
   const openPurchaseArs = purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.totalArs, 0);
-  const staleAutomaticSources = [
+  const sourceStatusesLoaded = priceChartingCache.status.totalEntries > 0 || tcgplayerPrices.totalEntries > 0;
+  const staleAutomaticSources = sourceStatusesLoaded ? [
     automaticSourceHealth("PriceCharting", priceChartingCache.status.lastRun),
     automaticSourceHealth("TCGplayer", tcgplayerPrices.lastRun)
-  ].filter((source) => source.status !== "ok");
+  ].filter((source) => source.status !== "ok") : [];
   const startQuickOrder = (mode: "sale" | "reservation") => {
     setCartMode(mode);
     setSaleChannel("mostrador");
@@ -2760,6 +2769,7 @@ function App() {
           priceChartingAutoRefresh={priceChartingAutoRefresh}
           tcgplayerPrices={tcgplayerPrices}
           tcgplayerPriceAutoRefresh={tcgplayerPriceAutoRefresh}
+          dataWarning={adminDataWarning}
           priceChartingImages={priceChartingImages}
           imageQuality={imageQuality}
           cardIndexStatus={cardIndexStatus}
@@ -5698,6 +5708,7 @@ function AdminView(props: {
   priceChartingAutoRefresh: PriceChartingAutoRefreshStatus;
   tcgplayerPrices: TcgplayerPriceCacheStatus;
   tcgplayerPriceAutoRefresh: TcgplayerPriceAutoRefreshStatus;
+  dataWarning: string;
   priceChartingImages: PriceChartingImageCacheStatus;
   imageQuality: ImageDatabaseQuality;
   cardIndexStatus: CardIndexStatus;
@@ -5796,6 +5807,7 @@ function AdminView(props: {
         <div className="section-heading compact-heading">
           <div><h3>Estado de fuentes</h3><p>Semaforo rapido para saber si los datos base estan listos antes de vender o cargar stock.</p></div>
         </div>
+        {props.dataWarning ? <div className="source-health-warning"><Icon name="activity" /><span>{props.dataWarning}</span></div> : null}
         {priceChartingHealth.status !== "ok" || tcgplayerHealth.status !== "ok" ? (
           <div className="source-health-warning">
             <Icon name="activity" />
