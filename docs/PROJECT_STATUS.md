@@ -100,9 +100,9 @@ Actualizado: 2026-09-26
   idioma y fuente de precio quedan siempre accesibles en una franja compacta;
   expansion, condicion, lote, ubicacion, estado, categoria y calidad se agrupan
   en un panel avanzado corto, sin desplegar el bloque alto anterior.
-- Cada tarjeta de Inventario permite reparar su imagen directamente. El boton
-  queda destacado sobre los placeholders sin imagen y como icono discreto sobre
-  las cartas que ya tienen una, para poder forzar tambien una imagen incorrecta.
+- Cada tarjeta de Inventario sin imagen muestra `Reparar imagen` como una accion
+  propia debajo de Stock, Detalles y Carrito. No depende de overlays ni de abrir
+  el editor completo, y actualiza la tarjeta cuando encuentra una fuente valida.
 - `Resolver stock primero` ya no cruza todo el catalogo PriceCharting mediante
   condiciones `OR`. La cola parte solo del stock activo sin imagen, resuelve
   primero por el identificador PriceCharting indexado y usa

@@ -3436,21 +3436,11 @@ function InventoryView(props: {
                         </div>
                       </div>
                     </button>
-                    <button
-                      className={`inventory-card-image-repair ${item.product.imageUrl ? "has-image" : "missing-image"}`}
-                      type="button"
-                      disabled={Boolean(props.imageRepairingId)}
-                      aria-label={`Reparar imagen de ${item.product.name}`}
-                      title="Reparar imagen"
-                      onClick={() => props.onRepairImage(item)}
-                    >
-                      <Icon name="refresh" />
-                      <span>{props.imageRepairingId === `inventory:${item.id}` ? "Buscando..." : "Reparar"}</span>
-                    </button>
-                    <div className="inventory-card-actions">
+                    <div className={`inventory-card-actions ${item.product.imageUrl ? "" : "with-image-repair"}`}>
                       <button className="primary-action" onClick={() => setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name="plus" />Stock</button>
                       <button className="secondary-action" onClick={() => handleSelect(item)}>Detalles</button>
                       <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
+                      {!item.product.imageUrl ? <button className="secondary-action inventory-card-repair-action" type="button" disabled={Boolean(props.imageRepairingId)} onClick={() => props.onRepairImage(item)}><Icon name="refresh" />{props.imageRepairingId === `inventory:${item.id}` ? "Buscando imagen..." : "Reparar imagen"}</button> : null}
                     </div>
                     {intakeId === item.id ? <InventoryQuickIntake key={item.id} item={item} onSaved={props.onStockSaved} onClose={() => setIntakeId("")} /> : null}
                   </article>
