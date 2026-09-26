@@ -1006,7 +1006,7 @@ function App() {
   const [batchFilter, setBatchFilter] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
-  const [availability, setAvailability] = useState<AvailabilityFilter>("all");
+  const [availability, setAvailability] = useState<AvailabilityFilter>("available");
   const [inventoryPriceSource, setInventoryPriceSource] = useState<InventoryPriceSource>("sale");
   const [inventoryDensity, setInventoryDensity] = useState<InventoryDensity>("comfortable");
   const [sortMode, setSortMode] = useState<SortMode>("name");
@@ -2600,7 +2600,7 @@ function App() {
             setBatchFilter("all");
             setInventoryStatusFilter("all");
             setTagFilter("all");
-            setAvailability("all");
+            setAvailability("available");
             setInventoryPriceSource("sale");
             setSortMode("name");
             setIssue("all");
@@ -3212,8 +3212,7 @@ function InventoryView(props: {
   const [batchInventoryStatus, setBatchInventoryStatus] = useState("");
   const [batchTags, setBatchTags] = useState("");
   const [batchPriceSource, setBatchPriceSource] = useState<"none" | InventoryPriceSource>("none");
-  const activeFilters = [filters.expansion, filters.languageGroup, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.availability, filters.issue].filter((value) => value !== "all").length
-    + (filters.priceSource !== "sale" ? 1 : 0);
+  const advancedFilterCount = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.issue].filter((value) => value !== "all").length;
   const availabilityCounts = useMemo(() => ({
     all: allItems.length,
     available: allItems.filter((item) => item.availableQuantity > 0).length,
@@ -3297,54 +3296,47 @@ function InventoryView(props: {
           <InventorySearchField value={filters.query} onChange={(query) => props.onFilterChange({ query })} />
           <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
           <label className="sort-control">Ordenar<select value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
-          <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Filtros{activeFilters ? ` (${activeFilters})` : ""}</button>
           <button className={`secondary-action inventory-cart-button ${props.cart.length ? "has-items" : ""}`} type="button" aria-label={`Abrir carrito, ${props.cart.length} carta(s)`} title="Abrir carrito" onClick={() => setSideTab("cart")}><Icon name="cart" /><span className="inventory-cart-count">{props.cart.length}</span></button>
           <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
         </div>
+        <div className="inventory-quick-filter-bar">
+          <div className="availability-filter-row" aria-label="Disponibilidad">
+            {([
+              ["available", "Con stock", availabilityCounts.available],
+              ["all", "Todo", availabilityCounts.all],
+              ["reserved", "Reservadas", availabilityCounts.reserved],
+              ["out", "Sin stock", availabilityCounts.out]
+            ] as const).map(([value, label, count]) => (
+              <button className={filters.availability === value ? "active" : ""} type="button" key={value} onClick={() => props.onFilterChange({ availability: value })}>{label}<span>{count}</span></button>
+            ))}
+          </div>
+          <LanguageGroupSelector value={filters.languageGroup} onChange={(value) => props.onFilterChange({ languageGroup: value })} />
+          <label className="inventory-quick-select">Precio<select value={filters.priceSource} onChange={(event) => props.onFilterChange({ priceSource: event.target.value as InventoryPriceSource })}>
+            <option value="sale">Venta ({priceSourceCounts.sale})</option>
+            <option value="pricecharting">PriceCharting ({priceSourceCounts.pricecharting})</option>
+            <option value="tcgplayer">TCGplayer ({priceSourceCounts.tcgplayer})</option>
+            <option value="coolstuff">CoolStuff ({priceSourceCounts.coolstuff})</option>
+          </select></label>
+          <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{advancedFilterCount ? ` (${advancedFilterCount})` : ""}</button>
+        </div>
         {filtersOpen ? <div id="inventory-filter-options" className="inventory-filter-options">
-          <div className="inventory-display-options">
+          <div className="inventory-display-options inventory-advanced-actions">
             <div className="density-toggle" aria-label="Densidad de inventario">
               <button className={props.density === "comfortable" ? "active" : ""} type="button" onClick={() => props.onDensityChange("comfortable")}>Grande</button>
               <button className={props.density === "compact" ? "active" : ""} type="button" onClick={() => props.onDensityChange("compact")}>Compacta</button>
             </div>
-
+            <label className="inventory-quick-select">Calidad<select value={filters.issue} onChange={(event) => props.onFilterChange({ issue: event.target.value as IssueFilter })}>
+              <option value="all">Todas</option>
+              <option value="missingImage">Sin imagen ({props.quality.missingImage})</option>
+              <option value="missingPriceCharting">Sin PriceCharting ({props.quality.missingPriceCharting})</option>
+              <option value="zeroPrice">Precio cero ({props.quality.zeroPrice})</option>
+              <option value="lowStock">Stock bajo ({props.quality.lowStock})</option>
+              <option value="duplicates">Duplicados ({props.quality.duplicates})</option>
+            </select></label>
             <button className="secondary-action" disabled={!items.length} onClick={() => exportInventoryCsv(items)}><Icon name="download" />Exportar vista</button>
+            <button className="clear-action" type="button" onClick={props.onClearFilters}>Restablecer</button>
           </div>
-        <div className="issue-filter-row">
-          {([
-            ["all", "Todo", allItems.length],
-            ["missingImage", "Sin imagen", props.quality.missingImage],
-            ["missingPriceCharting", "Sin PriceCharting", props.quality.missingPriceCharting],
-            ["zeroPrice", "Precio cero", props.quality.zeroPrice],
-            ["lowStock", "Stock bajo", props.quality.lowStock],
-            ["duplicates", "Duplicados", props.quality.duplicates]
-          ] as const).map(([value, label, count]) => (
-            <button className={filters.issue === value ? "active" : ""} key={value} onClick={() => props.onFilterChange({ issue: value })}>{label}<span>{count}</span></button>
-          ))}
-        </div>
-        <div className="availability-filter-row">
-          {([
-            ["all", "Todo", availabilityCounts.all],
-            ["available", "Con stock", availabilityCounts.available],
-            ["reserved", "Reservadas", availabilityCounts.reserved],
-            ["out", "Sin stock", availabilityCounts.out]
-          ] as const).map(([value, label, count]) => (
-            <button className={filters.availability === value ? "active" : ""} key={value} onClick={() => props.onFilterChange({ availability: value })}>{label}<span>{count}</span></button>
-          ))}
-        </div>
-        <LanguageGroupSelector value={filters.languageGroup} onChange={(value) => props.onFilterChange({ languageGroup: value })} />
-        <div className="price-source-filter-row">
-          <span>Precios</span>
-          {([
-            ["sale", "Venta", priceSourceCounts.sale],
-            ["pricecharting", "PriceCharting", priceSourceCounts.pricecharting],
-            ["tcgplayer", "TCGplayer", priceSourceCounts.tcgplayer],
-            ["coolstuff", "CoolStuff", priceSourceCounts.coolstuff]
-          ] as const).map(([value, label, count]) => (
-            <button className={filters.priceSource === value ? "active" : ""} key={value} onClick={() => props.onFilterChange({ priceSource: value })}>{label}<small>{count}</small></button>
-          ))}
-        </div>
-        {filtersOpen ? <div className="advanced-filters">
+        <div className="advanced-filters">
           <label>Expansion<select value={filters.expansion} onChange={(event) => props.onFilterChange({ expansion: event.target.value })}><option value="all">Todas</option>{options.expansions.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Idioma<select value={filters.language} onChange={(event) => props.onFilterChange({ language: event.target.value })}><option value="all">Todos</option>{options.languages.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Condicion<select value={filters.condition} onChange={(event) => props.onFilterChange({ condition: event.target.value })}><option value="all">Todas</option>{options.conditions.map((value) => <option key={value}>{value}</option>)}</select></label>
@@ -3352,9 +3344,7 @@ function InventoryView(props: {
           <label>Ubicacion<select value={filters.location} onChange={(event) => props.onFilterChange({ location: event.target.value })}><option value="all">Todas</option>{options.locations.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Estado<select value={filters.inventoryStatus} onChange={(event) => props.onFilterChange({ inventoryStatus: event.target.value })}><option value="all">Todos</option>{options.inventoryStatuses.map((value) => <option value={value} key={value}>{inventoryStatusLabel(value)}</option>)}</select></label>
           <label>Categoria<select value={filters.tag} onChange={(event) => props.onFilterChange({ tag: event.target.value })}><option value="all">Todas</option>{options.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-          <label>Disponibilidad<select value={filters.availability} onChange={(event) => props.onFilterChange({ availability: event.target.value as AvailabilityFilter })}><option value="all">Todas</option><option value="available">Con disponible</option><option value="reserved">Con reserva</option><option value="out">Sin disponible</option></select></label>
-          <button className="clear-action" onClick={props.onClearFilters}>Limpiar filtros</button>
-        </div> : null}
+        </div>
         </div> : null}
       </div>
 

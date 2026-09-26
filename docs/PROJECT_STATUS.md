@@ -92,6 +92,10 @@ Actualizado: 2026-09-26
   ocultar precios y copiar la lista, copiar una grilla PNG, descargar CSV o
   descargar una o varias grillas PNG con las cartas agregadas. La grilla ajusta
   sus columnas y filas a las cartas presentes, sin exportar el lienzo 5x6 vacio.
+- Inventario abre por defecto mostrando cartas con stock. Disponibilidad,
+  idioma y fuente de precio quedan siempre accesibles en una franja compacta;
+  expansion, condicion, lote, ubicacion, estado, categoria y calidad se agrupan
+  en un panel avanzado corto, sin desplegar el bloque alto anterior.
 - `Resolver stock primero` ya no cruza todo el catalogo PriceCharting mediante
   condiciones `OR`. La cola parte solo del stock activo sin imagen, resuelve
   primero por el identificador PriceCharting indexado y usa

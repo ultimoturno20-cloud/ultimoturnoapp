@@ -11164,7 +11164,7 @@ main:has(.stock-layout) .operations-dock { display: none; }
 }
 .inventory-command-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto 145px auto auto auto;
+  grid-template-columns: minmax(160px, 1fr) auto 145px auto auto;
   align-items: center;
   gap: 10px;
 }
@@ -11205,16 +11205,63 @@ main:has(.stock-layout) .operations-dock { display: none; }
   font-size: 10px;
   font-weight: 800;
 }
-.inventory-filter-options { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.inventory-quick-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.inventory-quick-filter-bar > * { flex: 0 0 auto; }
+.inventory-quick-filter-bar .availability-filter-row,
+.inventory-quick-filter-bar .language-group-row { flex-wrap: nowrap; padding-top: 0; }
+.inventory-quick-filter-bar .availability-filter-row button,
+.inventory-quick-filter-bar .language-group-row button { min-height: 34px; }
+.inventory-quick-filter-bar .filter-toggle { margin-left: auto; }
+.inventory-quick-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.inventory-quick-select select { width: auto; min-width: 132px; min-height: 34px; height: 34px; padding-block: 0; font-size: 12px; }
+.inventory-filter-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #0d0d11;
+}
 .inventory-display-options { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.inventory-advanced-actions { justify-content: flex-start; flex-wrap: wrap; }
+.inventory-advanced-actions .clear-action { margin-left: auto; min-height: 34px; }
+.compact-inventory-toolbar .advanced-filters {
+  grid-template-columns: repeat(4, minmax(135px, 1fr));
+  gap: 8px;
+  padding-top: 8px;
+}
+.compact-inventory-toolbar .advanced-filters label { gap: 4px; font-size: 10px; }
+.compact-inventory-toolbar .advanced-filters select { min-height: 34px; height: 34px; padding-block: 0; font-size: 12px; }
 .stock-layout .product-list-panel > .section-heading { margin-bottom: 8px; }
 .stock-layout .product-list-panel > .section-heading h3 { font-size: 15px; }
 @media (max-width: 760px) {
   .compact-inventory-toolbar { max-height: calc(100dvh - 90px); }
-  .inventory-command-row { grid-template-columns: minmax(0,1fr) auto auto auto; gap: 6px; }
+  .inventory-command-row { grid-template-columns: minmax(0,1fr) auto auto; gap: 6px; }
   .inventory-command-row .inventory-search { grid-column: 1 / -1; }
   .inventory-command-row .inventory-result-count { display: none; }
   .inventory-command-row .sort-control { min-width: 0; }
+  .inventory-quick-filter-bar { margin-inline: -2px; padding-bottom: 3px; }
+  .inventory-quick-filter-bar .language-group-row > span { display: none; }
+  .inventory-quick-filter-bar .filter-toggle { margin-left: 0; }
+  .inventory-advanced-actions .inventory-quick-select { display: flex; }
+  .compact-inventory-toolbar .advanced-filters { grid-template-columns: repeat(2, minmax(125px, 1fr)); }
 }
 
 .stock-layout { animation: none; }
