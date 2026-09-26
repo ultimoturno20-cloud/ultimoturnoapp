@@ -7,7 +7,25 @@ Actualizado: 2026-09-26
 
 ## Prioridades vigentes
 
-### 0. Activar y pilotear el planificador de claims
+### 0. Medir la nueva ruta rapida en operacion real
+
+- Probar inicio directo en `/inventario`, `/inventario/cargar-stock`,
+  `/ordenes` y `/claims` desde escritorio y celular, incluyendo una sesion fria.
+- Confirmar en la pestana Network que Cargar stock no solicita `/stock`,
+  `/sales`, `/audit` ni `/mobile-intake/entries` durante el arranque.
+- Registrar cualquier API que supere dos segundos con ruta, hora y accion; no
+  volver a una carga global para ocultar datos faltantes.
+- Vigilar errores de pool durante varias sesiones simultaneas. Las respuestas
+  grandes deben conservar `Content-Encoding: gzip`.
+- Si Inventario sigue siendo lento con los `344 KB` comprimidos actuales,
+  implementar listado paginado/resumido y cargar detalles bajo demanda en vez
+  de enviar todos los campos de los 1.300+ SKUs.
+
+Senal de exito: Cargar stock abre en menos de un segundo con conexion caliente,
+las busquedas normales responden cerca de un segundo y ninguna vista genera una
+rafaga de APIs ajenas al sector.
+
+### Activar y pilotear el planificador de claims
 
 - Configurar `OPENAI_API_KEY` en Vercel para habilitar el asistente; no guardar
   la clave en Git ni exponerla al frontend.

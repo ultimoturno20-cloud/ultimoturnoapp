@@ -26,7 +26,7 @@ Estado Git y produccion al cerrar este traspaso:
 
 ```text
 Rama: main
-Commit desplegado: ad609e5 Mejorar carga de stock en celular
+Commit desplegado: 08a2e0c perf: eliminar contador bloqueante del alta
 Produccion: https://ultimoturnoapp-api.vercel.app/
 DB: Supabase/Postgres por transaction pooler
 Storage: Supabase Storage
@@ -36,6 +36,11 @@ Verificacion del ultimo cambio: lint, typecheck y build OK; PostgreSQL online ac
 
 Cambios recientes resumidos:
 
+- carga inicial por sector en lugar de unas 18 APIs globales; los refresh de
+  operaciones tambien quedan acotados a la vista activa;
+- respuestas JSON compactas y gzip para payloads grandes: `/stock` paso de
+  2.510.223 bytes sin compresion a 344.611 bytes transferidos;
+- Cargar stock ya no pide `/stock` ni el contador lento del catalogo al abrir;
 - carga de stock en pagina completa y sin reapertura del modal viejo;
 - version movil compacta de carga de stock, con filtros horizontales, buscador
   en una fila, resultados densos y espacio para teclado/barra del navegador;
@@ -81,7 +86,7 @@ Antes de responder o modificar archivos, lee:
 Luego revisa git status y confirma el commit actual. Produccion funciona en
 https://ultimoturnoapp-api.vercel.app/ con Vercel, Supabase/Postgres y Supabase
 Storage. El ultimo commit de produccion confirmado al cerrar el chat anterior
-fue ad609e5.
+fue 08a2e0c.
 
 Hay un claim activo, ordenes y stock reales: no los elimines, canceles ni
 recrees durante pruebas. No guardes secretos en Git.

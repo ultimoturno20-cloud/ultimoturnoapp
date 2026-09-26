@@ -11,7 +11,7 @@ Actualizado: 2026-09-26
 - Produccion: `https://ultimoturnoapp-api.vercel.app/`.
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
-- Ultimo commit funcional desplegado y verificado: `ad609e5`.
+- Ultimo commit funcional desplegado y verificado: `08a2e0c`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
@@ -21,6 +21,26 @@ Actualizado: 2026-09-26
 
 ### Navegacion y sincronizacion
 
+- El arranque ya no descarga toda la plataforma. Antes esperaba unas 18 APIs
+  globales, incluyendo stock, ventas, compras, auditoria, herramientas de
+  calidad y hasta 20.000 capturas moviles aunque esa pantalla no las usara.
+  Ahora autentica y carga solo los datos de la URL visible; cada sector se
+  obtiene al entrar y mantiene su sincronizacion independiente.
+- Las navegaciones nuevas disparan su consulta inmediatamente y las solicitudes
+  concurrentes se deduplican por sector. Una operacion ya no ejecuta el refresh
+  global: actualiza solamente la vista activa.
+- `Cargar stock` no descarga el inventario completo ni consulta el conteo caro
+  del catalogo al iniciar. El contador muestra `Catalogo completo` hasta tener
+  un total disponible sin bloquear; la busqueda consulta directamente el
+  endpoint indexado.
+- La API serializa JSON compacto y comprime con gzip las respuestas mayores a
+  1 KB. En produccion, `/stock` bajo de `2.510.223` bytes compactos sin
+  compresion a `344.611` bytes transferidos con gzip, cerca de 86% menos.
+- Medicion productiva previa al cambio: `/stock` entregaba aproximadamente
+  3,5 MB de JSON indentado; `/catalog-cards?q=pikachu` rondaba 1 segundo y el
+  contador `/pricecharting-cache/status` llego a 6,5 segundos. El contador fue
+  retirado del camino critico. Commit funcional: `a2b98c3`; ajuste final de
+  arranque: `08a2e0c`.
 - Se unifico el sistema visual global: cabecera, navegacion y barra operativa
   permanecen en el flujo normal para no superponerse; `Mas` despliega una
   franja que empuja el contenido y se cierra al navegar. Paneles, botones,
@@ -264,6 +284,8 @@ Actualizado: 2026-09-26
 ## Commits funcionales recientes
 
 ```text
+08a2e0c perf: eliminar contador bloqueante del alta
+a2b98c3 perf: cargar cada sector bajo demanda
 ad609e5 Mejorar carga de stock en celular
 bc1c859 perf(api): compress shared stock snapshots
 8ad146f fix(db): use portable snapshot epoch
