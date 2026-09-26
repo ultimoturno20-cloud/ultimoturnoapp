@@ -7,6 +7,18 @@ Actualizado: 2026-09-26
 
 ## Prioridades vigentes
 
+### Verificar reparacion prioritaria de imagenes
+
+- Ejecutar `Resolver stock primero` despues del despliegue y confirmar que la
+  creacion de la cola termina sin `statement timeout`.
+- Registrar cantidad encolada, URLs encontradas y cartas de stock reparadas.
+- Repetir la operacion para comprobar que las entradas con URL existente no se
+  vuelvan a procesar.
+
+Senal de exito: `/pricecharting-images/queue-stock` responde en segundos y la
+reparacion avanza sobre las cartas activas sin imagen, sin recorrer ni
+reescribir todo el catalogo.
+
 ### 0. Medir la nueva ruta rapida en operacion real
 
 - Probar inicio directo en `/inventario`, `/inventario/cargar-stock`,

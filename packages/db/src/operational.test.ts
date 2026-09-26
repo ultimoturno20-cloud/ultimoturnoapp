@@ -17,6 +17,7 @@ import {
   createOperationalDatabase,
   ensurePriceChartingImageQueueForActiveClaim,
   ensurePriceChartingImageQueueForAll,
+  ensurePriceChartingImageQueueForStock,
   getDefaultOperationalUser,
   getImageDatabaseQuality,
   enrichCardIndexFromTcgCsv,
@@ -1742,6 +1743,102 @@ describe("operational inventory database", () => {
     assert.equal(status.bytesStored, 120000);
     const cache = await listPriceChartingCache(db, "pikachu", 10);
     assert.equal(cache.entries[0].imageUrl, "https://storage.googleapis.com/images.pricecharting.com/test/1600.jpg");
+    await db.close();
+  });
+
+  it("queues only unresolved stock images using direct and catalog matches", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-pricecharting-stock-images-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "stock-image-queue-test",
+      rowsReceived: 2,
+      rowsSkipped: 0,
+      rows: [
+        {
+          priceChartingId: "stock-direct-123",
+          canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-25",
+          sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-25",
+          productName: "Pikachu",
+          normalizedName: "pikachu",
+          expansionName: "Promo",
+          normalizedExpansion: "promo",
+          cardNumber: "025",
+          loosePriceUsd: 4.99,
+          imageUrl: "",
+          searchKey: "pikachu promo 025"
+        },
+        {
+          priceChartingId: "stock-fallback-456",
+          canonicalUrl: "https://www.pricecharting.com/game/jungle/eevee-51",
+          sourceUrl: "https://www.pricecharting.com/game/jungle/eevee-51",
+          productName: "Eevee",
+          normalizedName: "eevee",
+          expansionName: "Jungle",
+          normalizedExpansion: "jungle",
+          cardNumber: "051/064",
+          loosePriceUsd: 3.5,
+          imageUrl: "",
+          searchKey: "eevee jungle 051 064"
+        }
+      ]
+    });
+    await upsertInventoryItem(db, {
+      sku: "STOCK-IMAGE-DIRECT",
+      name: "Pikachu",
+      expansion: "Promo",
+      number: "25",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 5000,
+      priceUsd: 4.99,
+      imageUrl: "",
+      priceChartingId: "stock-direct-123"
+    }, user);
+    await upsertInventoryItem(db, {
+      sku: "STOCK-IMAGE-FALLBACK",
+      name: "Eevee",
+      expansion: "Jungle",
+      number: "51/64",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 3500,
+      priceUsd: 3.5,
+      imageUrl: ""
+    }, user);
+    await upsertInventoryItem(db, {
+      sku: "STOCK-IMAGE-RESOLVED",
+      name: "Pikachu",
+      expansion: "Promo",
+      number: "25",
+      language: "JP",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 5000,
+      priceUsd: 4.99,
+      imageUrl: "https://images.example.test/pikachu.jpg",
+      priceChartingId: "stock-direct-123"
+    }, user);
+
+    const queued = await ensurePriceChartingImageQueueForStock(db, user.businessId);
+    assert.equal(queued.queued, 2);
+    const queue = await claimPriceChartingImageQueue(db, 10);
+    assert.deepEqual(queue.map((entry) => entry.priceChartingId).sort(), ["stock-direct-123", "stock-fallback-456"]);
+
+    await recordPriceChartingImageUrlDiscovered(db, {
+      priceChartingId: "stock-direct-123",
+      sourceImageUrl: "https://images.example.test/pikachu.jpg"
+    });
+    assert.equal((await ensurePriceChartingImageQueueForStock(db, user.businessId)).queued, 1);
     await db.close();
   });
 

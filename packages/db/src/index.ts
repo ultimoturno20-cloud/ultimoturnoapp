@@ -2817,24 +2817,48 @@ export async function ensurePriceChartingImageQueueForAll(db: PGlite, limit = 10
 
 export async function ensurePriceChartingImageQueueForStock(db: PGlite, businessId: string): Promise<{ queued: number }> {
   const result = await db.query<{ queued: number }>(`
-    with stock_matches as (
-      select distinct on (pce.pricecharting_id)
-        pce.pricecharting_id,
-        pce.canonical_url
+    with stock_products as (
+      select distinct
+        p.id as product_id,
+        p.name,
+        p.expansion,
+        coalesce(p.card_number, '') as card_number
       from inventory_items ii
       join card_products p on p.id = ii.product_id
-      left join external_identifiers ei on ei.product_id = p.id
-      left join external_sources es on es.id = ei.source_id
-      join pricecharting_cache_entries pce on
-        pce.pricecharting_id = ei.external_id
-        or pce.canonical_url = ei.external_url
-        or (
-          pce.normalized_name = lower(p.name)
-          and pce.normalized_expansion = lower(p.expansion)
-          and coalesce(nullif(pce.card_number, ''), '') = coalesce(p.card_number, '')
-        )
       where ii.business_id = $1
         and ii.active = true
+        and (
+          coalesce(p.image_url, '') = ''
+          or p.image_url like '/pricecharting-images/%'
+        )
+    ),
+    stock_matches as (
+      select distinct
+        coalesce(direct_match.pricecharting_id, catalog_match.pricecharting_id) as pricecharting_id,
+        coalesce(direct_match.canonical_url, catalog_match.canonical_url) as canonical_url
+      from stock_products stock
+      left join lateral (
+        select pce.pricecharting_id, pce.canonical_url
+        from external_identifiers ei
+        join external_sources es on es.id = ei.source_id and es.name = 'pricecharting'
+        join pricecharting_cache_entries pce on pce.pricecharting_id = ei.external_id
+        where ei.business_id = $1
+          and ei.product_id = stock.product_id
+        order by ei.id
+        limit 1
+      ) direct_match on true
+      left join lateral (
+        select pce.pricecharting_id, pce.canonical_url
+        from pricecharting_cache_entries pce
+        where direct_match.pricecharting_id is null
+          and pce.normalized_name = trim(regexp_replace(regexp_replace(lower(stock.name), '[^a-z0-9]+', ' ', 'g'), '\\s+', ' ', 'g'))
+          and pce.normalized_expansion = trim(regexp_replace(regexp_replace(lower(stock.expansion), '[^a-z0-9]+', ' ', 'g'), '\\s+', ' ', 'g'))
+          and regexp_replace(lower(regexp_replace(split_part(coalesce(pce.card_number, ''), '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '') =
+              regexp_replace(lower(regexp_replace(split_part(stock.card_number, '/', 1), '[^a-zA-Z0-9]+', '', 'g')), '^0+', '')
+        order by pce.imported_at desc
+        limit 1
+      ) catalog_match on true
+      where coalesce(direct_match.pricecharting_id, catalog_match.pricecharting_id, '') <> ''
     ),
     upserted as (
       insert into pricecharting_image_cache (
@@ -2849,6 +2873,9 @@ export async function ensurePriceChartingImageQueueForStock(db: PGlite, business
         error_message = case when pricecharting_image_cache.status = 'downloaded' then pricecharting_image_cache.error_message else '' end,
         next_attempt_at = case when pricecharting_image_cache.status = 'downloaded' then pricecharting_image_cache.next_attempt_at else now() end,
         updated_at = now()
+      where pricecharting_image_cache.status <> 'downloaded'
+        and coalesce(pricecharting_image_cache.source_image_url, '') = ''
+        and coalesce(pricecharting_image_cache.public_url, '') = ''
       returning pricecharting_id
     )
     select count(*)::integer as queued from upserted

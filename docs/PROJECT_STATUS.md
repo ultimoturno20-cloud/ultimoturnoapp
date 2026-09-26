@@ -85,6 +85,15 @@ Actualizado: 2026-09-26
 
 ### Claims, catalogo y stock
 
+- `Resolver stock primero` ya no cruza todo el catalogo PriceCharting mediante
+  condiciones `OR`. La cola parte solo del stock activo sin imagen, resuelve
+  primero por el identificador PriceCharting indexado y usa
+  nombre/expansion/numero como respaldo. Tampoco reescribe entradas que ya
+  tienen una URL descubierta o descargada. Esto corrige el timeout de Postgres
+  en `/pricecharting-images/external-index` antes de iniciar la reparacion.
+- La regresion de cola de imagenes quedo cubierta por la suite: vinculacion
+  directa, coincidencia de catalogo con numeros normalizados, exclusion de
+  cartas con imagen y conservacion de URLs ya resueltas.
 - La pantalla `Calidad` se simplifico para el trabajo diario: conserva las
   metricas y la bandeja de revision, pero muestra solo `Sincronizar fuentes` y
   `Reparar imagenes prioritarias`. La sincronizacion ejecuta PriceCharting,
