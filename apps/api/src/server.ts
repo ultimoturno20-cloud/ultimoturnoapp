@@ -265,7 +265,11 @@ const priceChartingImageReadDirs = [...new Set([
   path.resolve(dataDir, "pricecharting-images"),
   path.resolve(dataDir, "..", "ultimoturno-pglite", "pricecharting-images")
 ])];
-const externalImageIndexPath = path.resolve(dataDir, "..", "external-image-index.json");
+const externalImageIndexPath = process.env.EXTERNAL_IMAGE_INDEX_PATH
+  ? path.resolve(process.env.EXTERNAL_IMAGE_INDEX_PATH)
+  : productionMode
+    ? path.resolve("/tmp", "ultimoturno-external-image-index.json")
+    : path.resolve(dataDir, "..", "external-image-index.json");
 const allowedOrigins = String(process.env.ULTIMOTURNO_ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim().replace(/\/+$/, ""))

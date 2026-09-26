@@ -94,6 +94,9 @@ Actualizado: 2026-09-26
 - La regresion de cola de imagenes quedo cubierta por la suite: vinculacion
   directa, coincidencia de catalogo con numeros normalizados, exclusion de
   cartas con imagen y conservacion de URLs ya resueltas.
+- El indice masivo externo usa `/tmp/ultimoturno-external-image-index.json` en
+  Vercel (o `EXTERNAL_IMAGE_INDEX_PATH` si se configura). Ya no intenta escribir
+  dentro de `/var/task`, que es de solo lectura en funciones serverless.
 - La pantalla `Calidad` se simplifico para el trabajo diario: conserva las
   metricas y la bandeja de revision, pero muestra solo `Sincronizar fuentes` y
   `Reparar imagenes prioritarias`. La sincronizacion ejecuta PriceCharting,
