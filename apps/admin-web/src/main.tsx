@@ -937,7 +937,9 @@ function App() {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [viewRefreshing, setViewRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
-  const viewRefreshRequest = useRef<Promise<void> | null>(null);
+  const viewRefreshRequests = useRef(new Map<View, Promise<void>>());
+  const loadedViewsAt = useRef(new Map<View, number>());
+  const activeViewRefreshes = useRef(0);
   const routeInitialized = useRef(false);
   const [userName, setUserName] = useState("");
   const [environment, setEnvironment] = useState<AppEnvironment>({ dataProfile: "EJEMPLOS", allowExamples: true });
@@ -1021,60 +1023,28 @@ function App() {
   const [imageQuality, setImageQuality] = useState<ImageDatabaseQuality>(() => emptyImageDatabaseQuality());
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
 
-  async function fetchOperationalData() {
-    const [stockData, movementData, auditData, me] = await Promise.all([
-      api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
-      api<{ movements: MovementRow[] }>("/movements"),
-      api<{ audit: AuditRow[] }>("/audit"),
-      api<{ user: { displayName: string }; environment?: AppEnvironment }>("/auth/me")
-    ]);
-    const [salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, cardIndexData, cardIndexListData, priceChartingImageData, imageQualityData, blueRateData] = await Promise.all([
-      api<{ sales: SaleRecord[] }>("/sales").catch(() => ({ sales: [] })),
-      api<{ purchases: PurchaseRecord[] }>("/purchases").catch(() => ({ purchases: [] })),
-      api<{ imports: ImportRunRow[] }>("/imports").catch(() => ({ imports: [] })),
-      api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000").catch(() => ({ entries: [] })),
-      api<ClaimsWorkspace>("/claims"),
-      api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30")
-        .catch(() => ({ entries: [], status: emptyPriceChartingStatus() })),
-      api<PriceChartingAutoRefreshStatus>("/pricecharting-cache/auto-refresh/status").catch(() => emptyPriceChartingAutoRefreshStatus()),
-      api<TcgplayerPriceCacheStatus>("/tcgplayer-prices/status").catch(() => emptyTcgplayerPriceStatus()),
-      api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status").catch(() => emptyTcgplayerPriceAutoRefreshStatus()),
-      api<CardIndexStatus>("/card-index/status").catch(() => emptyCardIndexStatus()),
-      api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>("/card-index?limit=60").catch(() => ({ entries: [], status: emptyCardIndexStatus() })),
-      api<PriceChartingImageCacheStatus>("/pricecharting-images/status").catch(() => emptyPriceChartingImageStatus()),
-      api<ImageDatabaseQuality>("/database-quality/images").catch(() => emptyImageDatabaseQuality()),
+  async function bootstrap(seedExamplesIfEmpty = false) {
+    const [me, rate] = await Promise.all([
+      api<{ user: { displayName: string }; environment?: AppEnvironment }>("/auth/me"),
       api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate())
     ]);
-    return { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me };
+    const nextEnvironment = me.environment || { dataProfile: "EJEMPLOS", allowExamples: true };
+    setUserName(me.user.displayName);
+    setEnvironment(nextEnvironment);
+    setBlueRate(rate);
+
+    if (seedExamplesIfEmpty && nextEnvironment.allowExamples) {
+      const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
+      if (!stockData.items.length) {
+        const result = await api<{ created: number; skipped: number }>("/examples/inventory", { method: "POST" });
+        if (result.created > 0) showMessage(`Cargue ${result.created} ejemplos para que puedas revisar el flujo.`);
+      }
+    }
+    await refreshViewData(view);
   }
 
-  async function refresh(seedExamplesIfEmpty = false) {
-    let { stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData();
-    if (seedExamplesIfEmpty && stockData.items.length === 0 && me.environment?.allowExamples !== false) {
-      const result = await api<{ created: number; skipped: number }>("/examples/inventory", { method: "POST" });
-      ({ stockData, movementData, auditData, salesData, purchasesData, importData, mobileEntryData, claimsData, priceChartingData, priceChartingAutoRefreshData, tcgplayerPriceData, tcgplayerPriceAutoRefreshData, priceChartingImageData, imageQualityData, cardIndexData, cardIndexListData, blueRateData, me } = await fetchOperationalData());
-      if (result.created > 0) showMessage(`Cargue ${result.created} ejemplos para que puedas revisar el flujo.`);
-    }
-    setStock(stockData);
-    setMovements(movementData.movements);
-    setAudit(auditData.audit);
-    setSales(salesData.sales);
-    setPurchases(purchasesData.purchases);
-    setImportRuns(importData.imports);
-    setMobileEntries(mobileEntryData.entries);
-    setClaims(claimsData);
-    setPriceChartingCache(priceChartingData);
-    setPriceChartingAutoRefresh(priceChartingAutoRefreshData);
-    setTcgplayerPrices(tcgplayerPriceData);
-    setTcgplayerPriceAutoRefresh(tcgplayerPriceAutoRefreshData);
-    setPriceChartingImages(priceChartingImageData);
-    setImageQuality(imageQualityData);
-    setCardIndexStatus(cardIndexListData.status.totalEntries || cardIndexListData.entries.length ? cardIndexListData.status : cardIndexData);
-    setCardIndexEntries(cardIndexListData.entries);
-    setBlueRate(blueRateData);
-    setUserName(me.user.displayName);
-    setEnvironment(me.environment || { dataProfile: "EJEMPLOS", allowExamples: true });
-    setSelectedId((current) => current || stockData.items[0]?.id || "");
+  async function refresh() {
+    await refreshViewData(view);
   }
 
   async function refreshStock() {
@@ -1082,14 +1052,29 @@ function App() {
   }
 
   async function refreshViewData(targetView: View = view) {
-    if (viewRefreshRequest.current) return viewRefreshRequest.current;
+    const existing = viewRefreshRequests.current.get(targetView);
+    if (existing) return existing;
     const request = (async () => {
+      activeViewRefreshes.current += 1;
       setViewRefreshing(true);
-      if (targetView === "inventory" || targetView === "stock-intake" || targetView === "resellers") {
+      if (targetView === "dashboard") {
+        const [stockData, movementData, auditData, salesData] = await Promise.all([
+          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
+          api<{ movements: MovementRow[] }>("/movements"),
+          api<{ audit: AuditRow[] }>("/audit"),
+          api<{ sales: SaleRecord[] }>("/sales")
+        ]);
+        setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales);
+      } else if (targetView === "inventory" || targetView === "resellers") {
         await refreshStock();
-      } else if (targetView === "claims" || targetView === "claim-live") {
+      } else if (targetView === "stock-intake") {
+        const status = await api<PriceChartingCacheStatus>("/pricecharting-cache/status").catch(() => emptyPriceChartingStatus());
+        setPriceChartingCache((current) => ({ ...current, status }));
+      } else if (targetView === "claims") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setClaims(claimsData); setStock(stockData);
+      } else if (targetView === "claim-live") {
+        setClaims(await api<ClaimsWorkspace>("/claims"));
       } else if (targetView === "claim-planner") {
         const [plansData, claimsData, stockData] = await Promise.all([api<ClaimPlansResponse>("/claim-plans"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setClaimPlans(plansData); setClaims(claimsData); setStock(stockData);
@@ -1110,35 +1095,41 @@ function App() {
       } else if (targetView === "mobile-intake") {
         setMobileEntries((await api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000")).entries);
       } else if (targetView === "catalog") {
-        const [stockData, imageData, qualityData] = await Promise.all([api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<PriceChartingImageCacheStatus>("/pricecharting-images/status"), api<ImageDatabaseQuality>("/database-quality/images")]);
-        setStock(stockData); setPriceChartingImages(imageData); setImageQuality(qualityData);
+        const [priceData, imageData, qualityData, indexData, indexListData] = await Promise.all([
+          api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
+          api<PriceChartingImageCacheStatus>("/pricecharting-images/status"),
+          api<ImageDatabaseQuality>("/database-quality/images"),
+          api<CardIndexStatus>("/card-index/status"),
+          api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>("/card-index?limit=60")
+        ]);
+        setPriceChartingCache(priceData); setPriceChartingImages(imageData); setImageQuality(qualityData);
+        setCardIndexStatus(indexListData.status.totalEntries || indexListData.entries.length ? indexListData.status : indexData);
+        setCardIndexEntries(indexListData.entries);
       } else if (targetView === "admin") {
-        const [stockData, priceData, tcgData, indexData, imageData, qualityData] = await Promise.all([
+        const [stockData, priceData, priceAutoData, tcgData, tcgAutoData, indexData, imageData, qualityData] = await Promise.all([
           api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
           api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
+          api<PriceChartingAutoRefreshStatus>("/pricecharting-cache/auto-refresh/status"),
           api<TcgplayerPriceCacheStatus>("/tcgplayer-prices/status"),
+          api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status"),
           api<CardIndexStatus>("/card-index/status"),
           api<PriceChartingImageCacheStatus>("/pricecharting-images/status"),
           api<ImageDatabaseQuality>("/database-quality/images")
         ]);
-        setStock(stockData); setPriceChartingCache(priceData); setTcgplayerPrices(tcgData); setCardIndexStatus(indexData); setPriceChartingImages(imageData); setImageQuality(qualityData);
-      } else {
-        const [stockData, movementData, auditData, salesData, purchasesData, mobileData, rateData] = await Promise.all([
-          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
-          api<{ movements: MovementRow[] }>("/movements"),
-          api<{ audit: AuditRow[] }>("/audit"),
-          api<{ sales: SaleRecord[] }>("/sales"),
-          api<{ purchases: PurchaseRecord[] }>("/purchases"),
-          api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000"),
-          api<BlueExchangeRate>("/exchange-rate/blue").catch(() => blueRate)
-        ]);
-        setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales); setPurchases(purchasesData.purchases); setMobileEntries(mobileData.entries); setBlueRate(rateData);
+        setStock(stockData); setPriceChartingCache(priceData); setPriceChartingAutoRefresh(priceAutoData);
+        setTcgplayerPrices(tcgData); setTcgplayerPriceAutoRefresh(tcgAutoData); setCardIndexStatus(indexData);
+        setPriceChartingImages(imageData); setImageQuality(qualityData);
       }
+      loadedViewsAt.current.set(targetView, Date.now());
       setLastSyncedAt(new Date().toISOString());
     })();
-    viewRefreshRequest.current = request;
+    viewRefreshRequests.current.set(targetView, request);
     try { await request; }
-    finally { if (viewRefreshRequest.current === request) viewRefreshRequest.current = null; setViewRefreshing(false); }
+    finally {
+      if (viewRefreshRequests.current.get(targetView) === request) viewRefreshRequests.current.delete(targetView);
+      activeViewRefreshes.current = Math.max(0, activeViewRefreshes.current - 1);
+      if (!activeViewRefreshes.current) setViewRefreshing(false);
+    }
   }
 
   async function refreshPriceChartingImageStatus() {
@@ -1155,7 +1146,7 @@ function App() {
     setAccessChecking(true);
     setStoredAccessKey(nextKey);
     try {
-      await refresh();
+      await bootstrap();
       setInitialLoadComplete(true);
       setAccessRequired(false);
       setError("");
@@ -1172,7 +1163,7 @@ function App() {
   useEffect(() => {
     if (initialExamplesChecked) return;
     setInitialExamplesChecked(true);
-    refresh(true)
+    bootstrap(true)
       .catch((nextError) => {
         if (isAccessError(nextError)) setAccessRequired(true);
         else setError(errorMessage(nextError));
@@ -1190,8 +1181,10 @@ function App() {
   }, [view]);
 
   useEffect(() => {
-    if (!initialLoadComplete || accessRequired || view !== "claim-planner") return;
-    void refreshViewData("claim-planner").catch(showError);
+    if (!initialLoadComplete || accessRequired) return;
+    const loadedAt = loadedViewsAt.current.get(view) || 0;
+    if (Date.now() - loadedAt < 2_000) return;
+    void refreshViewData(view).catch(showError);
   }, [accessRequired, initialLoadComplete, view]);
 
   useEffect(() => {

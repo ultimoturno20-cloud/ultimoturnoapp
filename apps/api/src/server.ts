@@ -2823,10 +2823,16 @@ function applyCorsHeaders(request: IncomingMessage, response: ServerResponse) {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown) {
+  const body = Buffer.from(JSON.stringify(payload), "utf8");
+  const acceptsGzip = /(?:^|,)\s*gzip\s*(?:,|$)/i.test(String(response.req?.headers["accept-encoding"] || ""));
+  const compressed = acceptsGzip && body.length >= 1_024 ? gzipSync(body, { level: 6 }) : body;
   response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "private, no-store",
+    "Content-Length": String(compressed.length),
+    ...(compressed !== body ? { "Content-Encoding": "gzip", "Vary": "Accept-Encoding" } : {})
   });
-  response.end(JSON.stringify(payload, null, 2));
+  response.end(compressed);
 }
 
 function sendBuffer(response: ServerResponse, statusCode: number, body: Buffer, contentType: string, omitBody = false) {
