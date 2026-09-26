@@ -89,8 +89,9 @@ Actualizado: 2026-09-26
   contador en la barra superior. La apertura solicitada por `Cobrar ahora` se
   consume una sola vez, por lo que volver a Inventario ya no reabre el panel.
 - El carrito muestra totales ARS y USD en el encabezado. Permite incluir u
-  ocultar precios y copiar la lista, copiar una grilla PNG 5x6, descargar CSV o
-  descargar una o varias grillas PNG con las cartas agregadas.
+  ocultar precios y copiar la lista, copiar una grilla PNG, descargar CSV o
+  descargar una o varias grillas PNG con las cartas agregadas. La grilla ajusta
+  sus columnas y filas a las cartas presentes, sin exportar el lienzo 5x6 vacio.
 - `Resolver stock primero` ya no cruza todo el catalogo PriceCharting mediante
   condiciones `OR`. La cola parte solo del stock activo sin imagen, resuelve
   primero por el identificador PriceCharting indexado y usa

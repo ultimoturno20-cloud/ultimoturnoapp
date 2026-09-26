@@ -8851,8 +8851,8 @@ async function downloadCartGridImages(items: CartExportItem[], includePrices: bo
 
 async function renderCartGridPng(items: CartExportItem[], includePrices: boolean, blueRate: BlueExchangeRate): Promise<Blob> {
   if (!items.length) throw new Error("El carrito esta vacio.");
-  const columns = 5;
-  const rows = 6;
+  const columns = cartGridColumns(items.length);
+  const rows = Math.ceil(items.length / columns);
   const cardWidth = 220;
   const cardHeight = 308;
   const gap = 16;
@@ -8869,15 +8869,14 @@ async function renderCartGridPng(items: CartExportItem[], includePrices: boolean
   context.lineWidth = 6;
   context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
 
-  for (let index = 0; index < columns * rows; index++) {
-    const item = items[index];
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index]!;
     const col = index % columns;
     const row = Math.floor(index / columns);
     const x = padding + col * (cardWidth + gap);
     const y = padding + row * (cardHeight + gap);
     context.fillStyle = "#111116";
     context.fillRect(x, y, cardWidth, cardHeight);
-    if (!item) continue;
     const image = item.imageUrl ? await loadCanvasImage(canvasAssetUrl(item.imageUrl)) : null;
     if (image) drawCoverImage(context, image, x, y, cardWidth, cardHeight);
     else drawCartGridPlaceholder(context, item, x, y, cardWidth, cardHeight);
@@ -8907,6 +8906,26 @@ async function renderCartGridPng(items: CartExportItem[], includePrices: boolean
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("No se pudo exportar la grilla del carrito.")), "image/png");
   });
+}
+
+function cartGridColumns(itemCount: number): number {
+  const maxColumns = Math.min(5, itemCount);
+  let bestColumns = maxColumns;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let columns = 1; columns <= maxColumns; columns++) {
+    const rows = Math.ceil(itemCount / columns);
+    if (rows > 6) continue;
+
+    const emptySlots = columns * rows - itemCount;
+    const score = emptySlots * 10 + (maxColumns - columns);
+    if (score < bestScore) {
+      bestColumns = columns;
+      bestScore = score;
+    }
+  }
+
+  return bestColumns;
 }
 
 function drawCartGridPlaceholder(context: CanvasRenderingContext2D, item: CartExportItem, x: number, y: number, width: number, height: number) {
