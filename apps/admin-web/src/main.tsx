@@ -3451,7 +3451,7 @@ function InventoryView(props: {
           {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + 48)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
         </section>
 
-        {sideTab ? <aside className="workspace-side inventory-detail-drawer" role="dialog" aria-label={sideTab === "detail" ? "Detalles de la carta" : "Carrito"}>
+        {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"}`} role="dialog" aria-label={sideTab === "detail" ? "Detalles de la carta" : "Carrito"}>
           <button className="secondary-action drawer-close" onClick={() => setSideTab(null)}><Icon name="close" />Cerrar</button>
           <div className="side-tabs" role="tablist" aria-label="Panel de inventario">
             <button className={sideTab === "detail" ? "active" : ""} onClick={() => setSideTab("detail")}>Detalle</button>
@@ -3658,16 +3658,19 @@ function CartPanel(props: {
           <div className="cart-summary-panel">
             <dl className="sale-total"><div><dt>Total</dt><dd><MoneyStack ars={total} blueRate={props.blueRate} /></dd></div><div><dt>Destino</dt><dd>{props.mode === "sale" ? "Ventas" : "Ordenes"}</dd></div></dl>
             <p className="cart-notice">{props.mode === "sale" ? "Descuenta el stock al confirmar." : "Separa el stock y queda pendiente de cobro."}</p>
-            <div className="cart-export-panel">
-              <label className="cart-price-toggle"><input type="checkbox" checked={includeExportPrices} onChange={(event) => setIncludeExportPrices(event.target.checked)} /><span>Incluir precios</span></label>
-              <div className="cart-export-actions">
-                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("list")}><Icon name="copy" />Copiar lista</button>
-                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("copy-image")}><Icon name="copy" />Copiar imagen</button>
-                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("csv")}><Icon name="download" />Descargar CSV</button>
-                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("image")}><Icon name="image" />Descargar imagen</button>
+            <details className="cart-export-disclosure">
+              <summary><Icon name="download" />Compartir y descargar</summary>
+              <div className="cart-export-panel">
+                <label className="cart-price-toggle"><input type="checkbox" checked={includeExportPrices} onChange={(event) => setIncludeExportPrices(event.target.checked)} /><span>Incluir precios</span></label>
+                <div className="cart-export-actions">
+                  <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("list")}><Icon name="copy" />Copiar lista</button>
+                  <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("copy-image")}><Icon name="copy" />Copiar imagen</button>
+                  <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("csv")}><Icon name="download" />Descargar CSV</button>
+                  <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("image")}><Icon name="image" />Descargar imagen</button>
+                </div>
+                {exportFeedback ? <p className="cart-export-feedback" role="status">{exportFeedback}</p> : null}
               </div>
-              {exportFeedback ? <p className="cart-export-feedback" role="status">{exportFeedback}</p> : null}
-            </div>
+            </details>
             <button className="primary-action checkout-action" onClick={props.onSubmit}><Icon name="check" />{props.mode === "sale" ? "Confirmar venta" : "Crear reserva"}</button>
           </div>
         </div>

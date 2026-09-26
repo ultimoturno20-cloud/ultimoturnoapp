@@ -19,6 +19,8 @@ Actualizado: 2026-09-26
 
 ## Trabajo completado del 17 al 26 de septiembre
 
+- El carrito movil ahora ocupa la pantalla disponible, mantiene totales y confirmacion accesibles, desplaza solo la lista de cartas y agrupa las herramientas de exportacion en un desplegable compacto.
+
 ### Navegacion y sincronizacion
 
 - El arranque ya no descarga toda la plataforma. Antes esperaba unas 18 APIs
