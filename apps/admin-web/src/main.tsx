@@ -1480,6 +1480,27 @@ function App() {
     }
   }
 
+  async function repairInventoryCardImage(item: StockRow) {
+    if (imageRepairingId) return;
+    const repairId = `inventory:${item.id}`;
+    setImageRepairingId(repairId);
+    try {
+      const result = await api<{ item: StockRow; imageUrl: string; source: string; message: string }>(`/inventory/${item.id}/image/force`, {
+        method: "POST",
+        body: { mode: "auto" }
+      });
+      setStock((current) => {
+        const items = current.items.map((row) => row.id === result.item.id ? result.item : row);
+        return { items, summary: summarizeStockRows(items) };
+      });
+      showMessage(result.message || `Imagen reparada para ${item.product.name}.`);
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setImageRepairingId("");
+    }
+  }
+
   function forceProductImageManual() {
     if (!editingId) return;
     const manualUrl = window.prompt("Pega una URL directa de imagen o un link de PriceCharting:", form.imageUrl || "");
@@ -2574,6 +2595,7 @@ function App() {
           customerName={customerName}
           saleChannel={saleChannel}
           cartFocusNonce={cartFocusNonce}
+          imageRepairingId={imageRepairingId}
           onCartFocusHandled={() => setCartFocusNonce(0)}
           onFilterChange={(patch) => {
             if (patch.query !== undefined) setQuery(patch.query);
@@ -2619,6 +2641,7 @@ function App() {
           onAvailableQuantitySet={setAvailableQuantity}
           onTagsChange={(item, tags) => void updateInventoryTags(item, tags)}
           onAddToCart={addToCart}
+          onRepairImage={(item) => void repairInventoryCardImage(item)}
           onCartChange={setCart}
           onCartModeChange={setCartMode}
           onCustomerNameChange={setCustomerName}
@@ -3159,6 +3182,7 @@ function InventoryView(props: {
   customerName: string;
   saleChannel: string;
   cartFocusNonce: number;
+  imageRepairingId: string;
   onCartFocusHandled: () => void;
   onFilterChange: (patch: Partial<InventoryFilters>) => void;
   onClearFilters: () => void;
@@ -3174,6 +3198,7 @@ function InventoryView(props: {
   onAvailableQuantitySet: (item: StockRow, targetAvailable: number) => Promise<void>;
   onTagsChange: (item: StockRow, tags: string) => void;
   onAddToCart: (item: StockRow) => void;
+  onRepairImage: (item: StockRow) => void;
   onCartChange: (cart: CartLine[]) => void;
   onCartModeChange: (mode: "sale" | "reservation") => void;
   onCustomerNameChange: (value: string) => void;
@@ -3400,6 +3425,17 @@ function InventoryView(props: {
                           <small>{displayPrice.helper}</small>
                         </div>
                       </div>
+                    </button>
+                    <button
+                      className={`inventory-card-image-repair ${item.product.imageUrl ? "has-image" : "missing-image"}`}
+                      type="button"
+                      disabled={Boolean(props.imageRepairingId)}
+                      aria-label={`Reparar imagen de ${item.product.name}`}
+                      title="Reparar imagen"
+                      onClick={() => props.onRepairImage(item)}
+                    >
+                      <Icon name="refresh" />
+                      <span>{props.imageRepairingId === `inventory:${item.id}` ? "Buscando..." : "Reparar"}</span>
                     </button>
                     <div className="inventory-card-actions">
                       <button className="primary-action" onClick={() => setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name="plus" />Stock</button>
