@@ -3590,6 +3590,7 @@ function CartPanel(props: {
   blueRate: BlueExchangeRate;
 }) {
   const total = props.cart.reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
+  const totalUnits = props.cart.reduce((sum, line) => sum + line.quantity, 0);
   const totalUsd = fromBlueArs(total, props.blueRate);
   const exportItems = buildCartExportItems(props.items, props.cart);
   const [includeExportPrices, setIncludeExportPrices] = useState(true);
@@ -3625,7 +3626,7 @@ function CartPanel(props: {
   return (
     <section className={`panel cart-panel ${props.compact ? "compact-cart-panel" : ""} ${props.cart.length ? "active-cart-panel" : ""}`}>
       <div className="section-heading">
-        <div><h3>Carrito</h3><p>{props.cart.length ? `${props.cart.length} cartas listas para registrar` : "Agrega cartas desde el inventario"}</p></div>
+        <div><h3>Carrito</h3><p>{props.cart.length ? `${totalUnits} ${totalUnits === 1 ? "unidad" : "unidades"} en ${props.cart.length} ${props.cart.length === 1 ? "carta" : "cartas"}` : "Agrega cartas desde el inventario"}</p></div>
       </div>
       {props.cart.length ? (
         <div className="cart-panel-content">
@@ -3647,17 +3648,15 @@ function CartPanel(props: {
               if (!item) return null;
               return (
                 <div className="cart-line editable-cart-line" key={line.inventoryItemId}>
-                  <div><strong>{item.product.name}</strong><span>{item.product.expansion} - {inventoryVariantLabel(item)}</span></div>
-                  <label>Cant.<input type="number" min={1} max={item.availableQuantity} value={line.quantity} onChange={(event) => update(line.inventoryItemId, { quantity: Math.max(1, Math.min(item.availableQuantity, Number(event.target.value))) })} /></label>
-                  <label>Precio<input type="number" min={0} value={line.unitPriceArs} onChange={(event) => update(line.inventoryItemId, { unitPriceArs: Math.max(0, Number(event.target.value)) })} /></label>
+                  <div className="cart-line-identity"><strong>{item.product.name}</strong><span>{item.product.expansion} - {inventoryVariantLabel(item)}</span><small>{formatArs(line.quantity * line.unitPriceArs)}</small></div>
+                  <CartQuantityControl value={line.quantity} max={item.availableQuantity} onChange={(quantity) => update(line.inventoryItemId, { quantity })} />
+                  <CartPriceControl value={line.unitPriceArs} onChange={(unitPriceArs) => update(line.inventoryItemId, { unitPriceArs })} />
                   <button className="remove-action" aria-label={`Quitar ${item.product.name}`} title="Quitar" onClick={() => props.onCartChange(props.cart.filter((row) => row.inventoryItemId !== line.inventoryItemId))}><Icon name="close" /></button>
                 </div>
               );
             })}
           </div>
           <div className="cart-summary-panel">
-            <dl className="sale-total"><div><dt>Total</dt><dd><MoneyStack ars={total} blueRate={props.blueRate} /></dd></div><div><dt>Destino</dt><dd>{props.mode === "sale" ? "Ventas" : "Ordenes"}</dd></div></dl>
-            <p className="cart-notice">{props.mode === "sale" ? "Descuenta el stock al confirmar." : "Separa el stock y queda pendiente de cobro."}</p>
             <details className="cart-export-disclosure">
               <summary><Icon name="download" />Compartir y descargar</summary>
               <div className="cart-export-panel">
@@ -3671,11 +3670,77 @@ function CartPanel(props: {
                 {exportFeedback ? <p className="cart-export-feedback" role="status">{exportFeedback}</p> : null}
               </div>
             </details>
-            <button className="primary-action checkout-action" onClick={props.onSubmit}><Icon name="check" />{props.mode === "sale" ? "Confirmar venta" : "Crear reserva"}</button>
+            <button className="primary-action checkout-action" onClick={props.onSubmit}><Icon name="check" />{props.mode === "sale" ? `Cobrar ${formatArs(total)}` : `Reservar ${formatArs(total)}`}</button>
           </div>
         </div>
       ) : <EmptyState title="Carrito vacio" body="Usa Agregar en cualquier carta para armar una venta o reserva multiple." />}
     </section>
+  );
+}
+
+function CartQuantityControl({ value, max, onChange }: { value: number; max: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = (next: string, fallback = 1) => {
+    const parsed = Number(next);
+    const quantity = Math.max(1, Math.min(max, Number.isFinite(parsed) && next !== "" ? parsed : fallback));
+    setDraft(String(quantity));
+    onChange(quantity);
+  };
+  const step = (delta: number) => commit(String((Number(draft) || value || 1) + delta));
+  return (
+    <div className="cart-quantity-field">
+      <span>Cant.</span>
+      <div className="cart-quantity-stepper">
+        <button type="button" aria-label="Restar una unidad" title="Restar una unidad" disabled={(Number(draft) || value) <= 1} onClick={() => step(-1)}>−</button>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="Cantidad"
+          value={draft}
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => {
+            const next = event.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+            setDraft(next);
+            if (next !== "" && Number(next) >= 1) onChange(Math.min(max, Number(next)));
+          }}
+          onBlur={() => commit(draft)}
+          onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        />
+        <button type="button" aria-label="Agregar una unidad" title="Agregar una unidad" disabled={(Number(draft) || value) >= max} onClick={() => step(1)}>+</button>
+      </div>
+    </div>
+  );
+}
+
+function CartPriceControl({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const price = Math.max(0, Number(draft) || 0);
+    setDraft(String(price));
+    onChange(price);
+  };
+  return (
+    <label className="cart-price-field">
+      <span>Precio</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-label="Precio por unidad"
+        value={draft}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => {
+          const next = event.target.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+          setDraft(next);
+          if (next !== "") onChange(Number(next));
+        }}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+      />
+    </label>
   );
 }
 

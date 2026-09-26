@@ -6006,7 +6006,7 @@ select {
 }
 
 .compact-cart-panel .editable-cart-line {
-  grid-template-columns: minmax(0, 1fr) 64px 94px 36px;
+  grid-template-columns: minmax(0, 1fr) 122px 94px 36px;
   gap: 7px;
 }
 
@@ -6024,6 +6024,54 @@ select {
   width: 36px;
   height: 42px;
 }
+
+.cart-line > div > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.cart-quantity-field,
+.cart-price-field {
+  display: grid;
+  gap: 4px;
+}
+
+.cart-quantity-field > span,
+.cart-price-field > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cart-quantity-stepper {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 4px;
+}
+
+.cart-quantity-stepper button {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.cart-quantity-stepper button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: #ffffff;
+  background: rgba(245, 37, 70, 0.16);
+}
+
+.cart-quantity-stepper input { min-width: 0; padding-inline: 2px; }
 
 .cart-total-badge {
   font-size: 28px;
@@ -11336,12 +11384,8 @@ main:has(.stock-layout) .operations-dock { display: none; }
   }
 
   .cart-drawer .compact-cart-panel > .section-heading {
-    flex: 0 0 auto;
-    padding: 0;
+    display: none;
   }
-
-  .cart-drawer .compact-cart-panel > .section-heading h3 { font-size: 18px; }
-  .cart-drawer .compact-cart-panel > .section-heading p { display: none; }
 
   .cart-drawer .compact-cart-panel .cart-panel-content {
     display: grid;
@@ -11376,7 +11420,7 @@ main:has(.stock-layout) .operations-dock { display: none; }
   }
 
   .cart-drawer .compact-cart-panel .editable-cart-line {
-    grid-template-columns: minmax(0, 1fr) minmax(84px, 0.8fr) 36px;
+    grid-template-columns: minmax(150px, 1.2fr) minmax(96px, 0.8fr) 36px;
     grid-template-areas:
       "identity identity remove"
       "quantity price remove";
@@ -11384,12 +11428,16 @@ main:has(.stock-layout) .operations-dock { display: none; }
     padding: 8px;
   }
 
-  .cart-drawer .editable-cart-line > div { grid-area: identity; min-width: 0; }
-  .cart-drawer .editable-cart-line > label:nth-of-type(1) { grid-area: quantity; }
-  .cart-drawer .editable-cart-line > label:nth-of-type(2) { grid-area: price; }
+  .cart-drawer .editable-cart-line > .cart-line-identity { grid-area: identity; min-width: 0; }
+  .cart-drawer .editable-cart-line > .cart-quantity-field { grid-area: quantity; }
+  .cart-drawer .editable-cart-line > .cart-price-field { grid-area: price; }
   .cart-drawer .editable-cart-line > .remove-action { grid-area: remove; align-self: center; }
   .cart-drawer .editable-cart-line strong,
   .cart-drawer .editable-cart-line span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cart-drawer .cart-quantity-stepper { grid-template-columns: 32px minmax(0, 1fr) 32px; }
+  .cart-drawer .cart-quantity-stepper button,
+  .cart-drawer .cart-quantity-stepper input,
+  .cart-drawer .cart-price-field input { min-height: 40px; }
 
   .cart-drawer .cart-summary-panel {
     gap: 6px;
@@ -11398,8 +11446,6 @@ main:has(.stock-layout) .operations-dock { display: none; }
     background: var(--surface);
   }
 
-  .cart-drawer .cart-summary-panel > .sale-total,
-  .cart-drawer .cart-summary-panel > .cart-notice { display: none; }
   .cart-drawer .cart-export-disclosure { border-top: 0; }
   .cart-drawer .cart-export-disclosure > summary { min-height: 32px; }
   .cart-drawer .cart-export-panel { max-height: 30dvh; overflow-y: auto; padding-top: 8px; }
