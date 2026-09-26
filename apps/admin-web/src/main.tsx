@@ -1024,9 +1024,11 @@ function App() {
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
 
   async function bootstrap(seedExamplesIfEmpty = false) {
+    const routeRequest = refreshViewData(view);
     const [me, rate] = await Promise.all([
       api<{ user: { displayName: string }; environment?: AppEnvironment }>("/auth/me"),
-      api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate())
+      api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate()),
+      routeRequest
     ]);
     const nextEnvironment = me.environment || { dataProfile: "EJEMPLOS", allowExamples: true };
     setUserName(me.user.displayName);
@@ -1067,9 +1069,6 @@ function App() {
         setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales);
       } else if (targetView === "inventory" || targetView === "resellers") {
         await refreshStock();
-      } else if (targetView === "stock-intake") {
-        const status = await api<PriceChartingCacheStatus>("/pricecharting-cache/status").catch(() => emptyPriceChartingStatus());
-        setPriceChartingCache((current) => ({ ...current, status }));
       } else if (targetView === "claims") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setClaims(claimsData); setStock(stockData);
@@ -3825,7 +3824,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
 
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
-            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas</strong></div>
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length) ? `${Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries, allItems.length).toLocaleString("es-AR")} cartas` : "Catalogo completo"}</strong></div>
             <div className="catalog-picker-tools">
               <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
               <CurrencyToggle value={pickerCurrency} onChange={setPickerCurrency} />
