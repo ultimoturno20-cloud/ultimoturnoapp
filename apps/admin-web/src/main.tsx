@@ -2562,6 +2562,7 @@ function App() {
           customerName={customerName}
           saleChannel={saleChannel}
           cartFocusNonce={cartFocusNonce}
+          onCartFocusHandled={() => setCartFocusNonce(0)}
           onFilterChange={(patch) => {
             if (patch.query !== undefined) setQuery(patch.query);
             if (patch.expansion !== undefined) setExpansion(patch.expansion);
@@ -3146,6 +3147,7 @@ function InventoryView(props: {
   customerName: string;
   saleChannel: string;
   cartFocusNonce: number;
+  onCartFocusHandled: () => void;
   onFilterChange: (patch: Partial<InventoryFilters>) => void;
   onClearFilters: () => void;
   onDensityChange: (density: InventoryDensity) => void;
@@ -3234,8 +3236,10 @@ function InventoryView(props: {
     setNewTagDraft("");
   };
   useEffect(() => {
-    if (props.cartFocusNonce > 0) setSideTab("cart");
-  }, [props.cartFocusNonce]);
+    if (props.cartFocusNonce <= 0) return;
+    setSideTab("cart");
+    props.onCartFocusHandled();
+  }, [props.cartFocusNonce, props.onCartFocusHandled]);
   useEffect(() => {
     setQuickStockOpen(false);
     setQuickStockDraft(selected ? String(selected.availableQuantity) : "");
@@ -3282,6 +3286,7 @@ function InventoryView(props: {
           <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
           <label className="sort-control">Ordenar<select value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
           <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Filtros{activeFilters ? ` (${activeFilters})` : ""}</button>
+          <button className={`secondary-action inventory-cart-button ${props.cart.length ? "has-items" : ""}`} type="button" aria-label={`Abrir carrito, ${props.cart.length} carta(s)`} title="Abrir carrito" onClick={() => setSideTab("cart")}><Icon name="cart" /><span className="inventory-cart-count">{props.cart.length}</span></button>
           <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
         </div>
         {filtersOpen ? <div id="inventory-filter-options" className="inventory-filter-options">
@@ -3344,7 +3349,7 @@ function InventoryView(props: {
       <div className="stock-content inventory-workspace inventory-browse-workspace">
         <section className="panel product-list-panel">
           <div className="section-heading">
-            <div><h3>Cartas</h3></div><button className="secondary-action" onClick={() => setSideTab("cart")}><Icon name="cart" />Carrito ({props.cart.length})</button>
+            <div><h3>Cartas</h3></div>
             <div className="inventory-selection-tools">
               <button className="secondary-action" disabled={!items.length} onClick={() => setBatchSelection(allVisibleSelected ? [] : items.map((item) => item.id))}>
                 <Icon name={allVisibleSelected ? "close" : "check"} />{allVisibleSelected ? "Limpiar seleccion" : "Seleccionar vista"}
