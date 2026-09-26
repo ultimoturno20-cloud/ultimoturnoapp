@@ -261,6 +261,16 @@ Actualizado: 2026-09-26
 ### PriceCharting
 
 - El token se configura solo por variable de entorno `PRICECHARTING_TOKEN`.
+- El token de produccion se roto en Vercel el 2026-09-26 despues de que la
+  credencial anterior comenzara a responder `410`. El valor no se guarda en
+  Git ni en estos documentos.
+- La importacion masiva dejo de ejecutar cientos de `INSERT` separados y usa
+  tandas JSON de hasta 10.000 filas. Las filas sin cambios no se reescriben y
+  la poda compara directamente los IDs presentes en el archivo.
+- `api/[...path].ts` permite hasta 300 segundos bajo Fluid Compute en vez del
+  limite artificial de 60 segundos. La primera corrida productiva optimizada
+  completo 94.943 filas en 55,25 segundos, dejo 122.677 entradas y termino con
+  estado `completed`.
 - Vercel ejecuta `/api/cron/pricecharting-refresh` diariamente a las `09:00 UTC`
   (`06:00` de Argentina) segun `vercel.json`.
 - La busqueda de imagenes tiene fallback cuando PriceCharting devuelve una
