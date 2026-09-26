@@ -1618,25 +1618,45 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       ) values ($1, $2, 'completed', $3, $4, $5, $6, $7::timestamptz, clock_timestamp())
     `, [runId, input.category, input.rowsReceived, uniqueRows.length, input.rowsSkipped + duplicateRows, input.sourceHash, input.startedAt || new Date().toISOString()]);
 
-    for (let offset = 0; offset < uniqueRows.length; offset += 200) {
-      const chunk = uniqueRows.slice(offset, offset + 200);
-      const params: unknown[] = [];
-      const values = chunk.map((row, index) => {
-        const base = index * 13;
-        const languageGroup = row.languageGroup || inferLanguageGroup(row.expansionName, row.productName, row.canonicalUrl);
-        params.push(
-          row.priceChartingId, row.canonicalUrl, row.sourceUrl, row.productName,
-          row.normalizedName, row.expansionName, row.normalizedExpansion,
-          row.cardNumber, row.loosePriceUsd, row.imageUrl, languageGroup, row.searchKey, runId
-        );
-        return `(${Array.from({ length: 13 }, (_, parameter) => `$${base + parameter + 1}`).join(", ")}, now())`;
-      }).join(",\n");
+    for (let offset = 0; offset < uniqueRows.length; offset += 5000) {
+      const chunk = uniqueRows.slice(offset, offset + 5000).map((row) => ({
+        price_charting_id: row.priceChartingId,
+        canonical_url: row.canonicalUrl,
+        source_url: row.sourceUrl,
+        product_name: row.productName,
+        normalized_name: row.normalizedName,
+        expansion_name: row.expansionName,
+        normalized_expansion: row.normalizedExpansion,
+        card_number: row.cardNumber,
+        loose_price_usd: row.loosePriceUsd,
+        image_url: row.imageUrl,
+        language_group: row.languageGroup || inferLanguageGroup(row.expansionName, row.productName, row.canonicalUrl),
+        search_key: row.searchKey
+      }));
       await db.query(`
         insert into pricecharting_cache_entries (
           pricecharting_id, canonical_url, source_url, product_name,
           normalized_name, expansion_name, normalized_expansion, card_number,
           loose_price_usd, image_url, language_group, search_key, sync_run_id, imported_at
-        ) values ${values}
+        )
+        select
+          source.price_charting_id, source.canonical_url, source.source_url, source.product_name,
+          source.normalized_name, source.expansion_name, source.normalized_expansion, source.card_number,
+          source.loose_price_usd, source.image_url, source.language_group, source.search_key, $2, now()
+        from jsonb_to_recordset($1::jsonb) as source(
+          price_charting_id text,
+          canonical_url text,
+          source_url text,
+          product_name text,
+          normalized_name text,
+          expansion_name text,
+          normalized_expansion text,
+          card_number text,
+          loose_price_usd numeric(12, 2),
+          image_url text,
+          language_group text,
+          search_key text
+        )
         on conflict (pricecharting_id) do update set
           canonical_url = excluded.canonical_url,
           source_url = excluded.source_url,
@@ -1651,7 +1671,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
           search_key = excluded.search_key,
           sync_run_id = excluded.sync_run_id,
           imported_at = now()
-      `, params);
+      `, [JSON.stringify(chunk), runId]);
     }
 
     if (input.pruneMissing !== false) {
