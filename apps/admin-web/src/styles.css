@@ -11236,6 +11236,16 @@ main:has(.stock-layout) .operations-dock { display: none; }
 .inventory-detail-drawer.workspace-side { position: fixed; top: 120px; right: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); z-index: 70; max-height: calc(100dvh - 132px); background: var(--surface); padding: 12px; border: 1px solid var(--border); border-radius: 10px; box-shadow: -12px 0 40px #0008; display: flex; flex-direction: column; }
 .inventory-detail-drawer > .stock-side, .inventory-detail-drawer > .compact-cart-panel { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
 .drawer-close { align-self: flex-end; min-height: 32px; }
+.cart-top-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cart-top-totals > div { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: #0d0d11; }
+.cart-top-totals span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.cart-top-totals strong { font-size: 18px; overflow-wrap: anywhere; }
+.cart-export-panel { display: grid; gap: 9px; padding-top: 12px; border-top: 1px solid var(--border); }
+.cart-price-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
+.cart-price-toggle input { width: 18px; height: 18px; margin: 0; }
+.cart-export-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.cart-export-actions button { min-width: 0; justify-content: center; font-size: 11px; padding-inline: 8px; }
+.cart-export-feedback { margin: 0; color: var(--muted); font-size: 11px; }
 .inventory-load-more { padding: 18px; text-align: center; }
 @media (max-width: 760px) { .inventory-detail-drawer.workspace-side { top: 64px; max-height: calc(100dvh - 76px); } }
 

@@ -88,6 +88,9 @@ Actualizado: 2026-09-26
 - Inventario muestra un acceso permanente al carrito mediante un icono con
   contador en la barra superior. La apertura solicitada por `Cobrar ahora` se
   consume una sola vez, por lo que volver a Inventario ya no reabre el panel.
+- El carrito muestra totales ARS y USD en el encabezado. Permite incluir u
+  ocultar precios y copiar la lista, copiar una grilla PNG 5x6, descargar CSV o
+  descargar una o varias grillas PNG con las cartas agregadas.
 - `Resolver stock primero` ya no cruza todo el catalogo PriceCharting mediante
   condiciones `OR`. La cola parte solo del stock activo sin imagen, resuelve
   primero por el identificador PriceCharting indexado y usa

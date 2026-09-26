@@ -382,6 +382,18 @@ type CartLine = {
   unitPriceArs: number;
 };
 
+type CartExportItem = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  variant: string;
+  quantity: number;
+  unitPriceArs: number;
+  imageUrl: string;
+};
+
 type SaleRecord = {
   id: string;
   customerName: string;
@@ -3552,15 +3564,49 @@ function CartPanel(props: {
   blueRate: BlueExchangeRate;
 }) {
   const total = props.cart.reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
+  const totalUsd = fromBlueArs(total, props.blueRate);
+  const exportItems = buildCartExportItems(props.items, props.cart);
+  const [includeExportPrices, setIncludeExportPrices] = useState(true);
+  const [exporting, setExporting] = useState<"" | "list" | "copy-image" | "csv" | "image">("");
+  const [exportFeedback, setExportFeedback] = useState("");
   const update = (id: string, patch: Partial<CartLine>) => props.onCartChange(props.cart.map((line) => line.inventoryItemId === id ? { ...line, ...patch } : line));
+  const runExport = async (kind: "list" | "copy-image" | "csv" | "image") => {
+    if (!exportItems.length || exporting) return;
+    setExporting(kind);
+    setExportFeedback("");
+    try {
+      if (kind === "list") {
+        const copied = await copyToClipboard(cartListText(exportItems, includeExportPrices, props.blueRate, props.customerName));
+        if (!copied) throw new Error("El navegador no permitio copiar la lista.");
+        setExportFeedback("Lista copiada.");
+      } else if (kind === "csv") {
+        exportCartCsv(exportItems, includeExportPrices, props.blueRate);
+        setExportFeedback("CSV descargado.");
+      } else if (kind === "copy-image") {
+        const blob = await renderCartGridPng(exportItems.slice(0, 30), includeExportPrices, props.blueRate);
+        await copyImageToClipboard(blob);
+        setExportFeedback(exportItems.length > 30 ? "Primera grilla copiada; descarga la imagen para obtener todas." : "Imagen copiada.");
+      } else {
+        const files = await downloadCartGridImages(exportItems, includeExportPrices, props.blueRate);
+        setExportFeedback(files === 1 ? "Imagen descargada." : `${files} imagenes descargadas.`);
+      }
+    } catch (nextError) {
+      setExportFeedback(errorMessage(nextError));
+    } finally {
+      setExporting("");
+    }
+  };
   return (
     <section className={`panel cart-panel ${props.compact ? "compact-cart-panel" : ""} ${props.cart.length ? "active-cart-panel" : ""}`}>
       <div className="section-heading">
         <div><h3>Carrito</h3><p>{props.cart.length ? `${props.cart.length} cartas listas para registrar` : "Agrega cartas desde el inventario"}</p></div>
-        {props.cart.length ? <span className="cart-total-badge"><MoneyStack ars={total} blueRate={props.blueRate} compact /></span> : null}
       </div>
       {props.cart.length ? (
         <div className="cart-panel-content">
+          <div className="cart-top-totals" aria-label="Total del carrito">
+            <div><span>Total ARS</span><strong>{formatArs(total)}</strong></div>
+            <div><span>Total USD</span><strong>{formatUsd(totalUsd)}</strong></div>
+          </div>
           <div className="cart-controls">
             <div className="mode-toggle">
               <button className={props.mode === "sale" ? "active" : ""} onClick={() => props.onModeChange("sale")}>Venta cobrada</button>
@@ -3586,6 +3632,16 @@ function CartPanel(props: {
           <div className="cart-summary-panel">
             <dl className="sale-total"><div><dt>Total</dt><dd><MoneyStack ars={total} blueRate={props.blueRate} /></dd></div><div><dt>Destino</dt><dd>{props.mode === "sale" ? "Ventas" : "Ordenes"}</dd></div></dl>
             <p className="cart-notice">{props.mode === "sale" ? "Descuenta el stock al confirmar." : "Separa el stock y queda pendiente de cobro."}</p>
+            <div className="cart-export-panel">
+              <label className="cart-price-toggle"><input type="checkbox" checked={includeExportPrices} onChange={(event) => setIncludeExportPrices(event.target.checked)} /><span>Incluir precios</span></label>
+              <div className="cart-export-actions">
+                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("list")}><Icon name="copy" />Copiar lista</button>
+                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("copy-image")}><Icon name="copy" />Copiar imagen</button>
+                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("csv")}><Icon name="download" />Descargar CSV</button>
+                <button type="button" className="secondary-action" disabled={!!exporting} onClick={() => void runExport("image")}><Icon name="image" />Descargar imagen</button>
+              </div>
+              {exportFeedback ? <p className="cart-export-feedback" role="status">{exportFeedback}</p> : null}
+            </div>
             <button className="primary-action checkout-action" onClick={props.onSubmit}><Icon name="check" />{props.mode === "sale" ? "Confirmar venta" : "Crear reserva"}</button>
           </div>
         </div>
@@ -8718,6 +8774,153 @@ function exportInventoryCsv(items: StockRow[]) {
       ];
     })
   ]);
+}
+
+function buildCartExportItems(items: StockRow[], cart: CartLine[]): CartExportItem[] {
+  return cart.flatMap((line) => {
+    const item = items.find((row) => row.id === line.inventoryItemId);
+    if (!item) return [];
+    return [{
+      inventoryItemId: item.id,
+      sku: item.sku,
+      name: item.product.name,
+      expansion: item.product.expansion,
+      number: item.product.number || "",
+      variant: inventoryVariantLabel(item),
+      quantity: line.quantity,
+      unitPriceArs: line.unitPriceArs,
+      imageUrl: item.product.imageUrl || ""
+    }];
+  });
+}
+
+function cartListText(items: CartExportItem[], includePrices: boolean, blueRate: BlueExchangeRate, customerName: string) {
+  const lines = ["Lista UltimoTurno"];
+  if (customerName.trim()) lines.push(`Cliente: ${customerName.trim()}`);
+  lines.push("");
+  for (const item of items) {
+    const identity = `${item.name} - ${item.expansion}${item.number ? ` #${item.number}` : ""} - ${item.variant}`;
+    const prices = includePrices
+      ? ` - ${formatArs(item.unitPriceArs)} / ${formatUsd(fromBlueArs(item.unitPriceArs, blueRate))} c/u`
+      : "";
+    lines.push(`${item.quantity}x ${identity}${prices}`);
+  }
+  if (includePrices) {
+    const totalArs = items.reduce((sum, item) => sum + item.quantity * item.unitPriceArs, 0);
+    lines.push("", `Total: ${formatArs(totalArs)} / ${formatUsd(fromBlueArs(totalArs, blueRate))}`);
+  }
+  return lines.join("\n");
+}
+
+function exportCartCsv(items: CartExportItem[], includePrices: boolean, blueRate: BlueExchangeRate) {
+  const identityHeaders = ["sku", "name", "expansion", "number", "variant", "quantity"];
+  const priceHeaders = ["unitPriceArs", "unitPriceUsd", "lineTotalArs", "lineTotalUsd"];
+  downloadCsv("ultimoturno-carrito.csv", [
+    [...identityHeaders, ...(includePrices ? priceHeaders : []), "imageUrl"],
+    ...items.map((item) => {
+      const lineTotalArs = item.quantity * item.unitPriceArs;
+      return [
+        item.sku,
+        item.name,
+        item.expansion,
+        item.number,
+        item.variant,
+        item.quantity,
+        ...(includePrices ? [item.unitPriceArs, roundUsd(fromBlueArs(item.unitPriceArs, blueRate)), lineTotalArs, roundUsd(fromBlueArs(lineTotalArs, blueRate))] : []),
+        item.imageUrl
+      ];
+    })
+  ]);
+}
+
+async function copyImageToClipboard(blob: Blob) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+    throw new Error("Este navegador no permite copiar imagenes. Usa Descargar imagen.");
+  }
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+async function downloadCartGridImages(items: CartExportItem[], includePrices: boolean, blueRate: BlueExchangeRate) {
+  const chunks = chunkArray(items, 30);
+  for (let index = 0; index < chunks.length; index++) {
+    const blob = await renderCartGridPng(chunks[index], includePrices, blueRate);
+    downloadBlob(`ultimoturno-carrito-${index + 1}.png`, blob);
+  }
+  return chunks.length;
+}
+
+async function renderCartGridPng(items: CartExportItem[], includePrices: boolean, blueRate: BlueExchangeRate): Promise<Blob> {
+  if (!items.length) throw new Error("El carrito esta vacio.");
+  const columns = 5;
+  const rows = 6;
+  const cardWidth = 220;
+  const cardHeight = 308;
+  const gap = 16;
+  const padding = 24;
+  const canvas = document.createElement("canvas");
+  canvas.width = padding * 2 + columns * cardWidth + (columns - 1) * gap;
+  canvas.height = padding * 2 + rows * cardHeight + (rows - 1) * gap;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("No se pudo preparar la grilla del carrito.");
+
+  context.fillStyle = "#060608";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.strokeStyle = "rgba(232, 42, 64, 0.55)";
+  context.lineWidth = 6;
+  context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
+
+  for (let index = 0; index < columns * rows; index++) {
+    const item = items[index];
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const x = padding + col * (cardWidth + gap);
+    const y = padding + row * (cardHeight + gap);
+    context.fillStyle = "#111116";
+    context.fillRect(x, y, cardWidth, cardHeight);
+    if (!item) continue;
+    const image = item.imageUrl ? await loadCanvasImage(canvasAssetUrl(item.imageUrl)) : null;
+    if (image) drawCoverImage(context, image, x, y, cardWidth, cardHeight);
+    else drawCartGridPlaceholder(context, item, x, y, cardWidth, cardHeight);
+
+    context.fillStyle = "#ef314b";
+    context.beginPath();
+    context.arc(x + cardWidth - 28, y + 28, 21, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "#fff";
+    context.font = "800 14px Arial, sans-serif";
+    context.textAlign = "center";
+    context.fillText(`x${item.quantity}`, x + cardWidth - 28, y + 33);
+    context.textAlign = "left";
+
+    if (includePrices) {
+      context.fillStyle = "rgba(4, 4, 7, 0.9)";
+      context.fillRect(x, y + cardHeight - 62, cardWidth, 62);
+      context.fillStyle = "#fff";
+      context.font = "800 20px Arial, sans-serif";
+      context.fillText(formatArs(item.unitPriceArs), x + 12, y + cardHeight - 34);
+      context.fillStyle = "#d0d0d8";
+      context.font = "700 14px Arial, sans-serif";
+      context.fillText(`${formatUsd(fromBlueArs(item.unitPriceArs, blueRate))} c/u`, x + 12, y + cardHeight - 12);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("No se pudo exportar la grilla del carrito.")), "image/png");
+  });
+}
+
+function drawCartGridPlaceholder(context: CanvasRenderingContext2D, item: CartExportItem, x: number, y: number, width: number, height: number) {
+  context.fillStyle = "#16161c";
+  context.fillRect(x, y, width, height);
+  context.strokeStyle = "rgba(232, 42, 64, 0.7)";
+  context.lineWidth = 2;
+  context.strokeRect(x + 8, y + 8, width - 16, height - 16);
+  context.fillStyle = "#f5f5f6";
+  context.font = "700 20px Arial, sans-serif";
+  wrapCanvasText(context, item.name || "Sin imagen", x + 18, y + 86, width - 36, 25, 4);
+  context.fillStyle = "#b0b0b8";
+  context.font = "600 15px Arial, sans-serif";
+  wrapCanvasText(context, `${item.expansion} ${item.number ? `#${item.number}` : ""}`.trim(), x + 18, y + height - 92, width - 36, 20, 2);
 }
 
 function exportClaimWorkspaceCsv(workspace: ClaimsWorkspace) {
