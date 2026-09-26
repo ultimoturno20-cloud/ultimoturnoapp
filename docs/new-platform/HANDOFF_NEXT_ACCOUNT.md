@@ -1,6 +1,6 @@
 # Traspaso de contexto - UltimoTurno
 
-## Aviso vigente - 2026-09-23
+## Aviso vigente - 2026-09-26
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y
 prioridades actuales usar primero:
@@ -26,18 +26,22 @@ Estado Git y produccion al cerrar este traspaso:
 
 ```text
 Rama: main
-Commit desplegado: 5e115f1 Add reseller order workflow states
+Commit desplegado: ad609e5 Mejorar carga de stock en celular
 Produccion: https://ultimoturnoapp-api.vercel.app/
 DB: Supabase/Postgres por transaction pooler
 Storage: Supabase Storage
 Perfil: PILOTO REAL
-Verificacion: lint, typecheck, build y DB verify OK; 42 tests OK
+Verificacion del ultimo cambio: lint, typecheck y build OK; PostgreSQL online accesible
 ```
 
 Cambios recientes resumidos:
 
 - carga de stock en pagina completa y sin reapertura del modal viejo;
+- version movil compacta de carga de stock, con filtros horizontales, buscador
+  en una fila, resultados densos y espacio para teclado/barra del navegador;
 - busqueda de catalogo mas rapida, filtros de idioma y prioridad al stock;
+- sincronizacion sectorial sin recargar toda la pagina y snapshots compartidos
+  de stock para reducir consultas repetidas;
 - imagenes con fallback directo/proxy seguro y tarjetas de tamano estable;
 - buscador del claim arriba, cantidades agrupadas y ciclo claim-stock-venta;
 - sistema de revendedores en consignacion publicado en produccion;
@@ -55,6 +59,12 @@ Migraciones vigentes mas recientes:
 0032_reseller_consignment.sql
 0033_reseller_orders.sql
 0034_reseller_order_workflow.sql
+0035_tcgplayer_price_fallback.sql
+0036_claim_planner.sql
+0037_fast_catalog_search.sql
+0038_coolstuff_price_cache.sql
+0039_catalog_search_number_index.sql
+0040_reuse_catalog_stock_images.sql
 ```
 
 ## Prompt vigente para el proximo chat
@@ -71,7 +81,7 @@ Antes de responder o modificar archivos, lee:
 Luego revisa git status y confirma el commit actual. Produccion funciona en
 https://ultimoturnoapp-api.vercel.app/ con Vercel, Supabase/Postgres y Supabase
 Storage. El ultimo commit de produccion confirmado al cerrar el chat anterior
-fue 5e115f1.
+fue ad609e5.
 
 Hay un claim activo, ordenes y stock reales: no los elimines, canceles ni
 recrees durante pruebas. No guardes secretos en Git.
@@ -82,7 +92,13 @@ revalida y descuenta stock al confirmarse. El portal incluye ventas, pedidos,
 stock propio, stock global de solo lectura, comisiones, rendiciones y estados
 de preparacion (A embalar/A entregar/Entregado) y cobro (Pendiente/Pagado).
 
-Objetivo inmediato: pilotear el flujo con un revendedor y pocas cartas reales,
+La carga de stock movil esta adaptada para pantallas de hasta 620 px: oculta el
+chrome global, compacta filtros y resultados, mantiene campo y lupa en una fila
+y reserva espacio para el teclado y la barra inferior del navegador.
+
+Objetivo inmediato: validar `/inventario/cargar-stock` durante una carga real
+desde los telefonos de los operadores y comprobar sincronizacion entre dos
+sesiones. Luego pilotear el flujo con un revendedor y pocas cartas reales,
 validando prioridad central, venta, anulacion, devolucion, rendicion y estados
 de pedidos. Despues continuar con imagenes faltantes y CSV reales.
 ```

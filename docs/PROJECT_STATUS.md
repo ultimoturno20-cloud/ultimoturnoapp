@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-09-25
+Actualizado: 2026-09-26
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -11,14 +11,13 @@ Actualizado: 2026-09-25
 - Produccion: `https://ultimoturnoapp-api.vercel.app/`.
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
-- Ultimo commit funcional desplegado y verificado al iniciar esta mejora:
-  `6fe23cf`.
+- Ultimo commit funcional desplegado y verificado: `ad609e5`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
   solo de frontend y no modificaron la base de ordenes.
 
-## Trabajo completado del 17 al 23 de septiembre
+## Trabajo completado del 17 al 26 de septiembre
 
 ### Navegacion y sincronizacion
 
@@ -110,6 +109,17 @@ Actualizado: 2026-09-25
   varias personas cargando las mismas expansiones al mismo tiempo.
 - En `/inventario/cargar-stock` se ocultan temporalmente la alerta automatica y
   la barra operativa, la cabecera es compacta y la grilla usa todo el ancho.
+- En pantallas de hasta `620 px`, la carga de stock usa un workspace movil
+  especifico: oculta la cabecera y navegacion globales, reduce el encabezado a
+  una linea, mantiene idioma y moneda en una franja horizontal y coloca el
+  boton de busqueda junto al campo en vez de apilarlo debajo.
+- Los resultados moviles usan filas compactas con imagen, identidad y precios;
+  su alto responde al viewport dinamico y reserva espacio inferior para que el
+  teclado y la barra del navegador no tapen las ultimas cartas. El campo usa la
+  accion `search` del teclado movil y no permite autocompletado del navegador.
+- La mejora movil se valido con lint, typecheck y build. El commit `ad609e5` se
+  desplego en Vercel y produccion entrego el CSS nuevo; `/api/public-status`
+  confirmo PostgreSQL accesible.
 - Migracion nueva: `0039_catalog_search_number_index.sql`.
 - La carga de stock muestra coincidencias del inventario de inmediato, reduce el
   debounce a `180 ms` y usa un indice GIN de texto completo para evitar escanear
@@ -254,6 +264,11 @@ Actualizado: 2026-09-25
 ## Commits funcionales recientes
 
 ```text
+ad609e5 Mejorar carga de stock en celular
+bc1c859 perf(api): compress shared stock snapshots
+8ad146f fix(db): use portable snapshot epoch
+1ab2454 fix(api): share stock snapshots across instances
+d79e7d3 perf(db): streamline stock read joins
 5e115f1 Add reseller order workflow states
 2f51d11 Add reseller orders and global stock view
 fcd6781 Redesign reseller sales portal

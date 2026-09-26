@@ -1,6 +1,6 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-23
+Actualizado: 2026-09-26
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
@@ -52,6 +52,13 @@ durante el scraping.
 - Revisar visualmente las rutas principales en desktop y movil despues de la
   unificacion del chrome, especialmente `Mas`, Ordenes, Inventario y Claims,
   confirmando que ninguna barra tape contenido.
+- Probar `/inventario/cargar-stock` en los telefonos que se usaran durante la
+  carga real. Con el teclado abierto deben seguir visibles el campo, el boton de
+  busqueda y al menos uno o dos resultados; la barra inferior del navegador no
+  debe impedir seleccionar las ultimas cartas.
+- Confirmar que idioma y moneda se puedan desplazar horizontalmente sin mover
+  toda la pagina, y que tocar la lupa o la accion `Buscar` del teclado produzca
+  el mismo resultado.
 - Confirmar con dos sesiones reales que inventario, claims, ordenes, caja y el
   portal reflejen cambios dentro de los 15 segundos esperados.
 - Durante una carga simultanea, dejar abierta
@@ -180,9 +187,9 @@ Storage.
 Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
 recrees durante pruebas. No pongas secretos en Git.
 
-Commit de produccion confirmado antes de la mejora de sincronizacion:
-`271933f`. Revisar `git log -1` y `/api/public-status` para obtener el commit
-final publicado por el chat siguiente.
+Commit de produccion confirmado: `ad609e5`. Revisar igualmente `git log -1` y
+`/api/public-status` antes de editar, porque puede existir un despliegue mas
+nuevo.
 
 Trabajo reciente: carga de stock en pagina completa, busqueda de catalogo mas
 rapida, imagenes con fallback/proxy seguro, tarjetas de inventario normalizadas,
@@ -192,16 +199,22 @@ stock global de solo lectura y estados independientes de preparacion y cobro.
 UltimoTurno siempre conserva prioridad sobre el stock y la venta del revendedor
 revalida disponibilidad antes de descontar.
 
+La carga de stock tiene una version compacta para pantallas de hasta 620 px:
+sin cabecera/navegacion global, filtros horizontales, campo y lupa en una fila,
+resultados densos y espacio inferior para teclado/barra del navegador. Esta
+version esta online desde `ad609e5`; falta validarla durante una carga real con
+los telefonos de los operadores.
+
 La navegacion principal y el portal usan URLs reales por sector. La pantalla
 visible se actualiza cada 15 segundos y al recuperar el foco, sin F5 ni perdida
 de formularios, carrito, filtros o scroll. El boton superior actualiza solo el
 sector actual. Antes de cambiar esto, revisar la implementacion de History API,
 los mapas de rutas y `vercel.json`.
 
-Objetivo inmediato: validar la sincronizacion con dos sesiones en produccion y
-luego pilotear revendedores con pocas cartas reales para comprobar
-prioridad central, venta, anulacion, devolucion, rendicion, pedidos y estados.
-Luego continuar cobertura de imagenes y validacion de CSV reales.
+Objetivo inmediato: validar la carga movil y la sincronizacion con dos sesiones
+en produccion, y luego pilotear revendedores con pocas cartas reales para
+comprobar prioridad central, venta, anulacion, devolucion, rendicion, pedidos y
+estados. Luego continuar cobertura de imagenes y validacion de CSV reales.
 ```
 
 ---
