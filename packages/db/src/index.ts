@@ -1618,8 +1618,8 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       ) values ($1, $2, 'completed', $3, $4, $5, $6, $7::timestamptz, clock_timestamp())
     `, [runId, input.category, input.rowsReceived, uniqueRows.length, input.rowsSkipped + duplicateRows, input.sourceHash, input.startedAt || new Date().toISOString()]);
 
-    for (let offset = 0; offset < uniqueRows.length; offset += 5000) {
-      const chunk = uniqueRows.slice(offset, offset + 5000).map((row) => ({
+    for (let offset = 0; offset < uniqueRows.length; offset += 10000) {
+      const chunk = uniqueRows.slice(offset, offset + 10000).map((row) => ({
         price_charting_id: row.priceChartingId,
         canonical_url: row.canonicalUrl,
         source_url: row.sourceUrl,
@@ -1671,11 +1671,43 @@ export async function replacePriceChartingCache(db: PGlite, input: {
           search_key = excluded.search_key,
           sync_run_id = excluded.sync_run_id,
           imported_at = now()
+        where (
+          pricecharting_cache_entries.canonical_url,
+          pricecharting_cache_entries.source_url,
+          pricecharting_cache_entries.product_name,
+          pricecharting_cache_entries.normalized_name,
+          pricecharting_cache_entries.expansion_name,
+          pricecharting_cache_entries.normalized_expansion,
+          pricecharting_cache_entries.card_number,
+          pricecharting_cache_entries.loose_price_usd,
+          pricecharting_cache_entries.image_url,
+          pricecharting_cache_entries.language_group,
+          pricecharting_cache_entries.search_key
+        ) is distinct from (
+          excluded.canonical_url,
+          excluded.source_url,
+          excluded.product_name,
+          excluded.normalized_name,
+          excluded.expansion_name,
+          excluded.normalized_expansion,
+          excluded.card_number,
+          excluded.loose_price_usd,
+          excluded.image_url,
+          excluded.language_group,
+          excluded.search_key
+        )
       `, [JSON.stringify(chunk), runId]);
     }
 
     if (input.pruneMissing !== false) {
-      await db.query("delete from pricecharting_cache_entries where sync_run_id <> $1", [runId]);
+      await db.query(`
+        delete from pricecharting_cache_entries existing
+        where not exists (
+          select 1
+          from jsonb_array_elements_text($1::jsonb) source(price_charting_id)
+          where source.price_charting_id = existing.pricecharting_id
+        )
+      `, [JSON.stringify(uniqueRows.map((row) => row.priceChartingId))]);
     }
     await db.query("update pricecharting_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
     await db.exec("commit");

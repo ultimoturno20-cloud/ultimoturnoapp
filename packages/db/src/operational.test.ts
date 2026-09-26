@@ -1429,6 +1429,31 @@ describe("operational inventory database", () => {
     assert.equal(unifiedNumberWithSlash.entries[0].priceChartingId, "125");
     assert.equal(cache.status.totalEntries, 4);
     assert.equal(cache.status.lastRun?.status, "completed");
+
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "test-hash-replacement",
+      rowsReceived: 1,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "123",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-25",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/pikachu-25",
+        productName: "Pikachu",
+        normalizedName: "pikachu",
+        expansionName: "Promo",
+        normalizedExpansion: "promo",
+        cardNumber: "025",
+        loosePriceUsd: 5.25,
+        imageUrl: "",
+        searchKey: "pikachu promo 025"
+      }]
+    });
+    const replacedCache = await listPriceChartingCache(db, "", 10);
+    assert.equal(replacedCache.status.totalEntries, 1);
+    assert.equal(replacedCache.entries[0].priceChartingId, "123");
+    assert.equal(replacedCache.entries[0].loosePriceUsd, 5.25);
+    assert.equal((await listPriceChartingCache(db, "eevee", 10)).entries.length, 0);
     await db.close();
   });
 
