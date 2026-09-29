@@ -104,6 +104,7 @@ import {
   returnResellerStock,
   reviewCardIndexEntry,
   updateMobileInventoryEntryStatus,
+  updateResellerCreditLimit,
   updateClaimPlan,
   upsertClaimPlanItems,
   updateInventoryItemTags,
@@ -4171,8 +4172,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/resellers" && request.method === "POST") {
-      const body = await readJson<{ displayName: string; email: string; password: string; phone?: string; notes?: string; commissionPercent: number }>(request);
+      const body = await readJson<{ displayName: string; email: string; password: string; phone?: string; notes?: string; commissionPercent: number; creditLimitArs?: number | null }>(request);
       sendJson(response, 201, { reseller: await createReseller(db, body, user) });
+      return;
+    }
+
+    const resellerCreditLimitMatch = url.pathname.match(/^\/resellers\/([^/]+)\/credit-limit$/);
+    if (resellerCreditLimitMatch && request.method === "PUT") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson<{ creditLimitArs: number | null }>(request);
+      sendJson(response, 200, await updateResellerCreditLimit(db, resellerCreditLimitMatch[1], body.creditLimitArs == null ? null : Number(body.creditLimitArs), user));
       return;
     }
 

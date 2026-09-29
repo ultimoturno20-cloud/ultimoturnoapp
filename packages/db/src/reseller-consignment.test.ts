@@ -22,6 +22,7 @@ import {
   loginUser,
   resolveResellerStockRequest,
   updateOwnResellerOrderWorkflow,
+  updateResellerCreditLimit,
   upsertInventoryItem
 } from "./index.js";
 
@@ -65,6 +66,25 @@ it("lets a reseller request global stock and lets an admin approve quantity and 
   assert.equal(dashboard.stockRequests.length, 0);
   assert.equal(dashboard.assignments[0].remaining, 2);
   assert.equal(dashboard.assignments[0].priceArs, 12500);
+  assert.equal(dashboard.summary.assignedValueArs, 25000);
+
+  dashboard = await updateResellerCreditLimit(db, created.reseller.userId, 30000, admin);
+  assert.equal(dashboard.reseller.creditLimitArs, 30000);
+  assert.equal(dashboard.summary.availableCreditArs, 5000);
+  await assert.rejects(
+    () => createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 1 }, reseller!),
+    /supera tu limite/
+  );
+  await createResellerSale(db, {
+    customerName: "Venta libera cupo",
+    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12500 }]
+  }, reseller!);
+  dashboard = await getResellerDashboard(db, created.reseller.userId, admin.businessId);
+  assert.equal(dashboard.summary.assignedValueArs, 12500);
+  dashboard = await createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 1 }, reseller!);
+  assert.equal(dashboard.stockRequests[0].quantityRequested, 1);
+  assert.equal(dashboard.summary.pendingRequestValueArs, 12500);
+  assert.equal(dashboard.summary.availableCreditArs, 5000);
 });
 
 it("keeps consigned stock available centrally and validates real stock when a reseller sells", async () => {

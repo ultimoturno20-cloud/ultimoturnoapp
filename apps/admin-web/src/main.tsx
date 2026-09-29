@@ -54,14 +54,14 @@ type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: str
 type ResellerStockRequest = { id: string; resellerUserId: string; inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; quantityRequested: number; availableQuantity: number; priceArsSnapshot: number; currentPriceArs: number; createdAt: string };
 type ResellerGlobalSort = "name" | "expansion" | "number" | "price" | "quantity";
 type ResellerDashboard = {
-  reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
+  reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number; creditLimitArs: number | null };
   assignments: ResellerAssignment[];
   globalStock: ResellerGlobalStockItem[];
   stockRequests: ResellerStockRequest[];
   orders: ResellerOrder[];
   sales: ResellerSale[];
   settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
-  summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
+  summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; assignedValueArs: number; pendingRequestValueArs: number; availableCreditArs: number | null; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
 };
 type AvailabilityFilter = "all" | "available" | "reserved" | "out";
 type LanguageGroupFilter = "all" | "english" | "japanese" | "chinese";
@@ -5709,12 +5709,14 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20 });
+  const [form, setForm] = useState({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20, creditLimitArs: "" });
   const [stockQuery, setStockQuery] = useState("");
   const [assignItemId, setAssignItemId] = useState("");
   const [assignQuantity, setAssignQuantity] = useState(1);
   const [requestDrafts, setRequestDrafts] = useState<Record<string, { quantity: string; priceArs: string }>>({});
   const [resolvingRequestId, setResolvingRequestId] = useState("");
+  const [creditLimitDrafts, setCreditLimitDrafts] = useState<Record<string, string>>({});
+  const [savingCreditLimit, setSavingCreditLimit] = useState(false);
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
 
   const load = async (quiet = false) => {
@@ -5744,10 +5746,10 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
   async function create(event: React.FormEvent) {
     event.preventDefault();
     try {
-      const result = await api<{ reseller: ResellerDashboard }>("/resellers", { method: "POST", body: form });
+      const result = await api<{ reseller: ResellerDashboard }>("/resellers", { method: "POST", body: { ...form, creditLimitArs: form.creditLimitArs === "" ? null : Number(form.creditLimitArs) } });
       setResellers((current) => [result.reseller, ...current]);
       setSelectedId(result.reseller.reseller.userId);
-      setForm({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20 });
+      setForm({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20, creditLimitArs: "" });
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
   }
@@ -5775,6 +5777,17 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setResolvingRequestId(""); }
+  }
+
+  async function saveCreditLimit() {
+    if (!selected) return;
+    const draft = creditLimitDrafts[selected.reseller.userId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs));
+    setSavingCreditLimit(true);
+    try {
+      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/credit-limit`, { method: "PUT", body: { creditLimitArs: draft === "" ? null : Number(draft) } }));
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSavingCreditLimit(false); }
   }
 
   async function registerReturn(item: ResellerAssignment) {
@@ -5816,6 +5829,7 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
             <input required minLength={8} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
             <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
+            <label>Limite mercaderia ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label>
             <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
           </form> : null}
         </aside>
@@ -5824,10 +5838,13 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
             <section className="metrics reseller-metrics">
               <Metric label="Consignadas" value={selected.summary.remainingUnits} helper="unidades pendientes" />
               <Metric label="Vendibles ahora" value={selected.summary.sellableUnits} helper="segun stock real" />
+              <Metric label="Valor asignado" value={formatArs(selected.summary.assignedValueArs)} helper="mercaderia en mano" />
+              <Metric label="Limite" value={selected.reseller.creditLimitArs == null ? "Sin limite" : formatArs(selected.reseller.creditLimitArs)} helper={selected.summary.pendingRequestValueArs ? `${formatArs(selected.summary.pendingRequestValueArs)} solicitado` : "sin solicitudes computadas"} />
               {!assignmentOnly ? <><Metric label="Ventas" value={formatArs(selected.summary.grossSalesArs)} helper="bruto confirmado" />
               <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
               <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} /></> : null}
             </section>
+            {!assignmentOnly ? <section className="panel reseller-credit-control"><div><h3>Limite de mercaderia</h3><p>Las cartas en mano y las solicitudes pendientes consumen este cupo. Dejalo vacio para no limitar.</p></div><label>Limite ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={creditLimitDrafts[selected.reseller.userId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs))} onChange={(event) => setCreditLimitDrafts((current) => ({ ...current, [selected.reseller.userId]: event.target.value }))} /></label><button className="primary-action" disabled={savingCreditLimit} onClick={() => void saveCreditLimit()}>{savingCreditLimit ? "Guardando..." : "Guardar limite"}</button><div className="reseller-credit-breakdown"><span>Asignado <b>{formatArs(selected.summary.assignedValueArs)}</b></span><span>Pendiente <b>{formatArs(selected.summary.pendingRequestValueArs)}</b></span><span>Disponible <b>{selected.summary.availableCreditArs == null ? "Sin limite" : formatArs(selected.summary.availableCreditArs)}</b></span></div></section> : null}
             {!assignmentOnly ? <section className="panel reseller-request-panel">
               <div className="section-heading"><div><h3>Solicitudes de asignacion</h3><p>Revisa cantidad y precio antes de entregar la mercaderia.</p></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
               {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
@@ -6078,6 +6095,8 @@ function ResellerPortal() {
 
       <section className="reseller-summary-strip">
         <div><span>Disponible para vender</span><strong>{dashboard.summary.sellableUnits}</strong><small>de {dashboard.summary.remainingUnits} en mano</small></div>
+        <div><span>Capital asignado</span><strong>{formatArs(dashboard.summary.assignedValueArs)}</strong><small>valor actual de tu mercaderia</small></div>
+        <div><span>Cupo para solicitar</span><strong>{dashboard.summary.availableCreditArs == null ? "Sin limite" : formatArs(dashboard.summary.availableCreditArs)}</strong><small>{dashboard.summary.pendingRequestValueArs ? `${formatArs(dashboard.summary.pendingRequestValueArs)} en solicitudes pendientes` : "sin solicitudes pendientes"}</small></div>
         <div><span>Mi comision acumulada</span><strong>{formatArs(dashboard.summary.commissionArs)}</strong><small>{dashboard.reseller.commissionPercent}% por venta</small></div>
         <div className="highlight"><span>Saldo a rendir</span><strong>{formatArs(dashboard.summary.outstandingArs)}</strong><small>{formatArs(dashboard.summary.settledArs)} ya rendido</small></div>
       </section>
@@ -6183,7 +6202,7 @@ function ResellerPortal() {
               <CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" />
               <div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small>{inventoryTags(item.tags).length ? <small>{inventoryTags(item.tags).join(" · ")}</small> : null}</div>
               <span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong>
-              <div className="reseller-global-request"><label><span>Cantidad</span><input type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : "Pedir asignacion"}</button></div>
+              <div className="reseller-global-request"><label><span>Cantidad</span><input type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId || (!pending && dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0)} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0 ? "Limite alcanzado" : "Pedir asignacion"}</button></div>
             </article>;
           })}</div>{renderedGlobalStock.length < visibleGlobalStock.length ? <button className="secondary-action reseller-global-more" type="button" onClick={() => setGlobalRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body={globalSearch || globalAdvancedFilterCount || globalLanguageGroup !== "all" ? "Proba cambiando o restableciendo los filtros." : "No hay stock global disponible en este momento."} />}
         </section>

@@ -40,6 +40,11 @@ Actualizado: 2026-09-29
   Antes de aprobar puede corregir cantidad y precio ARS; la aprobacion actualiza
   el precio global y crea la asignacion en una sola transaccion. Tambien puede
   rechazar el pedido sin modificar stock.
+- Cada revendedor admite un limite de mercaderia en ARS. El capital asignado se
+  calcula con las unidades que aun conserva por el precio actual; las solicitudes
+  pendientes tambien consumen cupo. Al vender o devolver unidades el cupo se
+  libera automaticamente, y nuevas solicitudes o asignaciones que superen el
+  limite quedan bloqueadas. Un limite vacio mantiene el perfil sin tope.
 
 ### Dominio productivo
 
