@@ -53,10 +53,32 @@ import {
   updateClaimCard,
   updateReservationSaleLines,
   upsertClaimPlanItems,
-  upsertInventoryItem
+  upsertInventoryItem,
+  linkInventoryItemPriceCharting
 } from "./index.js";
 
 describe("operational inventory database", () => {
+  it("keeps the PriceCharting link on every language copy of the same card", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-pc-languages-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards", sourceHash: "languages", rowsReceived: 1, rowsSkipped: 0,
+      rows: [{ priceChartingId: "pc-iris-190", canonicalUrl: "", sourceUrl: "", productName: "Iris", normalizedName: "iris",
+        expansionName: "Ascended Heroes", normalizedExpansion: "ascended heroes", cardNumber: "190", loosePriceUsd: 0.36, imageUrl: "", searchKey: "iris" }]
+    });
+    const card = { name: "Iris", expansion: "Ascended Heroes", number: "190", condition: "NM", finish: "normal", quantityOnHand: 1, quantityReserved: 0, priceArs: 800 };
+    await upsertInventoryItem(db, { ...card, sku: "LANG-EN", language: "EN", priceChartingId: "pc-iris-190" }, user);
+    await upsertInventoryItem(db, { ...card, sku: "LANG-ES", language: "ES", priceChartingId: "pc-iris-190" }, user);
+    const unlinked = await upsertInventoryItem(db, { ...card, sku: "LANG-EN-2", language: "EN" }, user);
+    await linkInventoryItemPriceCharting(db, unlinked.id, "pc-iris-190", user);
+    await assert.rejects(linkInventoryItemPriceCharting(db, unlinked.id, "missing-id", user), /no existe/);
+    const stock = await listStockForBusiness(db, user.businessId);
+    for (const sku of ["LANG-EN", "LANG-ES", "LANG-EN-2"]) {
+      assert.equal(stock.items.find((item) => item.sku === sku)?.priceReferences.priceCharting.priceChartingId, "pc-iris-190", sku);
+    }
+  });
+
   it("keeps TCGCSV seeds and stocked cards when a PriceCharting refresh prunes missing rows", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-pc-prune-"));
     const db = await createOperationalDatabase({ dataDir });
