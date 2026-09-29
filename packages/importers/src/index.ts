@@ -176,7 +176,7 @@ function parseCoolstuffProductIdentity(value: string) {
 }
 
 function normalizeCoolstuffText(value: string) {
-  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function normalizeCoolstuffExpansion(value: string) {
