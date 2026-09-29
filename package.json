@@ -20,6 +20,8 @@
     "images:storage:daemon": "tsx tools/image-storage-daemon.ts",
     "coolstuff:prices": "tsx tools/coolstuff-price-worker.ts",
     "coolstuff:prices:daemon": "tsx tools/coolstuff-price-worker.ts --loop",
+    "prices:audit": "tsx tools/price-source-audit.mts",
+    "prices:link-tcg": "tsx tools/tcgcsv-inventory-sync.ts",
     "db:postgres:check": "tsx scripts/check-postgres-connection.mts",
     "db:postgres:init": "tsx scripts/init-postgres-schema.mts",
     "db:migrate:pglite-to-postgres": "tsx scripts/migrate-pglite-to-postgres.mts",
@@ -29,7 +31,7 @@
     "staging:web": "powershell -ExecutionPolicy Bypass -File scripts/start-staging-web.ps1",
     "staging:web:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-staging-web.ps1",
     "typecheck": "tsc -b",
-    "test": "tsx --test packages/domain/src/*.test.ts packages/importers/src/*.test.ts packages/db/src/*.test.ts",
+    "test": "tsx --test packages/domain/src/*.test.ts packages/importers/src/*.test.ts packages/db/src/*.test.ts tools/coolstuff-price-worker.test.ts tools/tcgcsv-inventory-sync.test.ts",
     "db:verify": "npm run verify -w @ultimoturno/db",
     "check:new": "npm run lint && npm run typecheck && npm run test && npm run db:verify && npm run build"
   },

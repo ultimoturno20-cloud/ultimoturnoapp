@@ -57,6 +57,29 @@ import {
 } from "./index.js";
 
 describe("operational inventory database", () => {
+  it("keeps TCGCSV seeds and stocked cards when a PriceCharting refresh prunes missing rows", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-pc-prune-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const row = (priceChartingId: string, name: string) => ({
+      priceChartingId, canonicalUrl: "", sourceUrl: "", productName: name, normalizedName: name.toLowerCase(),
+      expansionName: "Promo", normalizedExpansion: "promo", cardNumber: "1", loosePriceUsd: 1, imageUrl: "", searchKey: name.toLowerCase()
+    });
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards", sourceHash: "day-1", rowsReceived: 4, rowsSkipped: 0,
+      rows: [row("pc-kept", "Kept"), row("pc-obsolete", "Obsolete"), row("pc-stocked", "Stocked"), row("tcgcsv-123", "Seed")]
+    });
+    await upsertInventoryItem(db, {
+      sku: "PRUNE-STOCKED-1", name: "Stocked", expansion: "Promo", number: "1", language: "EN", condition: "NM", finish: "normal",
+      quantityOnHand: 1, quantityReserved: 0, priceArs: 1000, priceChartingId: "pc-stocked"
+    }, user);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards", sourceHash: "day-2", rowsReceived: 1, rowsSkipped: 0, rows: [row("pc-kept", "Kept")]
+    });
+    const remaining = await db.query<{ pricecharting_id: string }>("select pricecharting_id from pricecharting_cache_entries order by pricecharting_id");
+    assert.deepEqual(remaining.rows.map((entry) => entry.pricecharting_id), ["pc-kept", "pc-stocked", "tcgcsv-123"]);
+  });
+
   it("previews and repairs minimum sale prices from external references", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-price-repair-"));
     const db = await createOperationalDatabase({ dataDir });
@@ -1852,6 +1875,14 @@ describe("operational inventory database", () => {
     assert.equal(firstStatus.linkedProductEntries, 1);
     assert.equal(firstStatus.linkedCardIndexEntries, 1);
 
+    await assert.rejects(replaceTcgplayerPriceCache(db, {
+      source: "tcgcsv", categoryId: "3", sourceVersion: "empty-response", groupsSeen: 0,
+      rowsReceived: 0, rowsSkipped: 0, rows: []
+    }), /se conservan los precios anteriores/);
+    const preservedStatus = await getTcgplayerPriceCacheStatus(db);
+    assert.equal(preservedStatus.totalEntries, firstStatus.totalEntries);
+    assert.equal(preservedStatus.lastRun?.id, firstStatus.lastRun?.id);
+
     const user = await getDefaultOperationalUser(db);
     await upsertInventoryItem(db, {
       sku: "TEST-TCG-IMAGE-025",
@@ -1906,6 +1937,34 @@ describe("operational inventory database", () => {
     assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.productId, "555");
     assert.equal(unmatchedCosmos?.priceReferences.tcgplayer.marketPriceUsd, null);
 
+    // TCGplayer lists Cosmos/Poke Ball printings as their own product priced as "Holofoil".
+    await replaceTcgplayerPriceCache(db, {
+      source: "tcgcsv", categoryId: "3", sourceVersion: "test-version-special", groupsSeen: 1,
+      rowsReceived: 3, rowsSkipped: 0,
+      rows: [
+        { tcgplayerProductId: "555", subTypeName: "Normal", lowPriceUsd: 1, midPriceUsd: 2, highPriceUsd: 3, marketPriceUsd: 2.5, directLowPriceUsd: null, sourceGroupId: "900" },
+        { tcgplayerProductId: "555", subTypeName: "Reverse Holofoil", lowPriceUsd: 4, midPriceUsd: 5, highPriceUsd: 6, marketPriceUsd: 5.5, directLowPriceUsd: 4.5, sourceGroupId: "900" },
+        { tcgplayerProductId: "556", subTypeName: "Holofoil", lowPriceUsd: 7, midPriceUsd: 8, highPriceUsd: 9, marketPriceUsd: 7.75, directLowPriceUsd: null, sourceGroupId: "900" }
+      ]
+    });
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-POKEBALL-026", name: "Pikachu", expansion: "Promo", number: "026", language: "EN", condition: "NM",
+      finish: "poke ball", imageUrl: "https://tcgplayer-cdn.tcgplayer.com/product/556_in_1000x1000.jpg",
+      quantityOnHand: 1, quantityReserved: 0, priceArs: 1000
+    }, user);
+    const specialStock = await listStockForBusiness(db, user.businessId);
+    assert.equal(specialStock.items.find((item) => item.sku === "TEST-TCG-POKEBALL-026")?.priceReferences.tcgplayer.marketPriceUsd, 7.75);
+    assert.equal(specialStock.items.find((item) => item.sku === "TEST-TCG-COSMOS-025")?.priceReferences.tcgplayer.marketPriceUsd, null);
+
+    // Cards created from the TCGCSV catalog keep their product id even without a card index entry.
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-SEED-556", name: "Pikachu Seed", expansion: "Promo", number: "556", language: "EN", condition: "NM",
+      finish: "holo", priceChartingId: "tcgcsv-556", quantityOnHand: 1, quantityReserved: 0, priceArs: 1000
+    }, user);
+    const seeded = (await listStockForBusiness(db, user.businessId)).items.find((item) => item.sku === "TEST-TCG-SEED-556");
+    assert.equal(seeded?.priceReferences.tcgplayer.productId, "556");
+    assert.equal(seeded?.priceReferences.tcgplayer.marketPriceUsd, 7.75);
+
     const coolstuffTargets = await listCoolstuffPriceTargets(db, user.businessId, { limit: 20 });
     assert.ok(coolstuffTargets.targets.some((target) => target.priceChartingId === "pc-pikachu-25-reverse"));
     await recordCoolstuffPriceObservation(db, {
@@ -1944,6 +2003,19 @@ describe("operational inventory database", () => {
     });
     assert.equal(missingCoolstuffQuote.status, "missing");
     assert.equal(missingCoolstuffQuote.priceUsd, null);
+
+    // A failed refresh must keep the age of the last actual price and obey backoff.
+    await db.query(`update coolstuff_price_cache set updated_at = now() - interval '2 days', next_attempt_at = now() - interval '1 day' where pricecharting_id = $1`, ["pc-pikachu-25-reverse"]);
+    const beforeFailure = await getCoolstuffPriceQuote(db, { priceChartingId: "pc-pikachu-25-reverse", condition: "NM", finish: "reverse_holo" });
+    await recordCoolstuffPriceObservation(db, { priceChartingId: "pc-pikachu-25-reverse", condition: "NM", finish: "reverse_holo", status: "failed", errorMessage: "HTTP 503" });
+    const afterFailure = await getCoolstuffPriceQuote(db, { priceChartingId: "pc-pikachu-25-reverse", condition: "NM", finish: "reverse_holo" });
+    assert.equal(afterFailure.priceUsd, 8.75);
+    assert.equal(afterFailure.updatedAt, beforeFailure.updatedAt);
+    const backedOff = await listCoolstuffPriceTargets(db, user.businessId, { limit: 20 });
+    assert.equal(backedOff.targets.some((entry) => entry.priceChartingId === "pc-pikachu-25-reverse" && entry.finish === "reverse_holo"), false);
+    await db.query(`update coolstuff_price_cache set next_attempt_at = now() - interval '1 minute' where pricecharting_id = $1`, ["pc-pikachu-25-reverse"]);
+    const retryTargets = await listCoolstuffPriceTargets(db, user.businessId, { limit: 20 });
+    assert.ok(retryTargets.targets.some((entry) => entry.priceChartingId === "pc-pikachu-25-reverse" && entry.finish === "reverse_holo"));
 
     await replaceTcgplayerPriceCache(db, {
       source: "tcgcsv",

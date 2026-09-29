@@ -295,6 +295,9 @@ const priceChartingAutoRefreshEnabled = String(process.env.PRICECHARTING_AUTO_RE
 const priceChartingAutoRefreshTime = normalizeDailyTime(process.env.PRICECHARTING_AUTO_REFRESH_TIME || "06:00");
 const tcgCsvBaseUrl = String(process.env.TCGCSV_BASE_URL || "https://tcgcsv.com").replace(/\/+$/, "");
 const tcgplayerPriceCategoryId = String(process.env.TCGPLAYER_PRICE_CATEGORY_ID || "3").trim() || "3";
+// Price cache covers English (3) and Japanese (85) Pokemon unless overridden.
+const tcgplayerPriceCategoryIds = [...new Set(String(process.env.TCGPLAYER_PRICE_CATEGORY_IDS || `${tcgplayerPriceCategoryId},85`).split(",").map((id) => id.trim()).filter((id) => /^\d+$/.test(id)))];
+const tcgplayerPriceCategoryLabel = tcgplayerPriceCategoryIds.join(",");
 const tcgplayerPriceAutoRefreshEnabled = String(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED || "false").toLowerCase() !== "false";
 const tcgplayerPriceAutoRefreshTime = normalizeDailyTime(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_TIME || "18:30");
 const configuredBlueRateSell = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1540);
@@ -981,33 +984,47 @@ async function linkTcgCsvProduct(db: Awaited<typeof dbPromise>, product: TcgCsvP
   return isConflict ? "conflict" as const : matchStatus === "matched" ? "matched" as const : "weak" as const;
 }
 
-async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, options: { force?: boolean; startedAt?: string } = {}) {
+let tcgplayerRefreshPending: ReturnType<typeof performTcgplayerPriceRefresh> | null = null;
+
+function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, options: { force?: boolean; startedAt?: string } = {}) {
+  if (!tcgplayerRefreshPending) {
+    tcgplayerRefreshPending = performTcgplayerPriceRefresh(db, options).finally(() => { tcgplayerRefreshPending = null; });
+  }
+  return tcgplayerRefreshPending;
+}
+
+async function performTcgplayerPriceRefresh(db: Awaited<typeof dbPromise>, options: { force?: boolean; startedAt?: string } = {}) {
   const startedAt = options.startedAt || new Date().toISOString();
   const sourceVersion = await fetchTcgCsvLastUpdated().catch(() => "");
   if (sourceVersion && !options.force) {
-    const lastVersion = await getLatestTcgplayerPriceSourceVersion(db, "tcgcsv", tcgplayerPriceCategoryId);
+    const lastVersion = await getLatestTcgplayerPriceSourceVersion(db, "tcgcsv", tcgplayerPriceCategoryLabel);
     if (lastVersion === sourceVersion) {
       return recordTcgplayerPriceCacheSkipped(db, {
         source: "tcgcsv",
-        categoryId: tcgplayerPriceCategoryId,
+        categoryId: tcgplayerPriceCategoryLabel,
         sourceVersion,
         reason: "TCGCSV no publico cambios desde la ultima corrida exitosa."
       });
     }
   }
 
-  const groups = await fetchTcgCsvJson<TcgCsvGroup[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/groups`);
   const rows: TcgplayerPriceCacheInput[] = [];
   let rowsReceived = 0;
   let rowsSkipped = 0;
+  let groupsSeen = 0;
 
+  for (const categoryId of tcgplayerPriceCategoryIds) {
+  const groups = await fetchTcgCsvJson<TcgCsvGroup[]>(`/tcgplayer/${encodeURIComponent(categoryId)}/groups`);
+  if (!Array.isArray(groups) || !groups.length) throw new Error(`TCGCSV devolvio un catalogo vacio o invalido para la categoria ${categoryId}; se conservan los precios anteriores.`);
+  groupsSeen += groups.length;
   for (const group of groups) {
     const groupId = String(group.groupId || "").trim();
     if (!groupId) {
       rowsSkipped += 1;
       continue;
     }
-    const prices = await fetchTcgCsvJson<TcgCsvPrice[]>(`/tcgplayer/${encodeURIComponent(tcgplayerPriceCategoryId)}/${encodeURIComponent(groupId)}/prices`);
+    const prices = await fetchTcgCsvJson<TcgCsvPrice[]>(`/tcgplayer/${encodeURIComponent(categoryId)}/${encodeURIComponent(groupId)}/prices`);
+    if (!Array.isArray(prices)) throw new Error(`TCGCSV devolvio precios invalidos para el grupo ${groupId}.`);
     rowsReceived += prices.length;
     for (const price of prices) {
       const productId = String(price.productId || "").trim();
@@ -1029,12 +1046,13 @@ async function refreshTcgplayerPricesFromTcgCsv(db: Awaited<typeof dbPromise>, o
     }
     await sleep(120);
   }
+  }
 
   return replaceTcgplayerPriceCache(db, {
     source: "tcgcsv",
-    categoryId: tcgplayerPriceCategoryId,
+    categoryId: tcgplayerPriceCategoryLabel,
     sourceVersion,
-    groupsSeen: groups.length,
+    groupsSeen,
     rowsReceived,
     rowsSkipped,
     rows,
@@ -1048,7 +1066,7 @@ function tcgplayerPriceAutoRefreshStatus(): TcgplayerPriceAutoRefreshStatus {
     time: tcgplayerPriceAutoRefreshTime,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
     source: "tcgcsv",
-    categoryId: tcgplayerPriceCategoryId,
+    categoryId: tcgplayerPriceCategoryLabel,
     running: tcgplayerPriceAutoRefreshRunning,
     nextRunAt: tcgplayerPriceAutoRefreshNextRunAt,
     lastStartedAt: tcgplayerPriceAutoRefreshLastStartedAt,
@@ -1091,7 +1109,7 @@ async function runTcgplayerPriceAutoRefresh(reason: "schedule" | "startup") {
   } catch (error) {
     const db = await dbPromise.catch(() => null);
     const message = error instanceof Error ? error.message : String(error);
-    if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt: tcgplayerPriceAutoRefreshLastStartedAt }).catch(() => undefined);
+    if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryLabel, errorMessage: message, startedAt: tcgplayerPriceAutoRefreshLastStartedAt }).catch(() => undefined);
     tcgplayerPriceAutoRefreshLastStatus = "failed";
     tcgplayerPriceAutoRefreshLastError = message;
     tcgplayerPriceAutoRefreshLastCompletedAt = new Date().toISOString();
@@ -3969,7 +3987,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const db = await dbPromise.catch(() => null);
-        if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt }).catch(() => undefined);
+        if (db) await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryLabel, errorMessage: message, startedAt }).catch(() => undefined);
         sendJson(response, 502, { ok: false, job: "tcgplayer-refresh", error: message });
       }
       return;
@@ -4784,7 +4802,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         sendJson(response, 200, { ok: true, status });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryId, errorMessage: message, startedAt });
+        await recordTcgplayerPriceCacheFailure(db, { source: "tcgcsv", categoryId: tcgplayerPriceCategoryLabel, errorMessage: message, startedAt });
         sendJson(response, 502, { ok: false, error: message });
       }
       return;
@@ -5035,7 +5053,7 @@ export function startServer() {
   const server = createServer((request, response) => {
     void handleRequest(request, response);
   });
-  server.listen(port, () => {
+  server.listen(port, process.env.API_HOST || "0.0.0.0", () => {
     console.log(`UltimoTurno API listening on http://localhost:${port}`);
     console.log(dbDriver === "postgres" ? "Database driver: PostgreSQL remoto" : `PGlite data dir: ${dataDir}`);
     if (priceChartingAutoRefreshEnabled) {

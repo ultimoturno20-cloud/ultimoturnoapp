@@ -117,7 +117,8 @@ export function parseCoolstuffPageCount(html: string, pageUrl: string) {
       return;
     }
     const page = Number(candidate.searchParams.get("page") || 1);
-    if (Number.isInteger(page)) maximum = Math.max(maximum, Math.min(page, 50));
+    const current = new URL(pageUrl);
+    if (candidate.origin === current.origin && candidate.pathname === current.pathname && Number.isInteger(page) && page > 0) maximum = Math.max(maximum, page);
   });
   return maximum;
 }
@@ -127,10 +128,18 @@ export function matchCoolstuffProduct(target: CoolstuffPriceTarget, products: Co
     let confidence = 0;
     const targetName = normalizeCoolstuffText(target.name);
     const productName = normalizeCoolstuffText(product.name);
+    const compatibleName = targetName && productName && (targetName === productName || ` ${targetName} `.includes(` ${productName} `) || ` ${productName} `.includes(` ${targetName} `));
+    if (!compatibleName) return { product, offer: undefined, confidence: 0 };
     const targetNumber = normalizeCoolstuffNumber(target.number);
     const productNumber = normalizeCoolstuffNumber(product.number);
     const targetExpansion = normalizeCoolstuffExpansion(target.expansion);
     const productExpansion = normalizeCoolstuffExpansion(product.expansion);
+    // A high name score must never override a different set or card number.
+    const sameExpansion = targetExpansion === productExpansion
+      || (["black bolt", "white flare"].includes(targetExpansion) && productExpansion === "black bolt and white flare");
+    const sameNumber = targetNumber && productNumber && primaryCoolstuffNumber(productNumber) === primaryCoolstuffNumber(targetNumber)
+      && (!targetNumber.includes("/") || !productNumber.includes("/") || targetNumber === productNumber);
+    if (!sameExpansion || !targetExpansion || !sameNumber) return { product, offer: undefined, confidence: 0 };
     if (targetName === productName) confidence += 50;
     else if (targetName && productName && (targetName.includes(productName) || productName.includes(targetName))) confidence += 30;
     if (targetNumber && productNumber === targetNumber) confidence += 35;
@@ -157,7 +166,13 @@ export function buildCoolstuffSearchQuery(target: CoolstuffPriceTarget) {
 
 function parseCoolstuffProductIdentity(value: string) {
   const match = value.match(/^(.*?)\s+-\s+([a-z0-9]+(?:\/[a-z0-9]+)?)(?:\s+\(([^)]+)\))?$/i);
-  return match ? { name: match[1].trim(), number: match[2].trim(), finish: String(match[3] || "normal").trim() } : { name: value.trim(), number: "", finish: "normal" };
+  if (!match) return { name: value.trim(), number: "", finish: "normal" };
+  const inlineFinish = match[1].match(/\s+\((Non-Holo|Holo Rare|Holofoil|Reverse Foil|Cosmos Holo|1st Edition)\)$/i);
+  return {
+    name: inlineFinish ? match[1].slice(0, inlineFinish.index).trim() : match[1].trim(),
+    number: match[2].trim(),
+    finish: String(match[3] || inlineFinish?.[1] || "normal").trim()
+  };
 }
 
 function normalizeCoolstuffText(value: string) {
@@ -165,7 +180,8 @@ function normalizeCoolstuffText(value: string) {
 }
 
 function normalizeCoolstuffExpansion(value: string) {
-  return normalizeCoolstuffText(String(value || "").replace(/^[a-z]{1,4}:\s*/i, "").replace(/\bpokemon\b/gi, "").replace(/\bcollection\b/gi, ""));
+  return normalizeCoolstuffText(String(value || "").replace(/^[a-z]{1,5}\d{0,4}:\s*/i, "").replace(/\bpokemon\b/gi, "").replace(/\bcollection\b/gi, ""))
+    .replace(/^me phantasmal flames$/, "phantasmal flames");
 }
 
 function normalizeCoolstuffNumber(value: string) {
@@ -196,19 +212,20 @@ function isCoolstuffFinishCompatible(targetFinish: string, productFinish: string
   if (target.includes("master") && target.includes("ball")) return product.includes("master") && product.includes("ball");
   if (target.includes("poke") && target.includes("ball")) return product.includes("poke") && product.includes("ball") && !product.includes("master");
   if (target.includes("1st") || target.includes("first edition")) return product.includes("1st") || product.includes("first edition");
-  if (target.includes("holo")) return !product.includes("reverse");
-  return !product.includes("reverse")
-    && !product.includes("cosmo")
-    && !product.includes("master ball")
-    && !product.includes("poke ball")
-    && !product.includes("1st")
-    && !product.includes("first edition");
+  const regular = ["normal", "non holo", "non holofoil", "unlimited", ""].includes(product);
+  if (["normal", "non holo", "non holofoil", "unlimited", ""].includes(target)) return regular;
+  if (target.includes("holo")) return product === "normal" || ["holo", "holo rare", "holofoil", "holo foil"].includes(product);
+  return target === product;
 }
 
 function chooseCoolstuffOffer(condition: string, offers: CoolstuffOffer[]) {
-  const expectedNearMint = ["nm", "mint", "near mint"].includes(normalizeCoolstuffText(condition));
-  const preferred = offers.find((offer) => expectedNearMint ? normalizeCoolstuffText(offer.condition).includes("near mint") : normalizeCoolstuffText(offer.condition).includes("played"));
-  return preferred || (expectedNearMint ? undefined : offers.find((offer) => normalizeCoolstuffText(offer.condition).includes("near mint")));
+  const normalizeCondition = (value: string) => {
+    const normalized = normalizeCoolstuffText(value);
+    const aliases: Record<string, string> = { nm: "near mint", mint: "near mint", lp: "lightly played", mp: "moderately played", hp: "heavily played", dmg: "damaged" };
+    return aliases[normalized] || normalized;
+  };
+  const expected = normalizeCondition(condition);
+  return offers.find((offer) => normalizeCondition(offer.condition) === expected);
 }
 
 export type ParsedImportRow = {

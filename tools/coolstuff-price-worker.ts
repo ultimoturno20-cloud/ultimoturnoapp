@@ -1,4 +1,5 @@
 import { findCoolstuffExpansionUrl, matchCoolstuffProduct, parseCoolstuffExpansionLinks, parseCoolstuffPageCount, parseCoolstuffProducts, type CoolstuffExpansionLink, type CoolstuffPriceTarget, type CoolstuffProduct } from "../packages/importers/src/index.js";
+import { pathToFileURL } from "node:url";
 
 type WorkerTarget = CoolstuffPriceTarget & {
   quantityOnHand: number;
@@ -33,7 +34,7 @@ type Observation = {
   errorMessage?: string;
 };
 
-function parseOptions(argv: string[]): Options {
+export function parseOptions(argv: string[]): Options {
   const values = new Map<string, string>();
   const flags = new Set<string>();
   for (const argument of argv) {
@@ -47,7 +48,7 @@ function parseOptions(argv: string[]): Options {
     apiBaseUrl: (values.get("api") || process.env.npm_config_api || process.env.ULTIMOTURNO_API_URL || "https://ultimoturno.app/api").replace(/\/+$/, ""),
     accessKey: values.get("access-key") || process.env.ULTIMOTURNO_ACCESS_KEY || "",
     batchSize: clamp(values.get("batch") || process.env.npm_config_batch, 1, 100, 20),
-    delayMs: clamp(values.get("delay-ms") || process.env.npm_config_delay_ms, 5000, 60000, 10000),
+    delayMs: clamp(values.get("delay-ms") || process.env.npm_config_delay_ms, 10000, 60000, 10000),
     refreshHours: clamp(values.get("refresh-hours") || process.env.npm_config_refresh_hours, 6, 24 * 30, 24),
     loop: flags.has("loop") || process.env.npm_config_loop === "true",
     sleepMs: clamp(values.get("sleep-ms") || process.env.npm_config_sleep_ms, 60000, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
@@ -69,6 +70,8 @@ Uso recomendado:
 
 El worker procesa solo cartas inglesas con stock, conserva el progreso en
 Supabase y espera 10 segundos entre consultas a CoolStuff.
+En modo loop sigue con las tandas pendientes; espera una hora solo cuando
+no quedan pendientes o falla la API. Dry-run ejecuta una sola tanda.
 
 Opciones:
   --batch=20
@@ -129,10 +132,13 @@ async function postJson<T>(options: Options, route: string, body: unknown): Prom
 }
 
 let lastCoolstuffRequestAt = 0;
+let expansionLinksCache: { expiresAt: number; links: CoolstuffExpansionLink[] } | undefined;
+const expansionCache = new Map<string, { expiresAt: number; products: Promise<CoolstuffProduct[]> }>();
 
 async function fetchCoolstuffHtml(options: Options, url: URL | string) {
   const waitMs = Math.max(0, options.delayMs - (Date.now() - lastCoolstuffRequestAt));
   if (waitMs) await sleep(waitMs);
+  lastCoolstuffRequestAt = Date.now();
   const response = await fetch(url, {
     headers: {
       "User-Agent": "UltimoTurnoPriceWorker/1.0 (inventory price cache; sequential requests)",
@@ -149,42 +155,49 @@ async function fetchCoolstuffHtml(options: Options, url: URL | string) {
 }
 
 async function loadExpansionLinks(options: Options): Promise<CoolstuffExpansionLink[]> {
+  if (expansionLinksCache && expansionLinksCache.expiresAt > Date.now()) return expansionLinksCache.links;
   const html = await fetchCoolstuffHtml(options, "https://www.coolstuffinc.com/pokemon/");
   const links = parseCoolstuffExpansionLinks(html);
   if (!links.length) throw new Error("No se pudo leer el indice de expansiones de CoolStuff.");
+  expansionLinksCache = { expiresAt: Date.now() + 86400000, links };
   return links;
 }
 
-async function loadExpansionProducts(options: Options, expansionUrl: string): Promise<CoolstuffProduct[]> {
+export async function loadExpansionProducts(options: Options, expansionUrl: string): Promise<CoolstuffProduct[]> {
   const firstUrl = new URL(expansionUrl);
   firstUrl.searchParams.set("sh", "1");
   firstUrl.searchParams.set("page", "1");
   const firstHtml = await fetchCoolstuffHtml(options, firstUrl);
   const products = parseCoolstuffProducts(firstHtml);
+  if (!products.length) throw new Error("La expansion CoolStuff no devolvio productos con precio.");
+  const seen = new Set(products.map((product) => product.url));
   const pageCount = parseCoolstuffPageCount(firstHtml, firstUrl.toString());
   for (let page = 2; page <= pageCount; page++) {
     const pageUrl = new URL(firstUrl);
     pageUrl.searchParams.set("page", String(page));
-    products.push(...parseCoolstuffProducts(await fetchCoolstuffHtml(options, pageUrl)));
+    const next = parseCoolstuffProducts(await fetchCoolstuffHtml(options, pageUrl));
+    const unique = next.filter((product) => !seen.has(product.url));
+    if (!unique.length) throw new Error(`CoolStuff pagina ${page}: vacia o repetida; no se guardara una expansion incompleta.`);
+    for (const product of unique) seen.add(product.url);
+    products.push(...unique);
   }
   if (!products.length) throw new Error("La expansion CoolStuff no devolvio productos con precio.");
   return products;
 }
 
-async function searchCoolstuff(target: WorkerTarget, options: Options, expansionLinks: CoolstuffExpansionLink[], expansionCache: Map<string, Promise<CoolstuffProduct[]>>) {
+async function searchCoolstuff(target: WorkerTarget, options: Options, expansionLinks: CoolstuffExpansionLink[]) {
   const expansionUrl = findCoolstuffExpansionUrl(target.expansion, expansionLinks);
   if (!expansionUrl) throw new Error(`No se encontro una expansion CoolStuff confiable para ${target.expansion}.`);
-  let pending = expansionCache.get(expansionUrl);
-  if (!pending) {
-    pending = loadExpansionProducts(options, expansionUrl);
-    expansionCache.set(expansionUrl, pending);
+  let cached = expansionCache.get(expansionUrl);
+  if (!cached || cached.expiresAt <= Date.now()) {
+    const products = loadExpansionProducts(options, expansionUrl);
+    cached = { expiresAt: Date.now() + options.refreshHours * 3600000, products };
+    expansionCache.set(expansionUrl, cached);
+    const entry = cached;
+    // Keep failures briefly too: do not fetch the same broken set for every card.
+    void products.catch(() => { entry.expiresAt = Date.now() + 15 * 60000; });
   }
-  try {
-    return await pending;
-  } catch (error) {
-    expansionCache.delete(expansionUrl);
-    throw error;
-  }
+  return cached.products;
 }
 
 function observationForMatch(target: WorkerTarget, match: ReturnType<typeof matchCoolstuffProduct>): Observation {
@@ -224,18 +237,17 @@ function failedObservation(target: WorkerTarget, error: unknown): Observation {
   };
 }
 
-async function runCycle(options: Options) {
+export async function runCycle(options: Options) {
   const response = await getJson<{ targets: WorkerTarget[]; status: { matchedEntries: number; totalEntries: number } }>(options, `/coolstuff-prices/targets?limit=${options.batchSize}&refreshHours=${options.refreshHours}`);
   console.log(`[${new Date().toLocaleString("es-AR")}] CoolStuff cache: ${response.status.matchedEntries}/${response.status.totalEntries} con precio. Pendientes en tanda: ${response.targets.length}.`);
   if (!response.targets.length) return 0;
   const expansionLinks = await loadExpansionLinks(options);
-  const expansionCache = new Map<string, Promise<CoolstuffProduct[]>>();
   let matched = 0;
   let reviewed = 0;
   for (const target of response.targets) {
     let observation: Observation;
     try {
-      const match = matchCoolstuffProduct(target, await searchCoolstuff(target, options, expansionLinks, expansionCache));
+      const match = matchCoolstuffProduct(target, await searchCoolstuff(target, options, expansionLinks));
       observation = observationForMatch(target, match);
       if (observation.status === "matched") matched++;
       console.log(`${target.name} ${target.number} [${target.condition}/${target.finish}] -> ${observation.status}${observation.priceUsd ? ` USD ${observation.priceUsd.toFixed(2)}` : ""}`);
@@ -266,14 +278,20 @@ async function main() {
   await getJson(options, "/health");
   console.log(`Worker conectado a ${options.apiBaseUrl}. Pausa CoolStuff: ${Math.round(options.delayMs / 1000)}s.`);
   do {
-    const processed = await runCycle(options);
-    if (!options.loop) break;
-    if (!processed) console.log(`Sin cartas vencidas. Proxima revision en ${Math.round(options.sleepMs / 60000)} min.`);
+    try {
+      const processed = await runCycle(options);
+      if (!options.loop || options.dryRun) break;
+      if (processed) continue;
+      console.log(`Sin cartas vencidas. Proxima revision en ${Math.round(options.sleepMs / 60000)} min.`);
+    } catch (error) {
+      if (!options.loop || options.dryRun) throw error;
+      console.error(`Tanda interrumpida; se reintentara: ${error instanceof Error ? error.message : String(error)}`);
+    }
     await sleep(options.sleepMs);
   } while (true);
 }
 
-main().catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
