@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadExpansionProducts, parseOptions, runCycle } from "./coolstuff-price-worker.js";
+import { findCoolstuffExpansionUrl } from "../packages/importers/src/index.js";
+import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, parseOptions, runCycle } from "./coolstuff-price-worker.js";
 
 const product = (number: string) => `<div class="product-search-row" itemtype="https://schema.org/Product"><a class="productLink" href="/p/Pokemon/Card-${number}"><span itemprop="name">Card - ${number}/132</span></a><div class="breadcrumb-trail">Pokemon » Mega Evolution</div><div itemprop="offers" itemtype="https://schema.org/Offer"><div><span class="card-qty">1</span>Near Mint</div><b itemprop="price" content="1.25"></b></div></div>`;
 
 test("worker enforces ten seconds minimum between site requests", () => {
   assert.equal(parseOptions(["--delay-ms=1"]).delayMs, 10000);
+});
+
+test("worker accepts until-done mode", () => {
+  assert.equal(parseOptions(["--until-done"]).untilDone, true);
+  assert.equal(parseOptions([]).untilDone, false);
+});
+
+test("Destined Rivals fallback fills the missing CoolStuff index page", () => {
+  const links = mergeCoolstuffExpansionFallbacks([]);
+  assert.equal(findCoolstuffExpansionUrl("Destined Rivals", links), "https://www.coolstuffinc.com/page/8872");
+  assert.equal(findCoolstuffExpansionUrl("SV: Destined Rivals", links), "https://www.coolstuffinc.com/page/8872");
+  const alreadyListed = mergeCoolstuffExpansionFallbacks([
+    { name: "Destined Rivals", url: "https://www.coolstuffinc.com/page/8872" }
+  ]);
+  assert.equal(alreadyListed.length, 1);
 });
 
 test("worker collects all pages and rejects repeated or empty pages", async (t) => {
