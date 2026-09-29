@@ -82,6 +82,11 @@ test("ignores CoolStuff era prefixes but keeps era promo sets apart", () => {
   assert.equal(matchCoolstuffProduct({ ...target, expansion: "XY Promos" }, promos).status, "not_found");
 });
 
+test("treats an ampersand like 'and' in card names", () => {
+  const products = parseCoolstuffProducts(fixture.replace("Lillie's Determination - 184/132", "Anthea and Concordia - 184/132"));
+  assert.equal(matchCoolstuffProduct({ ...target, name: "Anthea & Concordia" }, products).status, "matched");
+});
+
 test("rejects a different card number or expansion even with an exact name", () => {
   const products = parseCoolstuffProducts(fixture);
   assert.equal(matchCoolstuffProduct(target, products).status, "matched");
