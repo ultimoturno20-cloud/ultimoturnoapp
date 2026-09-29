@@ -19,6 +19,15 @@ Actualizado: 2026-09-29
 
 ## Trabajo completado del 17 al 29 de septiembre
 
+### Acceso del portal de revendedores
+
+- Los assets del frontend se publican con rutas absolutas desde la raiz. Antes,
+  Vite generaba `./assets/...`: al abrir `/portal-revendedor/venta` el navegador
+  intentaba cargar `/portal-revendedor/assets/...`, recibia `index.html` por la
+  regla SPA y bloqueaba el modulo por MIME, dejando la pagina en blanco.
+- `/inicio` y todas las rutas anidadas del portal comparten ahora los mismos
+  archivos `/assets/...`, sin depender de la profundidad de la URL.
+
 ### Dominio productivo
 
 - `ultimoturno.app` esta registrado en la cuenta `ultimoturno20-cloud`, usa los nameservers de Vercel y quedo asociado al proyecto `ultimoturnoapp-api`.
