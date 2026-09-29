@@ -49,25 +49,48 @@ export function newRunStats(): RunStats {
   return { reviewed: 0, matched: 0, notFound: 0, ambiguous: 0, failed: 0, batches: 0 };
 }
 
-export function runSummary(stats: RunStats): string {
-  return [
+export type CacheStatusSummary = {
+  matchedEntries: number;
+  totalEntries: number;
+  staleEntries: number;
+  notFoundEntries: number;
+  failedEntries: number;
+  lastAttemptAt: string;
+};
+
+export function runSummary(stats: RunStats, cache?: CacheStatusSummary): string {
+  const lines = [
     "## CoolStuff price worker: resumen del run",
     "",
     "| Revisadas | Con precio | Not found | Ambiguous | Failed | Tandas |",
     "|---|---|---|---|---|---|",
     `| ${stats.reviewed} | ${stats.matched} | ${stats.notFound} | ${stats.ambiguous} | ${stats.failed} | ${stats.batches} |`
-  ].join("\n");
+  ];
+  if (cache) {
+    const pct = cache.totalEntries ? Math.round((cache.matchedEntries / cache.totalEntries) * 100) : 0;
+    lines.push("", `Cobertura cache: ${cache.matchedEntries}/${cache.totalEntries} con precio (${pct}%). Stale: ${cache.staleEntries}, Not found: ${cache.notFoundEntries}, Failed: ${cache.failedEntries}. Ultimo intento: ${cache.lastAttemptAt || "n/a"}.`);
+  }
+  return lines.join("\n");
 }
 
-function reportRun(stats: RunStats) {
-  console.log(runSummary(stats).split("\n").filter((line) => !line.startsWith("|---")).join("\n"));
+function reportRun(stats: RunStats, cache?: CacheStatusSummary) {
+  console.log(runSummary(stats, cache).split("\n").filter((line) => !line.startsWith("|---")).join("\n"));
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (summaryPath) {
     try {
-      appendFileSync(summaryPath, `\n${runSummary(stats)}\n`);
+      appendFileSync(summaryPath, `\n${runSummary(stats, cache)}\n`);
     } catch (error) {
       console.error(`No se pudo escribir GITHUB_STEP_SUMMARY: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+}
+
+async function loadCacheStatus(options: Options): Promise<CacheStatusSummary | undefined> {
+  try {
+    return await getJson<CacheStatusSummary>(options, "/coolstuff-prices/status");
+  } catch (error) {
+    console.error(`No se pudo leer el estado del cache: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
   }
 }
 
@@ -347,7 +370,7 @@ async function main() {
       if (options.untilDone) {
         if (!processed) {
           console.log("Sin cartas vencidas. Modo until-done terminado.");
-          reportRun(stats);
+          reportRun(stats, await loadCacheStatus(options));
           if (stats.reviewed > 0 && stats.failed === stats.reviewed) process.exitCode = 1;
           break;
         }
