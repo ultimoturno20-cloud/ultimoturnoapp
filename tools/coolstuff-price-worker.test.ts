@@ -27,6 +27,18 @@ test("run summary counts every status and renders markdown", () => {
   assert.match(summary, /^## CoolStuff price worker/);
 });
 
+test("run summary appends cache coverage when present", () => {
+  const summary = runSummary(newRunStats(), {
+    matchedEntries: 3,
+    totalEntries: 10,
+    staleEntries: 2,
+    notFoundEntries: 4,
+    failedEntries: 1,
+    lastAttemptAt: "2024-01-01T00:00:00Z"
+  });
+  assert.match(summary, /Cobertura cache: 3\/10 con precio \(30%\)\. Stale: 2, Not found: 4, Failed: 1\. Ultimo intento: 2024-01-01T00:00:00Z\./);
+});
+
 test("Destined Rivals fallback fills the missing CoolStuff index page", () => {
   const links = mergeCoolstuffExpansionFallbacks([]);
   assert.equal(findCoolstuffExpansionUrl("Destined Rivals", links), "https://www.coolstuffinc.com/page/8872");
