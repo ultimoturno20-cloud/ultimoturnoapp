@@ -11,7 +11,7 @@ Actualizado: 2026-09-29
 - Produccion: `https://ultimoturno.app/` (alias tecnico: `https://ultimoturnoapp-api.vercel.app/`).
 - Infraestructura: Vercel + Supabase/Postgres + Supabase Storage.
 - Rama de despliegue: `main`.
-- Ultimo commit funcional desplegado y verificado: `2360c07`.
+- Ultimo commit funcional desplegado y verificado: `094aa15`.
 - El claim activo de produccion contiene datos reales: no eliminarlo, cancelarlo
   ni recrearlo durante verificaciones.
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
