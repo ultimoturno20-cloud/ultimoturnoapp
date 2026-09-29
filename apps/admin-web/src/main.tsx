@@ -2598,7 +2598,7 @@ function App() {
         <div className="header-actions">
           <div className="header-badges">
             <span className={`profile-badge ${environment.allowExamples ? "examples" : "pilot"}`}>{environment.dataProfile}</span>
-            <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`}>Blue {formatArs(blueRate.sell)}</span>
+            <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`} title={blueRate.source}>Dólar {formatArs(blueRate.sell)}</span>
           </div>
           <span className={`live-sync-status ${viewRefreshing ? "syncing" : ""}`}><i />{viewRefreshing ? "Sincronizando" : lastSyncedAt ? `En vivo · ${new Date(lastSyncedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : "En vivo"}</span>
           <button className="secondary-action header-refresh" disabled={viewRefreshing} onClick={() => void refreshViewData(view).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
