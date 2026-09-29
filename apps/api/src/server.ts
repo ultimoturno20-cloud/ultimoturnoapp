@@ -105,6 +105,7 @@ import {
   updateClaimPlan,
   upsertClaimPlanItems,
   updateInventoryItemTags,
+  linkInventoryItemPriceCharting,
   updateClaimCard,
   updateClaimSection,
   updateActiveClaimSettings,
@@ -4340,6 +4341,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const inventoryItemId = url.pathname.split("/")[2];
       const body = await readJson<{ tags?: string }>(request);
       sendJson(response, 200, { item: await updateInventoryItemTags(db, inventoryItemId, body.tags || "", user) });
+      return;
+    }
+
+    if (url.pathname.match(/^\/inventory\/[^/]+\/pricecharting$/) && request.method === "PUT") {
+      const inventoryItemId = url.pathname.split("/")[2];
+      const body = await readJson<{ priceChartingId?: string }>(request);
+      sendJson(response, 200, { item: await linkInventoryItemPriceCharting(db, inventoryItemId, String(body.priceChartingId || ""), user) });
       return;
     }
 

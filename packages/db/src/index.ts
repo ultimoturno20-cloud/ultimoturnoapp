@@ -211,7 +211,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -4595,6 +4595,24 @@ export async function updateInventoryItemTags(
   return updated;
 }
 
+export async function linkInventoryItemPriceCharting(
+  db: PGlite,
+  inventoryItemId: string,
+  priceChartingId: string,
+  actor: AuthenticatedUser
+): Promise<DbStockRow> {
+  const cleanId = priceChartingId.trim();
+  const before = await getInventoryItem(db, inventoryItemId, actor.businessId);
+  if (!before) throw new Error("No se encontro el item de inventario");
+  const entry = await getPriceChartingCacheEntry(db, cleanId);
+  if (!entry) throw new Error(`PriceCharting ID ${cleanId} no existe en el cache local`);
+  await upsertExternalIdentifier(db, actor.businessId, before.product.id, before.variant.id, "pricecharting", cleanId, entry.canonicalUrl || undefined);
+  await writeAudit(db, actor, "inventory.pricecharting.link", "inventory_item", inventoryItemId, { priceChartingId: before.priceReferences.priceCharting.priceChartingId }, { priceChartingId: cleanId });
+  const updated = await getInventoryItem(db, inventoryItemId, actor.businessId);
+  if (!updated) throw new Error("No se pudo leer el item actualizado");
+  return updated;
+}
+
 async function upsertExternalIdentifier(
   db: PGlite,
   businessId: string,
@@ -4618,8 +4636,7 @@ async function upsertExternalIdentifier(
   await db.query(`
     insert into external_identifiers (id, business_id, source_id, product_id, variant_id, external_id, external_url)
     values ($1, $2, $3, $4, $5, $6, $7)
-    on conflict (business_id, source_id, external_id) do update set
-      product_id = excluded.product_id,
+    on conflict (business_id, source_id, external_id, product_id) do update set
       variant_id = excluded.variant_id,
       external_url = excluded.external_url
   `, [crypto.randomUUID(), businessId, sourceId, productId, variantId, cleanExternalId, externalUrl || null]);
@@ -5366,8 +5383,9 @@ async function resolveInventoryItemForPriceChartingPurchase(db: PGlite, priceCha
     join external_sources es on es.id = ei.source_id
     join inventory_items ii on ii.product_id = ei.product_id
       and (ei.variant_id is null or ii.variant_id = ei.variant_id)
+    join card_variants v on v.id = ii.variant_id
     where ei.business_id = $1 and es.name = 'pricecharting' and ei.external_id = $2
-    order by ii.created_at desc
+    order by case when upper(coalesce(v.language, '')) in ('EN', '') then 0 else 1 end, ii.created_at desc
     limit 1
   `, [actor.businessId, priceChartingId]);
   if (existing.rows[0]) return String(existing.rows[0].inventory_item_id);
@@ -6427,8 +6445,9 @@ async function resolveInventoryItemForClaimCard(
     join external_sources es on es.id = ei.source_id
     join inventory_items ii on ii.product_id = ei.product_id
       and (ei.variant_id is null or ii.variant_id = ei.variant_id)
+    join card_variants v on v.id = ii.variant_id
     where ei.business_id = $1 and es.name = 'pricecharting' and ei.external_id = $2
-    order by ii.active desc, ii.created_at desc
+    order by ii.active desc, case when upper(coalesce(v.language, '')) in ('EN', '') then 0 else 1 end, ii.created_at desc
     limit 1
   `, [actor.businessId, card.priceChartingId]) : { rows: [] };
   if (existing.rows[0]) return { inventoryItemId: String(existing.rows[0].inventory_item_id), created: false };
