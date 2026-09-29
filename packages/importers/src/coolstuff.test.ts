@@ -72,6 +72,16 @@ test("matches the live ME Phantasmal Flames label without accepting other editio
   }
 });
 
+test("ignores CoolStuff era prefixes but keeps era promo sets apart", () => {
+  for (const label of ["ME Ascended Heroes", "SV Prismatic Evolutions", "SM Unified Minds"]) {
+    const products = parseCoolstuffProducts(fixture.replace("Mega Evolution", label));
+    const expansion = label.replace(/^\w+ /, "");
+    assert.equal(matchCoolstuffProduct({ ...target, expansion }, products).status, "matched");
+  }
+  const promos = parseCoolstuffProducts(fixture.replace("Mega Evolution", "SM Promos"));
+  assert.equal(matchCoolstuffProduct({ ...target, expansion: "XY Promos" }, promos).status, "not_found");
+});
+
 test("rejects a different card number or expansion even with an exact name", () => {
   const products = parseCoolstuffProducts(fixture);
   assert.equal(matchCoolstuffProduct(target, products).status, "matched");

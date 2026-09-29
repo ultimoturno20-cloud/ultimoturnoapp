@@ -82,7 +82,7 @@ if (source === "tcg") {
   for (let page = 1; page <= pages; page++) {
     const url = `https://www.coolstuffinc.com/page/${groupId}?sh=1&page=${page}`;
     const html = await cachedText(url, `coolstuff-${groupId}-${page}.json`, 10000);
-    if (page === 1) pages = parseCoolstuffPageCount(html, url);
+    pages = Math.max(pages, parseCoolstuffPageCount(html, url));
     const parsed = parseCoolstuffProducts(html);
     if (!parsed.length) throw new Error(`Pagina sin productos reconocibles: ${url}`);
     const before = products.size;

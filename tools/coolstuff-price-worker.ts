@@ -171,11 +171,14 @@ export async function loadExpansionProducts(options: Options, expansionUrl: stri
   const products = parseCoolstuffProducts(firstHtml);
   if (!products.length) throw new Error("La expansion CoolStuff no devolvio productos con precio.");
   const seen = new Set(products.map((product) => product.url));
-  const pageCount = parseCoolstuffPageCount(firstHtml, firstUrl.toString());
+  // CoolStuff shows a sliding window of page links, so the total can grow on every page.
+  let pageCount = parseCoolstuffPageCount(firstHtml, firstUrl.toString());
   for (let page = 2; page <= pageCount; page++) {
     const pageUrl = new URL(firstUrl);
     pageUrl.searchParams.set("page", String(page));
-    const next = parseCoolstuffProducts(await fetchCoolstuffHtml(options, pageUrl));
+    const html = await fetchCoolstuffHtml(options, pageUrl);
+    pageCount = Math.max(pageCount, parseCoolstuffPageCount(html, pageUrl.toString()));
+    const next = parseCoolstuffProducts(html);
     const unique = next.filter((product) => !seen.has(product.url));
     if (!unique.length) throw new Error(`CoolStuff pagina ${page}: vacia o repetida; no se guardara una expansion incompleta.`);
     for (const product of unique) seen.add(product.url);
