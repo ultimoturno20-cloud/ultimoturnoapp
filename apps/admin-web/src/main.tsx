@@ -8721,7 +8721,7 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
     const subtype = references?.tcgplayer.subTypeName || "";
     return {
       label: "TCGplayer",
-      ars: usd ? toBlueArs(usd, blueRate) : null,
+      ars: usd ? roundRecommendedArs(toBlueArs(usd, blueRate)) : null,
       usd,
       helper: usd ? `${formatUsd(usd)} market${subtype ? ` · ${subtype}` : ""}` : references?.tcgplayer.productId ? "Sin market TCG" : "Sin link TCG",
       hasPrice: usd !== null && usd > 0
