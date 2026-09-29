@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { findCoolstuffExpansionUrl } from "../packages/importers/src/index.js";
-import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, parseOptions, runCycle } from "./coolstuff-price-worker.js";
+import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, runCycle, runSummary } from "./coolstuff-price-worker.js";
 
 const product = (number: string) => `<div class="product-search-row" itemtype="https://schema.org/Product"><a class="productLink" href="/p/Pokemon/Card-${number}"><span itemprop="name">Card - ${number}/132</span></a><div class="breadcrumb-trail">Pokemon » Mega Evolution</div><div itemprop="offers" itemtype="https://schema.org/Offer"><div><span class="card-qty">1</span>Near Mint</div><b itemprop="price" content="1.25"></b></div></div>`;
 
@@ -12,6 +12,19 @@ test("worker enforces ten seconds minimum between site requests", () => {
 test("worker accepts until-done mode", () => {
   assert.equal(parseOptions(["--until-done"]).untilDone, true);
   assert.equal(parseOptions([]).untilDone, false);
+});
+
+test("run summary counts every status and renders markdown", () => {
+  const stats = newRunStats();
+  stats.reviewed = 5;
+  stats.matched = 2;
+  stats.notFound = 1;
+  stats.ambiguous = 1;
+  stats.failed = 1;
+  stats.batches = 2;
+  const summary = runSummary(stats);
+  assert.match(summary, /\| 5 \| 2 \| 1 \| 1 \| 1 \| 2 \|/);
+  assert.match(summary, /^## CoolStuff price worker/);
 });
 
 test("Destined Rivals fallback fills the missing CoolStuff index page", () => {

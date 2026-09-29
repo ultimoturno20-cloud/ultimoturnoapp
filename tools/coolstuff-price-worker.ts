@@ -1,4 +1,5 @@
 import { findCoolstuffExpansionUrl, matchCoolstuffProduct, parseCoolstuffExpansionLinks, parseCoolstuffPageCount, parseCoolstuffProducts, type CoolstuffExpansionLink, type CoolstuffPriceTarget, type CoolstuffProduct } from "../packages/importers/src/index.js";
+import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 type WorkerTarget = CoolstuffPriceTarget & {
@@ -34,6 +35,41 @@ type Observation = {
   confidence?: number;
   errorMessage?: string;
 };
+
+export type RunStats = {
+  reviewed: number;
+  matched: number;
+  notFound: number;
+  ambiguous: number;
+  failed: number;
+  batches: number;
+};
+
+export function newRunStats(): RunStats {
+  return { reviewed: 0, matched: 0, notFound: 0, ambiguous: 0, failed: 0, batches: 0 };
+}
+
+export function runSummary(stats: RunStats): string {
+  return [
+    "## CoolStuff price worker: resumen del run",
+    "",
+    "| Revisadas | Con precio | Not found | Ambiguous | Failed | Tandas |",
+    "|---|---|---|---|---|---|",
+    `| ${stats.reviewed} | ${stats.matched} | ${stats.notFound} | ${stats.ambiguous} | ${stats.failed} | ${stats.batches} |`
+  ].join("\n");
+}
+
+function reportRun(stats: RunStats) {
+  console.log(runSummary(stats).split("\n").filter((line) => !line.startsWith("|---")).join("\n"));
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryPath) {
+    try {
+      appendFileSync(summaryPath, `\n${runSummary(stats)}\n`);
+    } catch (error) {
+      console.error(`No se pudo escribir GITHUB_STEP_SUMMARY: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
 
 export function parseOptions(argv: string[]): Options {
   const values = new Map<string, string>();
@@ -259,29 +295,33 @@ function failedObservation(target: WorkerTarget, error: unknown): Observation {
   };
 }
 
-export async function runCycle(options: Options) {
+export async function runCycle(options: Options, stats: RunStats = newRunStats()) {
   const response = await getJson<{ targets: WorkerTarget[]; status: { matchedEntries: number; totalEntries: number } }>(options, `/coolstuff-prices/targets?limit=${options.batchSize}&refreshHours=${options.refreshHours}`);
   console.log(`[${new Date().toLocaleString("es-AR")}] CoolStuff cache: ${response.status.matchedEntries}/${response.status.totalEntries} con precio. Pendientes en tanda: ${response.targets.length}.`);
   if (!response.targets.length) return 0;
   const expansionLinks = await loadExpansionLinks(options);
-  let matched = 0;
-  let reviewed = 0;
+  stats.batches++;
+  let batchReviewed = 0;
   for (const target of response.targets) {
     let observation: Observation;
     try {
       const match = matchCoolstuffProduct(target, await searchCoolstuff(target, options, expansionLinks));
       observation = observationForMatch(target, match);
-      if (observation.status === "matched") matched++;
+      if (observation.status === "matched") stats.matched++;
+      else if (observation.status === "not_found") stats.notFound++;
+      else if (observation.status === "ambiguous") stats.ambiguous++;
       console.log(`${target.name} ${target.number} [${target.condition}/${target.finish}] -> ${observation.status}${observation.priceUsd ? ` USD ${observation.priceUsd.toFixed(2)}` : ""}`);
     } catch (error) {
       observation = failedObservation(target, error);
+      stats.failed++;
       console.error(`${target.name}: ${observation.errorMessage}`);
     }
-    reviewed++;
+    stats.reviewed++;
+    batchReviewed++;
     if (!options.dryRun) await postJson(options, "/coolstuff-prices/observations", { observations: [observation] });
   }
-  console.log(`Tanda terminada: revisadas=${reviewed}, precios=${matched}, modo=${options.dryRun ? "simulacion" : "guardado"}.`);
-  return reviewed;
+  console.log(`Tanda terminada: revisadas=${batchReviewed}, precios=${stats.matched}, modo=${options.dryRun ? "simulacion" : "guardado"}.`);
+  return batchReviewed;
 }
 
 function sleep(milliseconds: number) {
@@ -298,14 +338,17 @@ async function main() {
     throw new Error("Falta ULTIMOTURNO_ACCESS_KEY para conectar el worker con produccion.");
   }
   await getJson(options, "/health");
+  const stats = newRunStats();
   console.log(`Worker conectado a ${options.apiBaseUrl}. Pausa CoolStuff: ${Math.round(options.delayMs / 1000)}s.`);
   do {
     try {
-      const processed = await runCycle(options);
+      const processed = await runCycle(options, stats);
       if (options.dryRun) break;
       if (options.untilDone) {
         if (!processed) {
           console.log("Sin cartas vencidas. Modo until-done terminado.");
+          reportRun(stats);
+          if (stats.reviewed > 0 && stats.failed === stats.reviewed) process.exitCode = 1;
           break;
         }
         continue;
