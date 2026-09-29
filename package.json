@@ -20,6 +20,7 @@
     "images:storage:daemon": "tsx tools/image-storage-daemon.ts",
     "coolstuff:prices": "tsx tools/coolstuff-price-worker.ts",
     "coolstuff:prices:daemon": "tsx tools/coolstuff-price-worker.ts --loop",
+    "coolstuff:prices:until-done": "tsx tools/coolstuff-price-worker.ts --until-done",
     "prices:audit": "tsx tools/price-source-audit.mts",
     "prices:link-tcg": "tsx tools/tcgcsv-inventory-sync.ts",
     "db:postgres:check": "tsx scripts/check-postgres-connection.mts",

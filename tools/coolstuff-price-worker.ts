@@ -14,6 +14,7 @@ type Options = {
   delayMs: number;
   refreshHours: number;
   loop: boolean;
+  untilDone: boolean;
   sleepMs: number;
   dryRun: boolean;
 };
@@ -51,6 +52,7 @@ export function parseOptions(argv: string[]): Options {
     delayMs: clamp(values.get("delay-ms") || process.env.npm_config_delay_ms, 10000, 60000, 10000),
     refreshHours: clamp(values.get("refresh-hours") || process.env.npm_config_refresh_hours, 6, 24 * 30, 24),
     loop: flags.has("loop") || process.env.npm_config_loop === "true",
+    untilDone: flags.has("until-done") || process.env.npm_config_until_done === "true",
     sleepMs: clamp(values.get("sleep-ms") || process.env.npm_config_sleep_ms, 60000, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
     dryRun: flags.has("dry-run") || process.env.npm_config_dry_run === "true"
   };
@@ -72,12 +74,14 @@ El worker procesa solo cartas inglesas con stock, conserva el progreso en
 Supabase y espera 10 segundos entre consultas a CoolStuff.
 En modo loop sigue con las tandas pendientes; espera una hora solo cuando
 no quedan pendientes o falla la API. Dry-run ejecuta una sola tanda.
+En modo --until-done procesa todas las tandas pendientes y termina.
 
 Opciones:
   --batch=20
   --delay-ms=10000
   --refresh-hours=24
   --loop
+  --until-done
   --sleep-ms=3600000
   --dry-run
   --api=https://ultimoturno.app/api
@@ -135,6 +139,20 @@ let lastCoolstuffRequestAt = 0;
 let expansionLinksCache: { expiresAt: number; links: CoolstuffExpansionLink[] } | undefined;
 const expansionCache = new Map<string, { expiresAt: number; products: Promise<CoolstuffProduct[]> }>();
 
+// CoolStuff omits some live set pages from the /pokemon/ index.
+export const COOLSTUFF_EXPANSION_FALLBACKS: CoolstuffExpansionLink[] = [
+  { name: "Destined Rivals", url: "https://www.coolstuffinc.com/page/8872" }
+];
+
+export function mergeCoolstuffExpansionFallbacks(links: CoolstuffExpansionLink[], fallbacks = COOLSTUFF_EXPANSION_FALLBACKS) {
+  const byUrl = new Map(links.map((link) => [link.url.replace(/\/+$/, ""), link]));
+  for (const fallback of fallbacks) {
+    const key = fallback.url.replace(/\/+$/, "");
+    if (!byUrl.has(key)) byUrl.set(key, fallback);
+  }
+  return [...byUrl.values()];
+}
+
 async function fetchCoolstuffHtml(options: Options, url: URL | string) {
   const waitMs = Math.max(0, options.delayMs - (Date.now() - lastCoolstuffRequestAt));
   if (waitMs) await sleep(waitMs);
@@ -159,8 +177,9 @@ async function loadExpansionLinks(options: Options): Promise<CoolstuffExpansionL
   const html = await fetchCoolstuffHtml(options, "https://www.coolstuffinc.com/pokemon/");
   const links = parseCoolstuffExpansionLinks(html);
   if (!links.length) throw new Error("No se pudo leer el indice de expansiones de CoolStuff.");
-  expansionLinksCache = { expiresAt: Date.now() + 86400000, links };
-  return links;
+  const withFallbacks = mergeCoolstuffExpansionFallbacks(links);
+  expansionLinksCache = { expiresAt: Date.now() + 86400000, links: withFallbacks };
+  return withFallbacks;
 }
 
 export async function loadExpansionProducts(options: Options, expansionUrl: string): Promise<CoolstuffProduct[]> {
@@ -283,11 +302,19 @@ async function main() {
   do {
     try {
       const processed = await runCycle(options);
-      if (!options.loop || options.dryRun) break;
+      if (options.dryRun) break;
+      if (options.untilDone) {
+        if (!processed) {
+          console.log("Sin cartas vencidas. Modo until-done terminado.");
+          break;
+        }
+        continue;
+      }
+      if (!options.loop) break;
       if (processed) continue;
       console.log(`Sin cartas vencidas. Proxima revision en ${Math.round(options.sleepMs / 60000)} min.`);
     } catch (error) {
-      if (!options.loop || options.dryRun) throw error;
+      if ((!options.loop && !options.untilDone) || options.dryRun) throw error;
       console.error(`Tanda interrumpida; se reintentara: ${error instanceof Error ? error.message : String(error)}`);
     }
     await sleep(options.sleepMs);
