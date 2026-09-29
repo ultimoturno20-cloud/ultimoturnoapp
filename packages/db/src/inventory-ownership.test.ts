@@ -5,8 +5,10 @@ import path from "node:path";
 import { it } from "node:test";
 import {
   addInventoryStock,
+  assignResellerStock,
   createManagedUser,
   createOperationalDatabase,
+  createReseller,
   createSale,
   getAuthenticatedUserContext,
   getDefaultOperationalUser,
@@ -54,6 +56,18 @@ it("separates owned stock and prevents owners from selling another user's units"
   assert.notEqual(companyItem.id, germanItem.id);
   assert.equal((await listStockForBusiness(db, admin.businessId)).items.length, 2);
   assert.deepEqual((await listStockForActor(db, german!)).items.map((item) => item.id), [germanItem.id]);
+  const reseller = await createReseller(db, {
+    displayName: "Revendedor Test",
+    email: "revendedor@test.local",
+    password: "password-segura-456",
+    commissionPercent: 20
+  }, admin);
+  await assert.rejects(
+    () => assignResellerStock(db, reseller.reseller.userId, companyItem.id, 1, german!),
+    /otro propietario/
+  );
+  const assigned = await assignResellerStock(db, reseller.reseller.userId, germanItem.id, 1, german!);
+  assert.equal(assigned.assignments.find((item) => item.inventoryItemId === germanItem.id)?.assigned, 1);
   await assert.rejects(() => createSale(db, {
     customerName: "Venta ajena",
     saleType: "sale",

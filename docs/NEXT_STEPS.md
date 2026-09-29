@@ -1,6 +1,6 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-28
+Actualizado: 2026-09-29
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
@@ -37,19 +37,20 @@ reservas coinciden y nunca se genera stock negativo o doble reserva.
 - Confirmar el primer ingreso de Mayra, Seb y Melo como administradores y de
   German como propietario de stock; cambiar las claves temporales si se decide
   una politica distinta de acceso.
-- Cargar una carta existente a nombre de UltimoTurno y otra igual a nombre de
-  German. Deben aparecer como SKUs separados y el filtro de propietario debe
-  distinguirlas.
-- Verificar desde la cuenta de German que solo vea su inventario y que pueda
-  cargar y vender sus unidades. Confirmar desde una cuenta administradora que
-  vea y pueda vender ambas.
+- Ingresar siempre por `/inicio`: una cuenta revendedora debe abrir solamente su
+  portal, German debe ver solo `Cargar stock` y `Asignar a revendedores`, y una
+  cuenta administradora debe conservar el panel completo.
+- Cargar una carta con German y asignarla a un revendedor. Intentar luego una
+  asignacion de stock perteneciente a UltimoTurno: la API debe rechazarla.
+- Escribir manualmente `/inventario`, `/ordenes` y `/admin` con la sesion de
+  German. La interfaz debe volver a `/inventario/cargar-stock` y la API debe
+  denegar operaciones fuera del alcance autorizado.
 - Mantener separadas las nociones de propietario y revendedor consignado. No
   migrar asignaciones de consignacion a propiedad salvo decision operativa
   explicita.
 
-Senal de exito: las unidades de cada dueño conservan cantidades y ventas
-independientes, German no puede operar stock ajeno y cualquier administrador
-puede intervenir sobre todo el inventario.
+Senal de exito: cada rol aterriza en su sector, German solo carga y consigna su
+propio stock, y cualquier administrador puede intervenir sobre todo el sistema.
 
 ### Verificar reparacion prioritaria de imagenes
 

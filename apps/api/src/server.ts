@@ -3183,10 +3183,9 @@ function requestHasCronAccess(request: IncomingMessage) {
 }
 
 function stockOwnerRouteAllowed(pathname: string, method = "GET") {
-  if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/sales", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup"].includes(pathname)) return true;
-  if (method === "POST" && ["/inventory/intake", "/sales"].includes(pathname)) return true;
-  if (method === "PUT" && /^\/inventory\/[^/]+$/.test(pathname)) return true;
-  if (method === "POST" && /^\/inventory\/[^/]+\/image\/force$/.test(pathname)) return true;
+  if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
+  if (method === "POST" && pathname === "/inventory/intake") return true;
+  if (method === "POST" && /^\/resellers\/[^/]+\/assignments$/.test(pathname)) return true;
   return false;
 }
 
@@ -4002,9 +4001,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const db = await dbPromise;
       const session = await loginUser(db, body.email?.trim() || "", body.password || "");
       const context = await getAuthenticatedUserContext(db, session.token);
-      if (!context || !context.roles.some((role) => role === "admin" || role === "stock_owner")) {
+      if (!context || !context.roles.some((role) => role === "admin" || role === "stock_owner" || role === "reseller")) {
         await logoutUser(db, session.token);
-        sendJson(response, 403, { ok: false, error: "Este usuario no tiene acceso al panel operativo." });
+        sendJson(response, 403, { ok: false, error: "Este usuario no tiene acceso a UltimoTurno." });
         return;
       }
       sendJson(response, 200, { token: session.token, user: context });

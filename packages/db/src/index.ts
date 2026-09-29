@@ -1446,8 +1446,12 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
   try {
     const reseller = await db.query("select 1 from reseller_profiles where user_id = $1 and business_id = $2", [resellerUserId, actor.businessId]);
     if (!reseller.rows[0]) throw new Error("Revendedor no encontrado.");
-    const item = await db.query<Record<string, unknown>>("select quantity_on_hand from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
+    const item = await db.query<Record<string, unknown>>("select quantity_on_hand, owner_user_id from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
     if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    const ownerRestricted = actor.roles?.includes("stock_owner") && !actor.roles.includes("admin");
+    if (ownerRestricted && String(item.rows[0].owner_user_id || "") !== actor.id) {
+      throw new Error("No podes asignar stock de otro propietario.");
+    }
     const assigned = await db.query<{ total: string }>(`
       select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
       from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2

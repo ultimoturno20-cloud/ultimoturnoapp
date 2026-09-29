@@ -29,6 +29,10 @@ const resellerPortalPaths: Record<ResellerPortalTab, string> = {
   sales: "/portal-revendedor/ventas"
 };
 
+function stockOwnerViewAllowed(view: View) {
+  return view === "stock-intake" || view === "resellers";
+}
+
 function viewFromLocation(): View {
   const params = new URLSearchParams(window.location.search);
   if (params.get("mobile") === "1" || window.location.hash === "#mobile") return "mobile-intake";
@@ -962,6 +966,7 @@ const apiBase = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 const accessKeyStorageKey = "ultimoturno_access_key";
 const accessKeyCookieName = "ultimoturno_access_key";
 const adminSessionTokenKey = "ultimoturno_admin_session";
+const resellerTokenKey = "ultimoturno_reseller_token";
 const importDraftStorageKey = "ultimoturno_import_stock_draft_v2";
 const mobileHelperStorageKey = "ultimoturno_mobile_helper_name";
 const mobileBatchStorageKey = "ultimoturno_mobile_default_batch";
@@ -1078,6 +1083,7 @@ function App() {
   const [imageCatalogSearch, setImageCatalogSearch] = useState("");
   const [imageQuality, setImageQuality] = useState<ImageDatabaseQuality>(() => emptyImageDatabaseQuality());
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
+  const restrictedStockOwner = userRoles.includes("stock_owner") && !userRoles.includes("admin");
 
   async function bootstrap(seedExamplesIfEmpty = false) {
     const [me, rate] = await Promise.all([
@@ -1089,7 +1095,7 @@ function App() {
     setUserId(me.user.id);
     const nextRoles = me.roles || me.user.roles || ["admin"];
     const ownerRestricted = nextRoles.includes("stock_owner") && !nextRoles.includes("admin");
-    const targetView = ownerRestricted && view !== "inventory" && view !== "stock-intake" ? "inventory" : view;
+    const targetView = ownerRestricted && !stockOwnerViewAllowed(view) ? "stock-intake" : view;
     setUserRoles(nextRoles);
     const managedUsersRequest = nextRoles.includes("admin")
       ? api<{ users: ManagedUser[] }>("/users").then((result) => setManagedUsers(result.users))
@@ -1214,13 +1220,22 @@ function App() {
     try {
       const result = await api<{ token: string; user: { id: string; displayName: string; roles: string[] } }>("/auth/login", { method: "POST", body: loginCredentials, skipSession: true });
       revalidatedApiCache.clear();
+      const resellerOnly = result.user.roles.includes("reseller") && !result.user.roles.includes("admin") && !result.user.roles.includes("stock_owner");
+      if (resellerOnly) {
+        removeLocalStorage(adminSessionTokenKey);
+        writeLocalStorage(resellerTokenKey, result.token);
+        clearStoredAccessKey();
+        window.location.assign(resellerPortalPaths.sell);
+        return;
+      }
+      removeLocalStorage(resellerTokenKey);
       writeLocalStorage(adminSessionTokenKey, result.token);
       clearStoredAccessKey();
       setUserId(result.user.id);
       setUserName(result.user.displayName);
       setUserRoles(result.user.roles);
-      if (result.user.roles.includes("stock_owner") && !result.user.roles.includes("admin") && view !== "inventory" && view !== "stock-intake") {
-        window.location.assign(viewPaths.inventory);
+      if (result.user.roles.includes("stock_owner") && !result.user.roles.includes("admin") && !stockOwnerViewAllowed(view)) {
+        window.location.assign(viewPaths["stock-intake"]);
         return;
       }
       await bootstrap();
@@ -1256,20 +1271,28 @@ function App() {
   }, [initialExamplesChecked]);
 
   useEffect(() => {
+    if (!initialLoadComplete || accessRequired || !restrictedStockOwner || stockOwnerViewAllowed(view)) return;
+    setView("stock-intake");
+    window.history.replaceState({ view: "stock-intake" }, "", viewPaths["stock-intake"]);
+  }, [accessRequired, initialLoadComplete, restrictedStockOwner, view]);
+
+  useEffect(() => {
+    if (restrictedStockOwner && !stockOwnerViewAllowed(view)) return;
     const nextPath = viewPaths[view];
     if (window.location.pathname !== nextPath) {
       const method = routeInitialized.current ? "pushState" : "replaceState";
       window.history[method]({ view }, "", nextPath);
     }
     routeInitialized.current = true;
-  }, [view]);
+  }, [restrictedStockOwner, view]);
 
   useEffect(() => {
     if (!initialLoadComplete || accessRequired) return;
+    if (restrictedStockOwner && !stockOwnerViewAllowed(view)) return;
     const loadedAt = loadedViewsAt.current.get(view) || 0;
     if (Date.now() - loadedAt < 2_000) return;
     void refreshViewData(view).catch(showError);
-  }, [accessRequired, initialLoadComplete, view]);
+  }, [accessRequired, initialLoadComplete, restrictedStockOwner, view]);
 
   useEffect(() => {
     const handlePopState = () => setView(viewFromLocation());
@@ -2554,13 +2577,12 @@ function App() {
     );
   }
 
-  const restrictedStockOwner = userRoles.includes("stock_owner") && !userRoles.includes("admin");
   const logoutPanel = async () => {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
     revalidatedApiCache.clear();
     removeLocalStorage(adminSessionTokenKey);
     clearStoredAccessKey();
-    window.location.assign(viewPaths.inventory);
+    window.location.assign(viewPaths.dashboard);
   };
 
   return (
@@ -2586,7 +2608,10 @@ function App() {
 
       <nav className="nav" aria-label="Navegacion principal">
         {!restrictedStockOwner ? <NavButton href={viewPaths.dashboard} icon="home" active={view === "dashboard"} onClick={() => setView("dashboard")}>Inicio</NavButton> : null}
-        <NavButton href={viewPaths.inventory} icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>
+        {restrictedStockOwner ? <>
+          <NavButton href={viewPaths["stock-intake"]} icon="inventory" active={view === "stock-intake"} onClick={() => setView("stock-intake")}>Cargar stock</NavButton>
+          <NavButton href={viewPaths.resellers} icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Asignar a revendedores</NavButton>
+        </> : <NavButton href={viewPaths.inventory} icon="inventory" active={view === "inventory" || view === "stock-intake"} onClick={() => setView("inventory")}>Inventario</NavButton>}
         {!restrictedStockOwner ? <><NavButton href={viewPaths.orders} icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
         <NavButton href={viewPaths.sales} icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
         <NavButton href={viewPaths.claims} icon="claims" active={view === "claims" || view === "claim-planner"} onClick={() => setView("claims")}>Claims</NavButton>
@@ -2760,7 +2785,8 @@ function App() {
           onChange={setForm}
           receipt={productReceipt}
           onSubmit={saveProduct}
-          onClose={closeStockIntake}
+          onClose={restrictedStockOwner ? () => setView("resellers") : closeStockIntake}
+          closeLabel={restrictedStockOwner ? "Asignar a revendedores" : "Volver al inventario"}
           blueRate={blueRate}
           saving={productSaving}
           priceChartingCache={priceChartingCache}
@@ -2854,7 +2880,7 @@ function App() {
           onExit={() => setView("dashboard")}
         />
       ) : null}
-      {view === "resellers" ? <ResellersAdminView stock={stock.items} /> : null}
+      {view === "resellers" ? <ResellersAdminView stock={stock.items} assignmentOnly={restrictedStockOwner} /> : null}
       {view === "admin" ? (
         <AdminView
           environment={environment}
@@ -3892,12 +3918,13 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
   );
 }
 
-function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, blueRate, saving, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
+function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, closeLabel, blueRate, saving, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
   receipt: string;
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
   onClose: () => void;
+  closeLabel?: string;
   blueRate: BlueExchangeRate;
   saving: boolean;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
@@ -3917,7 +3944,7 @@ function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, blueRate,
           <h2>Cargar stock</h2>
           <p>Busca una carta, registra sus datos y continua con la siguiente.</p>
         </div>
-        <button className="secondary-action stock-intake-back" type="button" onClick={onClose} aria-label="Volver al inventario" title="Volver al inventario"><Icon name="close" /><span>Volver al inventario</span></button>
+        <button className="secondary-action stock-intake-back" type="button" onClick={onClose} aria-label={closeLabel || "Volver al inventario"} title={closeLabel || "Volver al inventario"}><Icon name="close" /><span>{closeLabel || "Volver al inventario"}</span></button>
       </header>
       {receipt ? <p className="intake-feedback stock-intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
       <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />
@@ -5674,7 +5701,7 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
   );
 }
 
-function ResellersAdminView({ stock }: { stock: StockRow[] }) {
+function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow[]; assignmentOnly?: boolean }) {
   const [resellers, setResellers] = useState<ResellerDashboard[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -5756,14 +5783,14 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
 
   return (
     <section className="view reseller-admin-view">
-      <div className="section-heading"><div><h2>Revendedores</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div><a className="secondary-action" href="/portal-revendedor" target="_blank" rel="noreferrer">Abrir portal</a></div>
+      <div className="section-heading"><div><h2>{assignmentOnly ? "Asignar a revendedores" : "Revendedores"}</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div>{!assignmentOnly ? <a className="secondary-action" href="/portal-revendedor" target="_blank" rel="noreferrer">Abrir portal</a> : null}</div>
       {error ? <div className="feedback error">{error}</div> : null}
       <div className="reseller-layout">
         <aside className="panel reseller-sidebar">
           <h3>Equipo</h3>
           {loading ? <p className="muted">Cargando...</p> : null}
           {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}</strong><span>{formatArs(item.summary.outstandingArs)} a rendir</span></button>)}
-          <form className="reseller-create" onSubmit={create}>
+          {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
             <h3>Nuevo revendedor</h3>
             <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
             <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
@@ -5771,16 +5798,16 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
             <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
             <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
             <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
-          </form>
+          </form> : null}
         </aside>
         <div className="reseller-workspace">
-          {!selected ? <EmptyState title="Sin revendedores" body="Crea el primer usuario para comenzar a asignar mercaderia." /> : <>
+          {!selected ? <EmptyState title="Sin revendedores" body={assignmentOnly ? "Un administrador debe crear primero un usuario revendedor." : "Crea el primer usuario para comenzar a asignar mercaderia."} /> : <>
             <section className="metrics reseller-metrics">
               <Metric label="Consignadas" value={selected.summary.remainingUnits} helper="unidades pendientes" />
               <Metric label="Vendibles ahora" value={selected.summary.sellableUnits} helper="segun stock real" />
-              <Metric label="Ventas" value={formatArs(selected.summary.grossSalesArs)} helper="bruto confirmado" />
+              {!assignmentOnly ? <><Metric label="Ventas" value={formatArs(selected.summary.grossSalesArs)} helper="bruto confirmado" />
               <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
-              <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} />
+              <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} /></> : null}
             </section>
             <section className="panel">
               <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
@@ -5803,19 +5830,17 @@ function ResellersAdminView({ stock }: { stock: StockRow[] }) {
               </div> : <p className="reseller-stock-hint">Escribi para ver y elegir resultados directamente.</p>}
             </section>
             <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero.</p></div></div>
-              <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b><button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button></div>)}</div>
+              <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b>{!assignmentOnly ? <button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button> : null}</div>)}</div>
             </section>
-            <section className="panel"><div className="section-heading"><div><h3>Ventas y rendiciones</h3><p>Saldo neto luego de comision.</p></div><button className="primary-action" disabled={!selected.summary.outstandingArs} onClick={() => void settle()}>Registrar rendicion</button></div>
+            {!assignmentOnly ? <section className="panel"><div className="section-heading"><div><h3>Ventas y rendiciones</h3><p>Saldo neto luego de comision.</p></div><button className="primary-action" disabled={!selected.summary.outstandingArs} onClick={() => void settle()}>Registrar rendicion</button></div>
               <div className="reseller-table">{selected.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)} bruto</span><b>{formatArs(sale.netDueArs)} neto</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span>{sale.status === "confirmed" ? <button className="secondary-action" onClick={() => void cancelSale(sale)}>Anular</button> : <span />}</div>)}</div>
-            </section>
+            </section> : null}
           </>}
         </div>
       </div>
     </section>
   );
 }
-
-const resellerTokenKey = "ultimoturno_reseller_token";
 
 function ResellerPortal() {
   const [token, setToken] = useState(() => readLocalStorage(resellerTokenKey));
@@ -5908,7 +5933,7 @@ function ResellerPortal() {
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
   }
-  async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); }
+  async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); window.location.assign(viewPaths.dashboard); }
 
   function addToResellerCart(item: ResellerAssignment) {
     if (item.sellable <= 0) return;
@@ -6060,7 +6085,7 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
     finally { setSaving(false); }
   }
   return <section className="panel user-management-panel">
-    <div className="section-heading"><div><h3>Usuarios y propietarios</h3><p>Los administradores operan todo. Los propietarios solo cargan y venden su propio stock.</p></div></div>
+    <div className="section-heading"><div><h3>Usuarios y propietarios</h3><p>Los administradores operan todo. Los propietarios cargan su stock y pueden asignarlo a revendedores.</p></div></div>
     <div className="managed-user-list">{users.map((user) => <div key={user.id}><span><strong>{user.displayName}</strong><small>{user.email}</small></span><b>{user.roles.includes("admin") ? "Administrador" : user.roles.includes("stock_owner") ? "Stock propio" : user.roles.join(", ")}</b><em>{user.active ? "Activo" : "Inactivo"}</em></div>)}</div>
     <form className="managed-user-create" onSubmit={submit}>
       <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
