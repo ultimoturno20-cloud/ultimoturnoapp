@@ -10,6 +10,7 @@ import {
   confirmOwnResellerOrder,
   createOperationalDatabase,
   createReseller,
+  createResellerStockRequest,
   createResellerOrder,
   createResellerSale,
   createSale,
@@ -17,10 +18,54 @@ import {
   getDefaultOperationalUser,
   getResellerDashboard,
   listStockForBusiness,
+  listResellers,
   loginUser,
+  resolveResellerStockRequest,
   updateOwnResellerOrderWorkflow,
   upsertInventoryItem
 } from "./index.js";
+
+it("lets a reseller request global stock and lets an admin approve quantity and price together", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-reseller-request-"));
+  const db = await createOperationalDatabase({ dataDir });
+  const admin = await getDefaultOperationalUser(db);
+  const item = await upsertInventoryItem(db, {
+    sku: "TEST-REQUEST-001",
+    name: "Eevee Solicitud",
+    expansion: "Set Test",
+    number: "133",
+    language: "EN",
+    condition: "NM",
+    finish: "normal",
+    quantityOnHand: 4,
+    quantityReserved: 0,
+    priceArs: 9000
+  }, admin);
+  const created = await createReseller(db, {
+    displayName: "Revendedor Solicitudes",
+    email: "solicitudes@test.local",
+    password: "password-segura",
+    commissionPercent: 20
+  }, admin);
+  const session = await loginUser(db, "solicitudes@test.local", "password-segura");
+  const reseller = await getAuthenticatedUserContext(db, session.token);
+  assert.ok(reseller);
+
+  let dashboard = await createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 2 }, reseller!);
+  assert.equal(dashboard.stockRequests.length, 1);
+  assert.equal(dashboard.stockRequests[0].quantityRequested, 2);
+  dashboard = await createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 3 }, reseller!);
+  assert.equal(dashboard.stockRequests.length, 1);
+  assert.equal(dashboard.stockRequests[0].quantityRequested, 3);
+
+  const adminView = await listResellers(db, admin.businessId);
+  const pending = adminView.resellers.find((entry) => entry.reseller.userId === created.reseller.userId)!.stockRequests[0];
+  assert.equal(pending.currentPriceArs, 9000);
+  dashboard = await resolveResellerStockRequest(db, pending.id, { action: "approve", quantity: 2, priceArs: 12500 }, admin);
+  assert.equal(dashboard.stockRequests.length, 0);
+  assert.equal(dashboard.assignments[0].remaining, 2);
+  assert.equal(dashboard.assignments[0].priceArs, 12500);
+});
 
 it("keeps consigned stock available centrally and validates real stock when a reseller sells", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-reseller-"));

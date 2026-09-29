@@ -12605,6 +12605,15 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-stock-selected span { color: var(--accent-soft); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .reseller-stock-selected small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reseller-stock-selected > b { font-size: 12px; white-space: nowrap; }
+.reseller-request-list { display: grid; gap: 8px; }
+.reseller-request-list article { display: grid; grid-template-columns: 48px minmax(180px, 1fr) 92px 130px 105px auto; gap: 10px; align-items: center; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.reseller-request-copy, .reseller-request-stock { display: grid; gap: 3px; min-width: 0; }
+.reseller-request-copy span, .reseller-request-copy small, .reseller-request-stock span, .reseller-request-stock small { color: var(--muted); font-size: 11px; }
+.reseller-request-list label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.reseller-request-list input { width: 100%; min-width: 0; padding: 8px; }
+.reseller-request-stock b { font-size: 18px; }
+.reseller-request-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.reseller-request-actions button { white-space: nowrap; }
 .reseller-table { display: grid; gap: 8px; }
 .reseller-row { display: grid; grid-template-columns: 48px minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
 .reseller-row.sale { grid-template-columns: minmax(260px, 1fr) auto auto auto auto; }
@@ -12763,6 +12772,13 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-global-grid article span, .reseller-global-grid article small { color: var(--muted); font-size: 12px; }
 .reseller-global-grid article > span { text-align: center; }
 .reseller-global-grid article > span b { color: var(--text); font-size: 18px; }
+.reseller-global-grid article.request-pending { border-color: #cb9b35; }
+.reseller-global-grid article > .reseller-global-request { grid-column: 1 / -1; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; align-items: end; padding-top: 9px; border-top: 1px solid var(--border-soft); }
+.reseller-global-request label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.reseller-global-request input { width: 100%; min-height: 38px; padding: 7px; }
+.reseller-global-request button { justify-content: center; min-height: 38px; }
+.reseller-request-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reseller-request-notice .icon-action { flex: 0 0 auto; width: 32px; height: 32px; }
 
 @media (max-width: 900px) {
   .reseller-layout { grid-template-columns: 1fr; }
@@ -12772,6 +12788,9 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-stock-results { grid-template-columns: 1fr; }
   .reseller-stock-selected { grid-template-columns: 42px minmax(0, 1fr) auto; }
   .reseller-stock-selected > .secondary-action { grid-column: 2 / -1; justify-self: start; }
+  .reseller-request-list article { grid-template-columns: 48px minmax(0, 1fr) 92px 130px; }
+  .reseller-request-stock { grid-column: 2; }
+  .reseller-request-actions { grid-column: 3 / -1; }
   .reseller-row, .reseller-row.sale { grid-template-columns: 48px minmax(0, 1fr); }
   .reseller-row.sale > :first-child { grid-column: 1 / -1; }
   .reseller-sell-layout { grid-template-columns: 1fr; }
@@ -12802,6 +12821,9 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-stock-list > div { grid-template-columns: 48px minmax(0, 1fr); }
   .reseller-sales-list article { grid-template-columns: 1fr 1fr; }
   .reseller-sales-list article > div { grid-column: 1 / -1; }
+  .reseller-request-list article { grid-template-columns: 48px minmax(0, 1fr); }
+  .reseller-request-list article > label, .reseller-request-stock, .reseller-request-actions { grid-column: 1 / -1; }
+  .reseller-request-actions { display: grid; grid-template-columns: 1fr 1.35fr; }
   .reseller-global-grid { grid-template-columns: 1fr; }
   .reseller-global-grid article { grid-template-columns: 64px minmax(0, 1fr) auto; }
   .reseller-global-grid article > strong { grid-column: 2 / 4; }

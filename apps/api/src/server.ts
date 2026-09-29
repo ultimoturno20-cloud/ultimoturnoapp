@@ -29,6 +29,7 @@ import {
   createSale,
   createManagedUser,
   createReseller,
+  createResellerStockRequest,
   createResellerOrder,
   createResellerSale,
   createResellerSettlement,
@@ -99,6 +100,7 @@ import {
   refreshCardIndexFromPriceCharting,
   resetInventoryStock,
   repairInventorySalePrices,
+  resolveResellerStockRequest,
   returnResellerStock,
   reviewCardIndexEntry,
   updateMobileInventoryEntryStatus,
@@ -4070,6 +4072,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/reseller/portal/assignment-requests" && request.method === "POST") {
+      const db = await dbPromise;
+      const reseller = await requireResellerUser(request);
+      const body = await readJson<{ inventoryItemId: string; quantity: number }>(request);
+      sendJson(response, 201, await createResellerStockRequest(db, { inventoryItemId: body.inventoryItemId, quantity: Number(body.quantity) }, reseller));
+      return;
+    }
+
     const ownResellerOrderConfirmMatch = url.pathname.match(/^\/reseller\/portal\/orders\/([^/]+)\/confirm$/);
     if (ownResellerOrderConfirmMatch && request.method === "POST") {
       const db = await dbPromise;
@@ -4176,6 +4186,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (resellerAssignMatch && request.method === "POST") {
       const body = await readJson<{ inventoryItemId: string; quantity: number }>(request);
       sendJson(response, 200, await assignResellerStock(db, resellerAssignMatch[1], body.inventoryItemId, Number(body.quantity), user));
+      return;
+    }
+
+    const resellerRequestResolveMatch = url.pathname.match(/^\/resellers\/assignment-requests\/([^/]+)\/resolve$/);
+    if (resellerRequestResolveMatch && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson<{ action: "approve" | "reject"; quantity?: number; priceArs?: number }>(request);
+      sendJson(response, 200, await resolveResellerStockRequest(db, resellerRequestResolveMatch[1], body, user));
       return;
     }
 

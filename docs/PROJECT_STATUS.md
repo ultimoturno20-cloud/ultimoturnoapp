@@ -33,6 +33,13 @@ Actualizado: 2026-09-29
   numero, precio o cantidad, grupo de idioma y filtros por expansion, idioma,
   condicion, acabado y categoria. La vista renderiza 48 cartas por tanda para
   mantenerse fluida aun con catalogos grandes.
+- Desde `Stock global`, cada revendedor puede pedir una cantidad para recibirla
+  en consignacion. Repetir el pedido sobre la misma carta actualiza la solicitud
+  pendiente y no reserva ni descuenta inventario.
+- Administracion muestra las solicitudes pendientes dentro de cada revendedor.
+  Antes de aprobar puede corregir cantidad y precio ARS; la aprobacion actualiza
+  el precio global y crea la asignacion en una sola transaccion. Tambien puede
+  rechazar el pedido sin modificar stock.
 
 ### Dominio productivo
 

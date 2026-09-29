@@ -51,11 +51,13 @@ type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; 
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; fulfillmentStatus: "to_pack" | "to_deliver" | "delivered"; paymentStatus: "pending" | "paid"; totalArs: number; notes: string; convertedSaleId: string; packedAt?: string; deliveredAt?: string; paidAt?: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; tags: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
+type ResellerStockRequest = { id: string; resellerUserId: string; inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; quantityRequested: number; availableQuantity: number; priceArsSnapshot: number; currentPriceArs: number; createdAt: string };
 type ResellerGlobalSort = "name" | "expansion" | "number" | "price" | "quantity";
 type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
   assignments: ResellerAssignment[];
   globalStock: ResellerGlobalStockItem[];
+  stockRequests: ResellerStockRequest[];
   orders: ResellerOrder[];
   sales: ResellerSale[];
   settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
@@ -5711,6 +5713,8 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
   const [stockQuery, setStockQuery] = useState("");
   const [assignItemId, setAssignItemId] = useState("");
   const [assignQuantity, setAssignQuantity] = useState(1);
+  const [requestDrafts, setRequestDrafts] = useState<Record<string, { quantity: string; priceArs: string }>>({});
+  const [resolvingRequestId, setResolvingRequestId] = useState("");
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
 
   const load = async (quiet = false) => {
@@ -5759,6 +5763,20 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
     } catch (nextError) { setError(errorMessage(nextError)); }
   }
 
+  async function resolveStockRequest(request: ResellerStockRequest, action: "approve" | "reject") {
+    if (!selected) return;
+    const draft = requestDrafts[request.id];
+    const quantity = Number(draft?.quantity ?? request.quantityRequested);
+    const priceArs = Number(draft?.priceArs ?? request.currentPriceArs);
+    setResolvingRequestId(request.id);
+    try {
+      replace(await api<ResellerDashboard>(`/resellers/assignment-requests/${request.id}/resolve`, { method: "POST", body: { action, quantity, priceArs } }));
+      setRequestDrafts((current) => { const { [request.id]: _resolved, ...rest } = current; return rest; });
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setResolvingRequestId(""); }
+  }
+
   async function registerReturn(item: ResellerAssignment) {
     if (!selected) return;
     const raw = window.prompt(`Unidades devueltas de ${item.name}`, "1");
@@ -5790,7 +5808,7 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
         <aside className="panel reseller-sidebar">
           <h3>Equipo</h3>
           {loading ? <p className="muted">Cargando...</p> : null}
-          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}</strong><span>{formatArs(item.summary.outstandingArs)} a rendir</span></button>)}
+          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}</strong><span>{item.stockRequests.length ? `${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"} · ` : ""}{formatArs(item.summary.outstandingArs)} a rendir</span></button>)}
           {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
             <h3>Nuevo revendedor</h3>
             <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
@@ -5810,6 +5828,20 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
               <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
               <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} /></> : null}
             </section>
+            {!assignmentOnly ? <section className="panel reseller-request-panel">
+              <div className="section-heading"><div><h3>Solicitudes de asignacion</h3><p>Revisa cantidad y precio antes de entregar la mercaderia.</p></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
+              {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
+                const draft = requestDrafts[request.id];
+                return <article key={request.id}>
+                  <CardArt src={request.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                  <div className="reseller-request-copy"><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
+                  <label>Cantidad<input type="number" min="1" max={Math.max(1, request.availableQuantity)} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
+                  <label>Precio ARS<input type="number" min="0" step="100" value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
+                  <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>
+                  <div className="reseller-request-actions"><button className="secondary-action" disabled={resolvingRequestId === request.id} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={resolvingRequestId === request.id} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
+                </article>;
+              })}</div> : <EmptyState title="Sin solicitudes pendientes" body="Cuando un revendedor pida una carta desde el stock global aparecera aca." />}
+            </section> : null}
             <section className="panel">
               <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
               <div className="reseller-assign-controls">
@@ -5859,6 +5891,9 @@ function ResellerPortal() {
   const [globalTag, setGlobalTag] = useState("all");
   const [globalFiltersOpen, setGlobalFiltersOpen] = useState(false);
   const [globalRenderLimit, setGlobalRenderLimit] = useState(48);
+  const [requestQuantities, setRequestQuantities] = useState<Record<string, string>>({});
+  const [requestSavingId, setRequestSavingId] = useState("");
+  const [requestNotice, setRequestNotice] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
@@ -5945,6 +5980,22 @@ function ResellerPortal() {
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
+  }
+  async function requestAssignment(item: ResellerGlobalStockItem) {
+    const pending = dashboard?.stockRequests.find((request) => request.inventoryItemId === item.inventoryItemId);
+    const quantity = Number(requestQuantities[item.inventoryItemId] ?? pending?.quantityRequested ?? 1);
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > item.availableQuantity) {
+      setError(`Indica una cantidad entre 1 y ${item.availableQuantity}.`);
+      return;
+    }
+    setRequestSavingId(item.inventoryItemId);
+    try {
+      setDashboard(await api<ResellerDashboard>("/reseller/portal/assignment-requests", { token, method: "POST", body: { inventoryItemId: item.inventoryItemId, quantity } }));
+      setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: String(quantity) }));
+      setRequestNotice(`${item.name}: solicitud enviada por ${quantity} unidad${quantity === 1 ? "" : "es"}.`);
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setRequestSavingId(""); }
   }
   async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); window.location.assign(viewPaths.dashboard); }
 
@@ -6104,7 +6155,8 @@ function ResellerPortal() {
 
       {activeTab === "global" ? (
         <section className="reseller-tab-content">
-          <div className="reseller-section-heading"><div><h2>Stock global</h2><p>Catalogo disponible de UltimoTurno. Esta vista es solo lectura.</p></div></div>
+          <div className="reseller-section-heading"><div><h2>Stock global</h2><p>Explora el catalogo y solicita las cartas que quieras recibir en consignacion.</p></div></div>
+          {requestNotice ? <div className="feedback success reseller-request-notice"><span>{requestNotice}</span><button className="icon-action" aria-label="Cerrar aviso" onClick={() => setRequestNotice("")}><Icon name="close" /></button></div> : null}
           <div className="reseller-global-toolbar">
             <div className="reseller-global-command-row">
               <label className="reseller-search"><Icon name="search" /><input placeholder="Buscar carta, expansion, numero o categoria" value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} /></label>
@@ -6124,7 +6176,16 @@ function ResellerPortal() {
               <label>Categoria<select value={globalTag} onChange={(event) => setGlobalTag(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
             </div> : null}
           </div>
-          {visibleGlobalStock.length ? <><div className="reseller-global-grid">{renderedGlobalStock.map((item) => <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small>{inventoryTags(item.tags).length ? <small>{inventoryTags(item.tags).join(" · ")}</small> : null}</div><span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong></article>)}</div>{renderedGlobalStock.length < visibleGlobalStock.length ? <button className="secondary-action reseller-global-more" type="button" onClick={() => setGlobalRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body={globalSearch || globalAdvancedFilterCount || globalLanguageGroup !== "all" ? "Proba cambiando o restableciendo los filtros." : "No hay stock global disponible en este momento."} />}
+          {visibleGlobalStock.length ? <><div className="reseller-global-grid">{renderedGlobalStock.map((item) => {
+            const pending = dashboard.stockRequests.find((request) => request.inventoryItemId === item.inventoryItemId);
+            const quantity = requestQuantities[item.inventoryItemId] ?? String(pending?.quantityRequested || 1);
+            return <article key={item.inventoryItemId} className={pending ? "request-pending" : ""}>
+              <CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" />
+              <div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small>{inventoryTags(item.tags).length ? <small>{inventoryTags(item.tags).join(" · ")}</small> : null}</div>
+              <span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong>
+              <div className="reseller-global-request"><label><span>Cantidad</span><input type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : "Pedir asignacion"}</button></div>
+            </article>;
+          })}</div>{renderedGlobalStock.length < visibleGlobalStock.length ? <button className="secondary-action reseller-global-more" type="button" onClick={() => setGlobalRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body={globalSearch || globalAdvancedFilterCount || globalLanguageGroup !== "all" ? "Proba cambiando o restableciendo los filtros." : "No hay stock global disponible en este momento."} />}
         </section>
       ) : null}
 

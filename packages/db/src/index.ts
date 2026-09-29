@@ -211,7 +211,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -444,10 +444,30 @@ export type ResellerGlobalStockItem = {
   priceUsd: number | null;
 };
 
+export type ResellerStockRequest = {
+  id: string;
+  resellerUserId: string;
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  language: string;
+  condition: string;
+  finish: string;
+  quantityRequested: number;
+  availableQuantity: number;
+  priceArsSnapshot: number;
+  currentPriceArs: number;
+  createdAt: string;
+};
+
 export type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
   assignments: ResellerAssignment[];
   globalStock: ResellerGlobalStockItem[];
+  stockRequests: ResellerStockRequest[];
   orders: ResellerOrder[];
   sales: ResellerSale[];
   settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
@@ -1359,6 +1379,28 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
     condition: String(row.condition || ""), finish: String(row.finish || ""), tags: String(row.tags || ""), availableQuantity: Number(row.available_quantity || 0),
     priceArs: Number(row.price_ars || 0), priceUsd: row.price_usd == null ? null : Number(row.price_usd)
   }));
+  const requestRows = await db.query<Record<string, unknown>>(`
+    select rsr.id, rsr.reseller_user_id, rsr.inventory_item_id, rsr.quantity_requested,
+      rsr.price_ars_snapshot, rsr.created_at, ii.sku,
+      greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
+      p.name, p.expansion, p.card_number, p.image_url,
+      v.language, v.condition, v.finish, coalesce(cp.price_ars, 0) as current_price_ars
+    from reseller_stock_requests rsr
+    join inventory_items ii on ii.id = rsr.inventory_item_id and ii.business_id = rsr.business_id
+    join card_products p on p.id = ii.product_id
+    join card_variants v on v.id = ii.variant_id
+    left join current_prices cp on cp.inventory_item_id = ii.id
+    where rsr.business_id = $1 and rsr.reseller_user_id = $2 and rsr.status = 'pending'
+    order by rsr.created_at desc
+  `, [businessId, resellerUserId]);
+  const stockRequests: ResellerStockRequest[] = requestRows.rows.map((row) => ({
+    id: String(row.id), resellerUserId: String(row.reseller_user_id), inventoryItemId: String(row.inventory_item_id),
+    sku: String(row.sku), name: String(row.name), expansion: String(row.expansion), number: String(row.card_number || ""),
+    imageUrl: String(row.image_url || ""), language: String(row.language || ""), condition: String(row.condition || ""),
+    finish: String(row.finish || ""), quantityRequested: Number(row.quantity_requested),
+    availableQuantity: Number(row.available_quantity || 0), priceArsSnapshot: Number(row.price_ars_snapshot || 0),
+    currentPriceArs: Number(row.current_price_ars || 0), createdAt: String(row.created_at)
+  }));
   const orders = await listResellerOrders(db, businessId, resellerUserId);
   const sales = await listResellerSales(db, businessId, resellerUserId);
   const settlementRows = await db.query<Record<string, unknown>>(`
@@ -1373,7 +1415,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
   const settledArs = settlements.reduce((sum, settlement) => sum + settlement.amountArs, 0);
   return {
     reseller: { userId: String(profile.id), displayName: String(profile.display_name), email: String(profile.email || ""), phone: String(profile.phone || ""), notes: String(profile.notes || ""), active: Boolean(profile.active), commissionPercent: Number(profile.commission_percent) },
-    assignments, globalStock, orders, sales, settlements,
+    assignments, globalStock, stockRequests, orders, sales, settlements,
     summary: {
       assignedUnits: assignments.reduce((sum, item) => sum + item.assigned, 0),
       remainingUnits: assignments.reduce((sum, item) => sum + item.remaining, 0),
@@ -1381,6 +1423,105 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
       grossSalesArs, commissionArs, netDueArs, settledArs, outstandingArs: Math.max(0, netDueArs - settledArs)
     }
   };
+}
+
+export async function createResellerStockRequest(
+  db: PGlite,
+  input: { inventoryItemId: string; quantity: number },
+  actor: AuthenticatedUser
+): Promise<ResellerDashboard> {
+  const quantity = Number(input.quantity);
+  if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad solicitada debe ser un entero positivo.");
+  await db.transaction(async (tx) => {
+    const connection = tx as unknown as PGlite;
+    const profile = await tx.query("select 1 from reseller_profiles where user_id = $1 and business_id = $2", [actor.id, actor.businessId]);
+    if (!profile.rows[0]) throw new Error("Revendedor no encontrado.");
+    const item = await tx.query<Record<string, unknown>>(`
+      select ii.quantity_on_hand, ii.quantity_reserved, coalesce(cp.price_ars, 0) as price_ars
+      from inventory_items ii
+      left join current_prices cp on cp.inventory_item_id = ii.id
+      where ii.id = $1 and ii.business_id = $2 and ii.active = true
+      for update of ii
+    `, [input.inventoryItemId, actor.businessId]);
+    if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    const available = Number(item.rows[0].quantity_on_hand) - Number(item.rows[0].quantity_reserved);
+    if (quantity > available) throw new Error(`Solo hay ${Math.max(0, available)} unidad(es) disponibles para solicitar.`);
+    await tx.query(`
+      insert into reseller_stock_requests (
+        id, business_id, reseller_user_id, inventory_item_id, quantity_requested, price_ars_snapshot
+      ) values ($1, $2, $3, $4, $5, $6)
+      on conflict (business_id, reseller_user_id, inventory_item_id) where status = 'pending'
+      do update set quantity_requested = excluded.quantity_requested,
+        price_ars_snapshot = excluded.price_ars_snapshot, updated_at = now()
+    `, [crypto.randomUUID(), actor.businessId, actor.id, input.inventoryItemId, quantity, Number(item.rows[0].price_ars || 0)]);
+    await writeAudit(connection, actor, "reseller.stock.request", "inventory_item", input.inventoryItemId, null, { quantity });
+  });
+  return getResellerDashboard(db, actor.id, actor.businessId);
+}
+
+export async function resolveResellerStockRequest(
+  db: PGlite,
+  requestId: string,
+  input: { action: "approve" | "reject"; quantity?: number; priceArs?: number },
+  actor: AuthenticatedUser
+): Promise<ResellerDashboard> {
+  if (actor.roles && !actor.roles.includes("admin")) throw new Error("Se requiere rol administrador.");
+  let resellerUserId = "";
+  await db.transaction(async (tx) => {
+    const connection = tx as unknown as PGlite;
+    const request = await tx.query<Record<string, unknown>>(`
+      select * from reseller_stock_requests
+      where id = $1 and business_id = $2
+      for update
+    `, [requestId, actor.businessId]);
+    const pending = request.rows[0];
+    if (!pending) throw new Error("La solicitud no existe.");
+    if (String(pending.status) !== "pending") throw new Error("La solicitud ya fue resuelta.");
+    resellerUserId = String(pending.reseller_user_id);
+
+    if (input.action === "reject") {
+      await tx.query(`update reseller_stock_requests set status = 'rejected', reviewed_by = $1, reviewed_at = now(), updated_at = now() where id = $2`, [actor.id, requestId]);
+      await writeAudit(connection, actor, "reseller.stock.request.reject", "reseller_stock_request", requestId, pending, { status: "rejected" });
+      return;
+    }
+    if (input.action !== "approve") throw new Error("Accion de solicitud invalida.");
+
+    const quantity = Number(input.quantity ?? pending.quantity_requested);
+    const priceArs = Number(input.priceArs ?? pending.price_ars_snapshot);
+    if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad aprobada debe ser un entero positivo.");
+    if (!Number.isFinite(priceArs) || priceArs < 0) throw new Error("El precio aprobado no es valido.");
+    const item = await tx.query<Record<string, unknown>>(`
+      select quantity_on_hand from inventory_items
+      where id = $1 and business_id = $2 and active = true
+      for update
+    `, [pending.inventory_item_id, actor.businessId]);
+    if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    const assigned = await tx.query<{ total: string }>(`
+      select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
+      from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2
+    `, [actor.businessId, pending.inventory_item_id]);
+    if (Number(assigned.rows[0]?.total || 0) + quantity > Number(item.rows[0].quantity_on_hand)) {
+      throw new Error("No hay suficientes unidades fisicas para aprobar esta asignacion.");
+    }
+    await tx.query(`
+      insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
+      values ($1, $2, $3, null, true)
+      on conflict (inventory_item_id) do update set price_ars = excluded.price_ars, manual_override = true, updated_at = now()
+    `, [pending.inventory_item_id, actor.businessId, priceArs]);
+    await tx.query(`
+      insert into reseller_stock_assignments (id, business_id, reseller_user_id, inventory_item_id, quantity_assigned)
+      values ($1, $2, $3, $4, $5)
+      on conflict (business_id, reseller_user_id, inventory_item_id)
+      do update set quantity_assigned = reseller_stock_assignments.quantity_assigned + excluded.quantity_assigned, updated_at = now()
+    `, [crypto.randomUUID(), actor.businessId, resellerUserId, pending.inventory_item_id, quantity]);
+    await tx.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'assign', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, pending.inventory_item_id, quantity, actor.id]);
+    await tx.query(`
+      update reseller_stock_requests set status = 'approved', resolved_quantity = $1, resolved_price_ars = $2,
+        reviewed_by = $3, reviewed_at = now(), updated_at = now() where id = $4
+    `, [quantity, priceArs, actor.id, requestId]);
+    await writeAudit(connection, actor, "reseller.stock.request.approve", "reseller_stock_request", requestId, pending, { status: "approved", quantity, priceArs });
+  });
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
 async function listResellerOrders(db: PGlite, businessId: string, resellerUserId: string): Promise<ResellerOrder[]> {
