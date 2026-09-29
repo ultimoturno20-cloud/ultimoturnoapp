@@ -4223,7 +4223,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
           <section className="edit-section">
             <div className="edit-section-heading"><h3>Identidad</h3><span>Que carta es</span></div>
             <div className="edit-field-grid">
-              <label>Nombre<input required value={form.name} onChange={(event) => set({ name: event.target.value })} /></label>
+              <label>Nombre<input required value={form.name} onChange={(event) => set({ name: event.target.value, finish: finishFromName(event.target.value) || form.finish })} /></label>
               <label>Expansion<input required value={form.expansion} onChange={(event) => set({ expansion: event.target.value })} /></label>
               <label>Numero<input value={form.number} onChange={(event) => set({ number: event.target.value })} /></label>
               <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
@@ -9199,6 +9199,18 @@ function toBlueArs(valueUsd: number | null | undefined, blueRate: BlueExchangeRa
 function fromBlueArs(valueArs: number | null | undefined, blueRate: BlueExchangeRate) {
   if (!valueArs || valueArs <= 0 || blueRate.sell <= 0) return 0;
   return valueArs / blueRate.sell;
+}
+
+// Same rule as finishFromName() in packages/db: the finish tag in the card name wins.
+function finishFromName(name: string): string | null {
+  const tags = (String(name || "").match(/[[(][^\])]*[\])]/g) || []).join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (!tags) return null;
+  if (tags.includes("cosmo")) return "cosmos holo";
+  if (tags.includes("reverse")) return "reverse holo";
+  if (/master ?ball/.test(tags)) return "master ball";
+  if (/poke ?ball/.test(tags)) return "poke ball";
+  if (tags.includes("holo")) return "holo";
+  return null;
 }
 
 function roundRecommendedArs(valueArs: number) {
