@@ -4838,6 +4838,13 @@ export async function linkInventoryItemPriceCharting(
   if (!before) throw new Error("No se encontro el item de inventario");
   const entry = await getPriceChartingCacheEntry(db, cleanId);
   if (!entry) throw new Error(`PriceCharting ID ${cleanId} no existe en el cache local`);
+  // Assigning replaces this product's previous PriceCharting link; other products keep theirs.
+  await db.query(`
+    delete from external_identifiers ei
+    using external_sources es
+    where es.id = ei.source_id and es.name = 'pricecharting'
+      and ei.business_id = $1 and ei.product_id = $2 and ei.external_id <> $3
+  `, [actor.businessId, before.product.id, cleanId]);
   await upsertExternalIdentifier(db, actor.businessId, before.product.id, before.variant.id, "pricecharting", cleanId, entry.canonicalUrl || undefined);
   await writeAudit(db, actor, "inventory.pricecharting.link", "inventory_item", inventoryItemId, { priceChartingId: before.priceReferences.priceCharting.priceChartingId }, { priceChartingId: cleanId });
   const updated = await getInventoryItem(db, inventoryItemId, actor.businessId);
