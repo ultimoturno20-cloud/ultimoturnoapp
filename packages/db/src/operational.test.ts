@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -54,10 +54,35 @@ import {
   updateReservationSaleLines,
   upsertClaimPlanItems,
   upsertInventoryItem,
-  linkInventoryItemPriceCharting
+  linkInventoryItemPriceCharting,
+  finishFromName
 } from "./index.js";
 
 describe("operational inventory database", () => {
+  it("takes the finish from the card name tag", async () => {
+    assert.equal(finishFromName("Amarys [Reverse]"), "reverse holo");
+    assert.equal(finishFromName("Iono [Cosmo Holo]"), "cosmos holo");
+    assert.equal(finishFromName("Leafeon [Pokeball]"), "poke ball");
+    assert.equal(finishFromName("Dreepy [Masterball]"), "master ball");
+    assert.equal(finishFromName("Lunatone [Holo]"), "holo");
+    assert.equal(finishFromName("Hilda [Prize Pack]"), null);
+    assert.equal(finishFromName("Pikachu"), null);
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-finish-name-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const card = { expansion: "Test", number: "1", language: "EN", condition: "NM", quantityOnHand: 1, quantityReserved: 0, priceArs: 800 };
+    const saved = await upsertInventoryItem(db, { ...card, sku: "FINISH-1", name: "Amarys [Reverse]", finish: "normal" }, user);
+    assert.equal(saved.variant.finish, "reverse holo");
+    const plain = await upsertInventoryItem(db, { ...card, sku: "FINISH-2", name: "Pikachu", finish: "holo" }, user);
+    assert.equal(plain.variant.finish, "holo");
+    // Migration 0048 repairs rows saved before this rule existed.
+    await db.query("update card_variants set finish = 'normal' where id = $1", [saved.variant.id]);
+    await db.exec(await readFile(new URL("../migrations/0048_finish_from_name.sql", import.meta.url), "utf8"));
+    const repaired = (await listStockForBusiness(db, user.businessId)).items;
+    assert.equal(repaired.find((item) => item.sku === "FINISH-1")?.variant.finish, "reverse holo");
+    assert.equal(repaired.find((item) => item.sku === "FINISH-2")?.variant.finish, "holo");
+  });
+
   it("keeps the PriceCharting link on every language copy of the same card", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-pc-languages-"));
     const db = await createOperationalDatabase({ dataDir });
