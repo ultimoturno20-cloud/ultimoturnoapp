@@ -180,8 +180,9 @@ function normalizeCoolstuffText(value: string) {
 }
 
 function normalizeCoolstuffExpansion(value: string) {
+  // CoolStuff prefixes sets with their era ("ME Ascended Heroes", "SV Prismatic Evolutions"); era promo sets keep it.
   return normalizeCoolstuffText(String(value || "").replace(/^[a-z]{1,5}\d{0,4}:\s*/i, "").replace(/\bpokemon\b/gi, "").replace(/\bcollection\b/gi, ""))
-    .replace(/^me phantasmal flames$/, "phantasmal flames");
+    .replace(/^(me|sv|swsh|sm|xy|bw) (?!promos?$)(?=\S)/, "");
 }
 
 function normalizeCoolstuffNumber(value: string) {

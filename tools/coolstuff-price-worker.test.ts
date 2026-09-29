@@ -20,6 +20,9 @@ test("worker collects all pages and rejects repeated or empty pages", async (t) 
   await assert.rejects(loadExpansionProducts(options, "https://www.coolstuffinc.com/page/9126"), /vacia o repetida/);
   pages = [first, "<html>Temporarily unavailable</html>"];
   await assert.rejects(loadExpansionProducts(options, "https://www.coolstuffinc.com/page/9126"), /vacia o repetida/);
+  // Page links are a sliding window: page 2 reveals page 3.
+  pages = [first, product("2") + '<a href="/page/9126?page=3">3</a>', product("3")];
+  assert.equal((await loadExpansionProducts(options, "https://www.coolstuffinc.com/page/9126")).length, 3);
 });
 
 test("successive batches reuse expansion downloads and save each observation", async (t) => {
