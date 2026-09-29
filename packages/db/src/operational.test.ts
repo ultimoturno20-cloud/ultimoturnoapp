@@ -63,9 +63,11 @@ describe("operational inventory database", () => {
     const db = await createOperationalDatabase({ dataDir });
     const user = await getDefaultOperationalUser(db);
     await replacePriceChartingCache(db, {
-      category: "pokemon-cards", sourceHash: "languages", rowsReceived: 1, rowsSkipped: 0,
+      category: "pokemon-cards", sourceHash: "languages", rowsReceived: 2, rowsSkipped: 0,
       rows: [{ priceChartingId: "pc-iris-190", canonicalUrl: "", sourceUrl: "", productName: "Iris", normalizedName: "iris",
-        expansionName: "Ascended Heroes", normalizedExpansion: "ascended heroes", cardNumber: "190", loosePriceUsd: 0.36, imageUrl: "", searchKey: "iris" }]
+        expansionName: "Ascended Heroes", normalizedExpansion: "ascended heroes", cardNumber: "190", loosePriceUsd: 0.36, imageUrl: "", searchKey: "iris" },
+      { priceChartingId: "pc-iris-190-alt", canonicalUrl: "", sourceUrl: "", productName: "Iris", normalizedName: "iris",
+        expansionName: "Ascended Heroes", normalizedExpansion: "ascended heroes", cardNumber: "190", loosePriceUsd: 0.4, imageUrl: "", searchKey: "iris alt" }]
     });
     const card = { name: "Iris", expansion: "Ascended Heroes", number: "190", condition: "NM", finish: "normal", quantityOnHand: 1, quantityReserved: 0, priceArs: 800 };
     await upsertInventoryItem(db, { ...card, sku: "LANG-EN", language: "EN", priceChartingId: "pc-iris-190" }, user);
@@ -73,6 +75,12 @@ describe("operational inventory database", () => {
     const unlinked = await upsertInventoryItem(db, { ...card, sku: "LANG-EN-2", language: "EN" }, user);
     await linkInventoryItemPriceCharting(db, unlinked.id, "pc-iris-190", user);
     await assert.rejects(linkInventoryItemPriceCharting(db, unlinked.id, "missing-id", user), /no existe/);
+    // Re-assigning replaces the product's old link and leaves the other copies alone.
+    await linkInventoryItemPriceCharting(db, unlinked.id, "pc-iris-190-alt", user);
+    const relinked = (await listStockForBusiness(db, user.businessId)).items;
+    assert.equal(relinked.find((item) => item.sku === "LANG-EN-2")?.priceReferences.priceCharting.priceChartingId, "pc-iris-190-alt");
+    assert.equal(relinked.find((item) => item.sku === "LANG-EN")?.priceReferences.priceCharting.priceChartingId, "pc-iris-190");
+    await linkInventoryItemPriceCharting(db, unlinked.id, "pc-iris-190", user);
     const stock = await listStockForBusiness(db, user.businessId);
     for (const sku of ["LANG-EN", "LANG-ES", "LANG-EN-2"]) {
       assert.equal(stock.items.find((item) => item.sku === sku)?.priceReferences.priceCharting.priceChartingId, "pc-iris-190", sku);
