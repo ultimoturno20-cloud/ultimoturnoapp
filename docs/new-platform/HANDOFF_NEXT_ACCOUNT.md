@@ -391,10 +391,11 @@ pide credenciales y no conserva cambios solamente en memoria del navegador.
 - Carrito lateral con cantidad y precio editable por linea.
 - Confirmacion como venta cobrada o reserva.
 - Los precios visibles muestran USD y ARS blue cuando hay precio USD o ARS.
-  El frontend usa `/exchange-rate/blue`; el backend usa referencia local
-  `ULTIMOTURNO_BLUE_RATE_ARS` o 1540 por defecto. Si se define
-  `ULTIMOTURNO_BLUE_RATE_MODE=auto`, consulta DolarAPI y cae al valor local si
-  no puede actualizar.
+  El frontend usa `/exchange-rate/blue`. Por defecto
+  (`ULTIMOTURNO_BLUE_RATE_MODE=promedio`) el backend promedia la venta del
+  dolar blue y cripto de DolarAPI (cache 10 minutos). `auto` usa solo blue y
+  `manual` usa fijo `ULTIMOTURNO_BLUE_RATE_ARS` (1540 por defecto), que
+  tambien es el respaldo si DolarAPI no responde.
 - Notificaciones compactas que desaparecen automaticamente.
 - Diseno responsive comprobado en escritorio, tablet y celular.
 

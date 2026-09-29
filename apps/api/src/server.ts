@@ -301,7 +301,9 @@ const tcgplayerPriceCategoryLabel = tcgplayerPriceCategoryIds.join(",");
 const tcgplayerPriceAutoRefreshEnabled = String(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_ENABLED || "false").toLowerCase() !== "false";
 const tcgplayerPriceAutoRefreshTime = normalizeDailyTime(process.env.TCGPLAYER_PRICE_AUTO_REFRESH_TIME || "18:30");
 const configuredBlueRateSell = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1540);
-const useLiveBlueRate = String(process.env.ULTIMOTURNO_BLUE_RATE_MODE || "manual").toLowerCase() === "auto";
+// "promedio" (default): average of live blue and crypto sell rates. "auto": live blue only. "manual": fixed rate.
+const blueRateMode = String(process.env.ULTIMOTURNO_BLUE_RATE_MODE || "promedio").toLowerCase();
+const useLiveBlueRate = blueRateMode === "auto" || blueRateMode === "promedio";
 const sharedAccessKey = String(process.env.ULTIMOTURNO_ACCESS_KEY || "").trim();
 const cronSecret = String(process.env.CRON_SECRET || "").trim();
 const openAiApiKey = String(process.env.OPENAI_API_KEY || "").trim();
@@ -2365,8 +2367,8 @@ async function getBlueExchangeRate(): Promise<BlueExchangeRate> {
     };
   }
   if (blueRateCache && Date.now() - blueRateCache.fetchedAt < 10 * 60 * 1000) return blueRateCache.payload;
-  try {
-    const rateResponse = await fetch("https://dolarapi.com/v1/dolares/blue", {
+  const fetchDolar = async (casa: string) => {
+    const rateResponse = await fetch(`https://dolarapi.com/v1/dolares/${casa}`, {
       headers: { "User-Agent": "UltimoTurnoBlueRate/1.0" },
       signal: AbortSignal.timeout(6000)
     });
@@ -2374,11 +2376,20 @@ async function getBlueExchangeRate(): Promise<BlueExchangeRate> {
     const payload = await rateResponse.json() as { compra?: unknown; venta?: unknown; casa?: unknown; nombre?: unknown; fechaActualizacion?: unknown };
     const sell = Number(payload.venta);
     if (!Number.isFinite(sell) || sell <= 0) throw new Error("La respuesta no contiene venta valida");
+    const buy = Number(payload.compra);
+    return { name: String(payload.nombre || payload.casa || casa), sell, buy: Number.isFinite(buy) && buy > 0 ? buy : null, updatedAt: String(payload.fechaActualizacion || new Date().toISOString()) };
+  };
+  try {
+    const quotes = (await Promise.allSettled((blueRateMode === "promedio" ? ["blue", "cripto"] : ["blue"]).map(fetchDolar)))
+      .flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    if (!quotes.length) throw new Error("Sin cotizaciones validas");
+    const average = (values: number[]) => Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 100) / 100;
+    const buys = quotes.map((quote) => quote.buy).filter((value): value is number => value !== null);
     const nextRate = {
-      buy: Number.isFinite(Number(payload.compra)) ? Number(payload.compra) : null,
-      sell,
-      source: String(payload.nombre || payload.casa || "DolarAPI blue"),
-      updatedAt: String(payload.fechaActualizacion || new Date().toISOString()),
+      buy: buys.length === quotes.length ? average(buys) : null,
+      sell: average(quotes.map((quote) => quote.sell)),
+      source: quotes.length > 1 ? `Promedio ${quotes.map((quote) => quote.name).join(" / ")}` : quotes[0].name,
+      updatedAt: quotes.map((quote) => quote.updatedAt).sort()[0],
       fallback: false
     };
     blueRateCache = { fetchedAt: Date.now(), payload: nextRate };
