@@ -34,6 +34,7 @@ it("keeps consigned stock available centrally and validates real stock when a re
     language: "EN",
     condition: "NM",
     finish: "normal",
+    tags: "jugables, promo",
     quantityOnHand: 3,
     quantityReserved: 0,
     priceArs: 10000
@@ -47,6 +48,7 @@ it("keeps consigned stock available centrally and validates real stock when a re
   dashboard = await assignResellerStock(db, dashboard.reseller.userId, item.id, 2, admin);
   assert.equal(dashboard.summary.remainingUnits, 2);
   assert.equal(dashboard.globalStock[0].availableQuantity, 3);
+  assert.equal(dashboard.globalStock[0].tags, "jugables, promo");
   assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].availableQuantity, 3);
 
   const session = await loginUser(db, "revendedor@test.local", "password-segura");

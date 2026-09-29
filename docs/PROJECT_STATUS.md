@@ -27,6 +27,11 @@ Actualizado: 2026-09-29
   regla SPA y bloqueaba el modulo por MIME, dejando la pagina en blanco.
 - `/inicio` y todas las rutas anidadas del portal comparten ahora los mismos
   archivos `/assets/...`, sin depender de la profundidad de la URL.
+- `Stock global` replica los filtros utiles del inventario administrativo sin
+  exponer datos operativos internos: busqueda, orden por nombre, expansion,
+  numero, precio o cantidad, grupo de idioma y filtros por expansion, idioma,
+  condicion, acabado y categoria. La vista renderiza 48 cartas por tanda para
+  mantenerse fluida aun con catalogos grandes.
 
 ### Dominio productivo
 

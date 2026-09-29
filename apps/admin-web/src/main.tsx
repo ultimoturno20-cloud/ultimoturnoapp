@@ -50,7 +50,8 @@ function resellerTabFromLocation(): ResellerPortalTab {
 type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; fulfillmentStatus: "to_pack" | "to_deliver" | "delivered"; paymentStatus: "pending" | "paid"; totalArs: number; notes: string; convertedSaleId: string; packedAt?: string; deliveredAt?: string; paidAt?: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
-type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
+type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; tags: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
+type ResellerGlobalSort = "name" | "expansion" | "number" | "price" | "quantity";
 type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number };
   assignments: ResellerAssignment[];
@@ -5849,6 +5850,15 @@ function ResellerPortal() {
   const [activeTab, setActiveTab] = useState<ResellerPortalTab>(() => resellerTabFromLocation());
   const [search, setSearch] = useState("");
   const [globalSearch, setGlobalSearch] = useState("");
+  const [globalSort, setGlobalSort] = useState<ResellerGlobalSort>("name");
+  const [globalLanguageGroup, setGlobalLanguageGroup] = useState<LanguageGroupFilter>("all");
+  const [globalExpansion, setGlobalExpansion] = useState("all");
+  const [globalLanguage, setGlobalLanguage] = useState("all");
+  const [globalCondition, setGlobalCondition] = useState("all");
+  const [globalFinish, setGlobalFinish] = useState("all");
+  const [globalTag, setGlobalTag] = useState("all");
+  const [globalFiltersOpen, setGlobalFiltersOpen] = useState(false);
+  const [globalRenderLimit, setGlobalRenderLimit] = useState(48);
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
@@ -5885,6 +5895,9 @@ function ResellerPortal() {
     window.addEventListener("focus", sync);
     return () => { window.clearInterval(interval); window.removeEventListener("focus", sync); };
   }, [token]);
+  useEffect(() => {
+    setGlobalRenderLimit(48);
+  }, [globalCondition, globalExpansion, globalFinish, globalLanguage, globalLanguageGroup, globalSearch, globalSort, globalTag]);
 
   async function login(event: React.FormEvent) {
     event.preventDefault();
@@ -5964,7 +5977,41 @@ function ResellerPortal() {
   const normalizedSearch = search.trim().toLowerCase();
   const visibleAssignments = assigned.filter((item) => !normalizedSearch || [item.name, item.expansion, item.number, item.sku].join(" ").toLowerCase().includes(normalizedSearch));
   const normalizedGlobalSearch = globalSearch.trim().toLowerCase();
-  const visibleGlobalStock = dashboard.globalStock.filter((item) => !normalizedGlobalSearch || [item.name, item.expansion, item.number, item.sku, item.language].join(" ").toLowerCase().includes(normalizedGlobalSearch));
+  const globalFilterOptions = {
+    expansions: unique(dashboard.globalStock.map((item) => item.expansion)),
+    languages: unique(dashboard.globalStock.map((item) => item.language)),
+    conditions: unique(dashboard.globalStock.map((item) => item.condition)),
+    finishes: unique(dashboard.globalStock.map((item) => item.finish)),
+    tags: unique(dashboard.globalStock.flatMap((item) => inventoryTags(item.tags)))
+  };
+  const globalAdvancedFilterCount = [globalExpansion, globalLanguage, globalCondition, globalFinish, globalTag].filter((value) => value !== "all").length;
+  const visibleGlobalStock = dashboard.globalStock
+    .filter((item) =>
+      (!normalizedGlobalSearch || [item.name, item.expansion, item.number, item.sku, item.language, item.condition, item.finish, item.tags].join(" ").toLowerCase().includes(normalizedGlobalSearch)) &&
+      (globalLanguageGroup === "all" || inventoryLanguageGroup(item.language) === globalLanguageGroup) &&
+      (globalExpansion === "all" || item.expansion === globalExpansion) &&
+      (globalLanguage === "all" || item.language === globalLanguage) &&
+      (globalCondition === "all" || item.condition === globalCondition) &&
+      (globalFinish === "all" || item.finish === globalFinish) &&
+      (globalTag === "all" || inventoryTags(item.tags).includes(globalTag)))
+    .sort((left, right) => {
+      if (globalSort === "price") return right.priceArs - left.priceArs;
+      if (globalSort === "quantity") return right.availableQuantity - left.availableQuantity;
+      if (globalSort === "expansion") return `${left.expansion} ${left.number}`.localeCompare(`${right.expansion} ${right.number}`, "es", { numeric: true });
+      if (globalSort === "number") return left.number.localeCompare(right.number, "es", { numeric: true });
+      return left.name.localeCompare(right.name, "es", { numeric: true });
+    });
+  const renderedGlobalStock = visibleGlobalStock.slice(0, globalRenderLimit);
+  const clearGlobalFilters = () => {
+    setGlobalSearch("");
+    setGlobalSort("name");
+    setGlobalLanguageGroup("all");
+    setGlobalExpansion("all");
+    setGlobalLanguage("all");
+    setGlobalCondition("all");
+    setGlobalFinish("all");
+    setGlobalTag("all");
+  };
   const cartItems = assigned.filter((item) => (cart[item.inventoryItemId]?.quantity || 0) > 0);
   const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
   const commission = saleTotal * dashboard.reseller.commissionPercent / 100;
@@ -6056,8 +6103,28 @@ function ResellerPortal() {
       ) : null}
 
       {activeTab === "global" ? (
-        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Stock global</h2><p>Catalogo disponible de UltimoTurno. Esta vista es solo lectura.</p></div><label className="reseller-search"><Icon name="search" /><input placeholder="Buscar en todo el stock" value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} /></label></div>
-          {visibleGlobalStock.length ? <div className="reseller-global-grid">{visibleGlobalStock.map((item) => <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small></div><span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong></article>)}</div> : <EmptyState title="Sin resultados" body={globalSearch ? "Proba con otro nombre, expansion o numero." : "No hay stock global disponible en este momento."} />}
+        <section className="reseller-tab-content">
+          <div className="reseller-section-heading"><div><h2>Stock global</h2><p>Catalogo disponible de UltimoTurno. Esta vista es solo lectura.</p></div></div>
+          <div className="reseller-global-toolbar">
+            <div className="reseller-global-command-row">
+              <label className="reseller-search"><Icon name="search" /><input placeholder="Buscar carta, expansion, numero o categoria" value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} /></label>
+              <span className="reseller-global-count">{visibleGlobalStock.length} de {dashboard.globalStock.length}</span>
+              <label className="reseller-global-select">Ordenar<select value={globalSort} onChange={(event) => setGlobalSort(event.target.value as ResellerGlobalSort)}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
+            </div>
+            <div className="reseller-global-quick-filters">
+              <LanguageGroupSelector value={globalLanguageGroup} onChange={setGlobalLanguageGroup} />
+              <button className={`secondary-action filter-toggle ${globalFiltersOpen ? "active" : ""}`} type="button" aria-expanded={globalFiltersOpen} aria-controls="reseller-global-filter-options" onClick={() => setGlobalFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{globalAdvancedFilterCount ? ` (${globalAdvancedFilterCount})` : ""}</button>
+              {(globalAdvancedFilterCount || globalLanguageGroup !== "all" || globalSearch) ? <button className="clear-action" type="button" onClick={clearGlobalFilters}>Restablecer</button> : null}
+            </div>
+            {globalFiltersOpen ? <div id="reseller-global-filter-options" className="reseller-global-filter-options">
+              <label>Expansion<select value={globalExpansion} onChange={(event) => setGlobalExpansion(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.expansions.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>Idioma<select value={globalLanguage} onChange={(event) => setGlobalLanguage(event.target.value)}><option value="all">Todos</option>{globalFilterOptions.languages.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>Condicion<select value={globalCondition} onChange={(event) => setGlobalCondition(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.conditions.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>Acabado<select value={globalFinish} onChange={(event) => setGlobalFinish(event.target.value)}><option value="all">Todos</option>{globalFilterOptions.finishes.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+              <label>Categoria<select value={globalTag} onChange={(event) => setGlobalTag(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+            </div> : null}
+          </div>
+          {visibleGlobalStock.length ? <><div className="reseller-global-grid">{renderedGlobalStock.map((item) => <article key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small>{inventoryTags(item.tags).length ? <small>{inventoryTags(item.tags).join(" · ")}</small> : null}</div><span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong></article>)}</div>{renderedGlobalStock.length < visibleGlobalStock.length ? <button className="secondary-action reseller-global-more" type="button" onClick={() => setGlobalRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body={globalSearch || globalAdvancedFilterCount || globalLanguageGroup !== "all" ? "Proba cambiando o restableciendo los filtros." : "No hay stock global disponible en este momento."} />}
         </section>
       ) : null}
 

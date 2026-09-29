@@ -438,6 +438,7 @@ export type ResellerGlobalStockItem = {
   language: string;
   condition: string;
   finish: string;
+  tags: string;
   availableQuantity: number;
   priceArs: number;
   priceUsd: number | null;
@@ -1343,7 +1344,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
   });
   const globalStockRows = includeGlobalStock ? await db.query<Record<string, unknown>>(`
     select ii.id as inventory_item_id, ii.sku, greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
-      p.name, p.expansion, p.card_number, p.image_url, v.language, v.condition, v.finish,
+      p.name, p.expansion, p.card_number, p.image_url, v.language, v.condition, v.finish, ii.tags,
       coalesce(cp.price_ars, 0) as price_ars, cp.price_usd
     from inventory_items ii
     join card_products p on p.id = ii.product_id
@@ -1355,7 +1356,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
   const globalStock: ResellerGlobalStockItem[] = globalStockRows.rows.map((row) => ({
     inventoryItemId: String(row.inventory_item_id), sku: String(row.sku), name: String(row.name), expansion: String(row.expansion),
     number: String(row.card_number || ""), imageUrl: String(row.image_url || ""), language: String(row.language || ""),
-    condition: String(row.condition || ""), finish: String(row.finish || ""), availableQuantity: Number(row.available_quantity || 0),
+    condition: String(row.condition || ""), finish: String(row.finish || ""), tags: String(row.tags || ""), availableQuantity: Number(row.available_quantity || 0),
     priceArs: Number(row.price_ars || 0), priceUsd: row.price_usd == null ? null : Number(row.price_usd)
   }));
   const orders = await listResellerOrders(db, businessId, resellerUserId);
