@@ -7,6 +7,19 @@ Actualizado: 2026-09-29
 
 ## Prioridades vigentes
 
+### Pilotear asignacion de ordenes a revendedores
+
+- Abrir una orden pendiente, elegir un revendedor y pulsar `Asignar orden`.
+- Confirmar que la orden muestre el nombre asignado y que todas sus cantidades
+  aparezcan en `Mercaderia en consignacion` y en el inventario del portal.
+- Verificar que el valor asignado y el cupo disponible se recalculen, y que una
+  orden que supera el limite sea rechazada sin asignaciones parciales.
+- La orden asignada conserva cobro, embalaje y entrega, pero ya no permite
+  cambiar sus cartas porque la mercaderia fue entregada fisicamente.
+
+Senal de exito: una sola accion traslada todo el contenido sin duplicar stock y
+la orden identifica permanentemente al revendedor responsable.
+
 ### Verificar el proximo cierre de claim en produccion
 
 - Pulsar `Cerrar claim` una sola vez y esperar el estado `Cerrando...`; el boton queda bloqueado hasta terminar.

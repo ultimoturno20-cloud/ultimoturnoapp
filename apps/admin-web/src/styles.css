@@ -3498,6 +3498,7 @@ select option {
   grid-template-columns: minmax(520px, 1fr) minmax(380px, 0.44fr);
   grid-template-areas:
     "items strip"
+    "items reseller"
     "items work"
     "items actions";
   gap: 10px;
@@ -3517,6 +3518,57 @@ select option {
   border-radius: 7px;
   padding: 10px;
   background: #24252e;
+}
+
+.order-reseller-assignment {
+  grid-area: reseller;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(239, 49, 77, 0.42);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(239, 49, 77, 0.08);
+}
+
+.order-reseller-assignment.assigned {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.order-reseller-assignment > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.order-reseller-assignment > div:first-child span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.order-reseller-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  gap: 8px;
+  min-width: min(100%, 360px);
+}
+
+.order-reseller-controls select,
+.order-reseller-controls button {
+  min-height: 38px;
+}
+
+.order-reseller-assignment .feedback {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.reseller-assigned-pill {
+  border-color: rgba(34, 197, 94, 0.52);
+  color: #bbf7d0;
 }
 
 .order-detail-strip > div:first-child {
@@ -5044,6 +5096,7 @@ select option {
     grid-template-columns: 1fr;
     grid-template-areas:
       "strip"
+      "reseller"
       "work"
       "items"
       "actions";
@@ -5065,6 +5118,11 @@ select option {
   .order-detail-strip-actions .secondary-action,
   .order-message-check {
     flex: 1;
+  }
+
+  .order-reseller-assignment,
+  .order-reseller-controls {
+    grid-template-columns: 1fr;
   }
 
   .order-lines {

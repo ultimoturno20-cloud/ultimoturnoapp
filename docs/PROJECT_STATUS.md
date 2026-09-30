@@ -48,6 +48,11 @@ Actualizado: 2026-09-29
 - `Mercaderia en consignacion` muestra el precio ARS de cada carta asignada y
   permite editarlo en la misma fila. El cambio actualiza el precio real usado
   por el portal, el valor asignado y el cupo disponible del revendedor.
+- Las ordenes pendientes o a embalar pueden asignarse completas a un
+  revendedor desde su detalle. Todas las cantidades pasan juntas a su
+  inventario en consignacion, respetando stock fisico y limite de mercaderia;
+  la operacion es idempotente, la orden muestra a quien fue entregada y sus
+  lineas quedan bloqueadas para evitar diferencias posteriores.
 
 ### Dominio productivo
 

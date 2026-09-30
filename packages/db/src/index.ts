@@ -211,7 +211,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -584,6 +584,9 @@ export type SaleRecord = {
   messageSentAt?: string;
   createdAt: string;
   completedAt?: string;
+  assignedResellerUserId?: string;
+  assignedResellerName?: string;
+  assignedResellerAt?: string;
   lines: Array<CommerceLineInput & { name: string; sku: string; imageUrl: string; unitPriceUsd: number; lineTotalArs: number; lineTotalUsd: number; priceCurrency: "ARS" | "USD" | "FREE"; packed: boolean; packedAt?: string; saleItemId: string }>;
 };
 
@@ -4938,6 +4941,7 @@ export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser):
 export async function listSales(db: PGlite, businessId = demoBusinessId): Promise<{ sales: SaleRecord[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select s.id, s.created_by, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.payment_due_at, s.internal_note, s.message_sent_at,
+      s.assigned_reseller_user_id, s.assigned_reseller_at, assigned_reseller.display_name as assigned_reseller_name,
       s.created_at, s.completed_at, si.id as sale_item_id, si.inventory_item_id, si.quantity,
       si.unit_price_ars, si.unit_price_usd, si.line_total_ars, si.line_total_usd, si.price_currency, si.packed_at, ii.sku, p.name,
       coalesce(
@@ -4956,6 +4960,7 @@ export async function listSales(db: PGlite, businessId = demoBusinessId): Promis
     left join inventory_items ii on ii.id = si.inventory_item_id
     left join card_products p on p.id = ii.product_id
     left join card_variants v on v.id = ii.variant_id
+    left join app_users assigned_reseller on assigned_reseller.id = s.assigned_reseller_user_id
     left join pricecharting_image_cache sale_pic on sale_pic.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
     left join card_index_entries sale_index on sale_index.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
     where s.business_id = $1
@@ -4979,6 +4984,9 @@ export async function listSales(db: PGlite, businessId = demoBusinessId): Promis
       messageSentAt: row.message_sent_at ? String(row.message_sent_at) : undefined,
       createdAt: String(row.created_at),
       completedAt: row.completed_at ? String(row.completed_at) : undefined,
+      assignedResellerUserId: row.assigned_reseller_user_id ? String(row.assigned_reseller_user_id) : undefined,
+      assignedResellerName: row.assigned_reseller_name ? String(row.assigned_reseller_name) : undefined,
+      assignedResellerAt: row.assigned_reseller_at ? String(row.assigned_reseller_at) : undefined,
       lines: []
     };
     if (row.quantity || row.display_name) {
@@ -5140,6 +5148,122 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
 }
 
+export async function assignOrderToReseller(
+  db: PGlite,
+  saleId: string,
+  resellerUserId: string,
+  actor: AuthenticatedUser
+): Promise<SaleRecord> {
+  if (actor.roles && !actor.roles.includes("admin")) throw new Error("Se requiere rol administrador.");
+  const normalizedResellerId = String(resellerUserId || "").trim();
+  if (!normalizedResellerId) throw new Error("Elegi un revendedor.");
+
+  await db.transaction(async (tx) => {
+    const connection = tx as unknown as PGlite;
+    const saleResult = await connection.query<Record<string, unknown>>(`
+      select id, customer_name, status, assigned_reseller_user_id
+      from sales
+      where id = $1 and business_id = $2 and sale_type = 'reservation'
+      for update
+    `, [saleId, actor.businessId]);
+    const sale = saleResult.rows[0];
+    if (!sale) throw new Error("La orden ya no existe.");
+    if (!["pending", "packed"].includes(String(sale.status))) throw new Error("Solo se pueden asignar ordenes pendientes o a embalar.");
+    const currentResellerId = String(sale.assigned_reseller_user_id || "");
+    if (currentResellerId === normalizedResellerId) return;
+    if (currentResellerId) throw new Error("La orden ya esta asignada a otro revendedor.");
+
+    const profileResult = await connection.query<Record<string, unknown>>(`
+      select rp.credit_limit_ars, u.display_name
+      from reseller_profiles rp
+      join app_users u on u.id = rp.user_id and u.business_id = rp.business_id
+      where rp.user_id = $1 and rp.business_id = $2 and u.active = true
+      for update of rp
+    `, [normalizedResellerId, actor.businessId]);
+    const profile = profileResult.rows[0];
+    if (!profile) throw new Error("Revendedor no encontrado o inactivo.");
+
+    const lineResult = await connection.query<Record<string, unknown>>(`
+      select si.inventory_item_id, sum(si.quantity)::integer as quantity,
+        max(coalesce(cp.price_ars, 0)) as price_ars,
+        max(p.name) as name
+      from sale_items si
+      left join inventory_items ii on ii.id = si.inventory_item_id and ii.business_id = si.business_id
+      left join card_products p on p.id = ii.product_id
+      left join current_prices cp on cp.inventory_item_id = ii.id
+      where si.sale_id = $1 and si.business_id = $2
+      group by si.inventory_item_id
+      order by si.inventory_item_id
+    `, [saleId, actor.businessId]);
+    if (!lineResult.rows.length) throw new Error("La orden no tiene cartas para asignar.");
+    if (lineResult.rows.some((line) => !line.inventory_item_id)) throw new Error("La orden contiene una linea sin stock vinculado y no se puede asignar completa.");
+
+    const creditLimitArs = profile.credit_limit_ars == null ? null : Number(profile.credit_limit_ars);
+    if (creditLimitArs !== null) {
+      const assignedValue = await connection.query<{ total: string }>(`
+        select coalesce(sum(greatest(0, rsa.quantity_assigned - rsa.quantity_sold - rsa.quantity_returned) * coalesce(cp.price_ars, 0)), 0)::text as total
+        from reseller_stock_assignments rsa
+        left join current_prices cp on cp.inventory_item_id = rsa.inventory_item_id
+        where rsa.business_id = $1 and rsa.reseller_user_id = $2
+      `, [actor.businessId, normalizedResellerId]);
+      const pendingValue = await connection.query<{ total: string }>(`
+        select coalesce(sum(rsr.quantity_requested * coalesce(cp.price_ars, rsr.price_ars_snapshot)), 0)::text as total
+        from reseller_stock_requests rsr
+        left join current_prices cp on cp.inventory_item_id = rsr.inventory_item_id
+        where rsr.business_id = $1 and rsr.reseller_user_id = $2 and rsr.status = 'pending'
+      `, [actor.businessId, normalizedResellerId]);
+      const orderValue = lineResult.rows.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.price_ars || 0), 0);
+      const projected = Number(assignedValue.rows[0]?.total || 0) + Number(pendingValue.rows[0]?.total || 0) + orderValue;
+      if (projected > creditLimitArs) throw new Error("La orden supera el limite de mercaderia del revendedor.");
+    }
+
+    for (const line of lineResult.rows) {
+      const inventoryItemId = String(line.inventory_item_id);
+      const quantity = Number(line.quantity || 0);
+      const itemResult = await connection.query<Record<string, unknown>>(`
+        select quantity_on_hand
+        from inventory_items
+        where id = $1 and business_id = $2 and active = true
+        for update
+      `, [inventoryItemId, actor.businessId]);
+      if (!itemResult.rows[0]) throw new Error(`${String(line.name || "Una carta")}: ya no existe en inventario.`);
+      const assignedResult = await connection.query<{ total: string }>(`
+        select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
+        from reseller_stock_assignments
+        where business_id = $1 and inventory_item_id = $2
+      `, [actor.businessId, inventoryItemId]);
+      if (Number(assignedResult.rows[0]?.total || 0) + quantity > Number(itemResult.rows[0].quantity_on_hand || 0)) {
+        throw new Error(`${String(line.name || "Una carta")}: no hay suficientes unidades fisicas para asignar la orden.`);
+      }
+      await connection.query(`
+        insert into reseller_stock_assignments (id, business_id, reseller_user_id, inventory_item_id, quantity_assigned)
+        values ($1, $2, $3, $4, $5)
+        on conflict (business_id, reseller_user_id, inventory_item_id)
+        do update set quantity_assigned = reseller_stock_assignments.quantity_assigned + excluded.quantity_assigned, updated_at = now()
+      `, [crypto.randomUUID(), actor.businessId, normalizedResellerId, inventoryItemId, quantity]);
+      await connection.query(`
+        insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, reference_type, reference_id, note, created_by)
+        values ($1, $2, $3, $4, 'assign', $5, 'sale', $6, $7, $8)
+      `, [crypto.randomUUID(), actor.businessId, normalizedResellerId, inventoryItemId, quantity, saleId, `Orden ${String(sale.customer_name || "sin nombre")}`, actor.id]);
+    }
+
+    await connection.query(`
+      update sales
+      set assigned_reseller_user_id = $1, assigned_reseller_at = now(), assigned_reseller_by = $2
+      where id = $3 and business_id = $4
+    `, [normalizedResellerId, actor.id, saleId, actor.businessId]);
+    await writeAudit(connection, actor, "sale.reseller.assign", "sale", saleId, sale, {
+      resellerUserId: normalizedResellerId,
+      resellerName: String(profile.display_name || ""),
+      units: lineResult.rows.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+    });
+  });
+
+  const updated = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
+  if (!updated) throw new Error("No se pudo leer la orden asignada.");
+  return updated;
+}
+
 export async function updateReservationSaleLines(db: PGlite, saleId: string, input: UpdateReservationSaleLinesInput, actor: AuthenticatedUser): Promise<SaleRecord> {
   if (!Array.isArray(input.lines) || !input.lines.length) throw new Error("La orden debe conservar al menos una carta.");
   const desiredLines = input.lines.map((raw) => {
@@ -5165,7 +5289,7 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
   await db.transaction(async (tx) => {
     const connection = tx as unknown as PGlite;
     const saleResult = await connection.query<Record<string, unknown>>(`
-      select id, created_by, customer_name, channel, status
+      select id, created_by, customer_name, channel, status, assigned_reseller_user_id
       from sales
       where id = $1 and business_id = $2 and sale_type = 'reservation'
       for update
@@ -5173,6 +5297,7 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
     const sale = saleResult.rows[0];
     if (!sale) throw new Error("La orden ya no existe.");
     if (!["pending", "packed"].includes(String(sale.status))) throw new Error("Solo se pueden editar ordenes pendientes o a embalar.");
+    if (sale.assigned_reseller_user_id) throw new Error("La orden ya fue entregada a un revendedor y sus cartas no se pueden modificar.");
     const canManageAll = !actor.roles || actor.roles.includes("admin");
     if (!canManageAll && String(sale.created_by || "") !== actor.id) throw new Error("No podes editar una orden creada por otro usuario.");
 

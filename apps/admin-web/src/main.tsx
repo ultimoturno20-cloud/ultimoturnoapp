@@ -430,6 +430,9 @@ type SaleRecord = {
   messageSentAt?: string;
   createdAt: string;
   completedAt?: string;
+  assignedResellerUserId?: string;
+  assignedResellerName?: string;
+  assignedResellerAt?: string;
   lines: Array<CartLine & { name: string; sku: string; imageUrl: string; unitPriceUsd: number; lineTotalArs: number; lineTotalUsd: number; priceCurrency: "ARS" | "USD" | "FREE"; saleItemId: string; packed: boolean; packedAt?: string }>;
 };
 
@@ -1010,6 +1013,7 @@ function App() {
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
+  const [orderResellers, setOrderResellers] = useState<Array<{ userId: string; displayName: string }>>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
   const [mobileEntries, setMobileEntries] = useState<MobileInventoryEntry[]>([]);
@@ -1153,8 +1157,9 @@ function App() {
         const [plansData, claimsData, stockData] = await Promise.all([api<ClaimPlansResponse>("/claim-plans"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setClaimPlans(plansData); setClaims(claimsData); setStock(stockData);
       } else if (targetView === "orders") {
-        const [salesData, claimsData, stockData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
+        const [salesData, claimsData, stockData, resellerData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<{ resellers: ResellerDashboard[] }>("/resellers")]);
         setSales(salesData.sales); setClaims(claimsData); setStock(stockData);
+        setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
       } else if (targetView === "sales") {
         const [salesData, purchasesData, stockData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData);
@@ -1709,6 +1714,17 @@ function App() {
       setSales((current) => current.map((sale) => sale.id === result.sale.id ? result.sale : sale));
       await refreshStock();
       showMessage("Cartas, precios y reservas de la orden actualizados.");
+    } catch (nextError) {
+      showError(nextError);
+      throw nextError;
+    }
+  }
+
+  async function assignOrderReseller(id: string, resellerUserId: string) {
+    try {
+      const result = await api<{ sale: SaleRecord }>(`/sales/${id}/assign-reseller`, { method: "POST", body: { resellerUserId } });
+      setSales((current) => current.map((sale) => sale.id === result.sale.id ? result.sale : sale));
+      showMessage(`Orden asignada a ${result.sale.assignedResellerName || "revendedor"}. Las cartas ya figuran en su inventario.`);
     } catch (nextError) {
       showError(nextError);
       throw nextError;
@@ -2803,7 +2819,7 @@ function App() {
       {view === "claims" ? <ClaimsView workspace={claims} stockItems={stock.items} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} claimClosing={claimClosing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search, languageGroup) => void searchPriceChartingCache(search, languageGroup)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
-      {view === "orders" ? <OrdersView sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
+      {view === "orders" ? <OrdersView sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
       {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
       {view === "purchases" ? (
         <PurchasesView
@@ -4482,12 +4498,12 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
     })}</div>
     <dialog aria-label="Detalle de orden" className="trello-order-dialog" ref={dialog} onCancel={()=>setOpenId("")} onClose={()=>setOpenId("")}>
       {openOrder && <><header className="trello-dialog-heading"><h2>{openOrder.customerName}</h2><button autoFocus className="secondary-action" onClick={()=>setOpenId("")}>Cerrar</button></header><div className="trello-move"><label>Mover a<select value={destination} onChange={e=>setDestination(e.target.value)}>{workspace?.boards.map(b=><optgroup key={b.id} label={b.name}>{workspace.columns.filter(c=>c.boardId===b.id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button className="secondary-action" disabled={busy || !destination || destination===columnOf(openId)} onClick={()=>void change({action:"move",saleId:openId,columnId:destination})}>Mover tarjeta</button><span role="status">{busy?"Guardando...":notice}</span>{error && <span role="alert">{error}</span>}</div>
-        <OrderCard key={openId} order={openOrder} boardLabel={workspace?.columns.find(c=>c.id===columnOf(openId))?.name || "Orden"} stockItems={props.stockItems} blueRate={props.blueRate} open focused={false} selected={false} copied={false} onToggle={()=>{}} onSelectedChange={()=>{}} onComplete={async id=>{await props.onComplete(id);refreshBoards();}} onCancel={async id=>{await props.onCancel(id);refreshBoards();}} onPacked={async id=>{await props.onPacked(id);refreshBoards();}} onDelivered={async id=>{await props.onDelivered(id);refreshBoards();}} onPayment={async (id,amount,due)=>{await props.onPayment(id,amount,due);refreshBoards();}} onNote={async (id,note)=>{await props.onNote(id,note);}} onMessageSent={sent=>props.onMessageSent(openId,sent)} onLinePacked={async (id,packed)=>{await props.onLinePacked(id,packed);refreshBoards();}} onLines={async (id,lines)=>{await props.onLines(id,lines);refreshBoards();}} onCopy={()=>void copyToClipboard(buildClaimOrderMessage(openOrder))}/></>}
+        <OrderCard key={openId} order={openOrder} boardLabel={workspace?.columns.find(c=>c.id===columnOf(openId))?.name || "Orden"} stockItems={props.stockItems} blueRate={props.blueRate} resellers={props.resellers} open focused={false} selected={false} copied={false} onToggle={()=>{}} onSelectedChange={()=>{}} onAssignReseller={async (id,resellerId)=>{await props.onAssignReseller(id,resellerId);refreshBoards();}} onComplete={async id=>{await props.onComplete(id);refreshBoards();}} onCancel={async id=>{await props.onCancel(id);refreshBoards();}} onPacked={async id=>{await props.onPacked(id);refreshBoards();}} onDelivered={async id=>{await props.onDelivered(id);refreshBoards();}} onPayment={async (id,amount,due)=>{await props.onPayment(id,amount,due);refreshBoards();}} onNote={async (id,note)=>{await props.onNote(id,note);}} onMessageSent={sent=>props.onMessageSent(openId,sent)} onLinePacked={async (id,packed)=>{await props.onLinePacked(id,packed);refreshBoards();}} onLines={async (id,lines)=>{await props.onLines(id,lines);refreshBoards();}} onCopy={()=>void copyToClipboard(buildClaimOrderMessage(openOrder))}/></>}
     </dialog>
   </section>;
 }
 
-function OrdersListView({ sales, claims, stockItems, blueRate, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
+function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
   const reservations = sales.filter((sale) => sale.saleType === "reservation");
   const activeOrders = reservations.filter((sale) => sale.status !== "delivered" && sale.status !== "cancelled");
   const deliveredOrders = reservations.filter((sale) => sale.status === "delivered");
@@ -4646,7 +4662,7 @@ function OrdersListView({ sales, claims, stockItems, blueRate, onComplete, onCan
       {visibleOrders.length ? <div className="order-list">
         <div className="order-list-header"><label><input type="checkbox" disabled={!batchableVisibleOrders.length} checked={allVisibleSelected} onChange={toggleVisibleSelection} /></label><span>Comprador</span><span>Cobro</span><span>Mensaje</span><span>Embalaje</span><span>Estado</span><span>Acciones</span></div>
         {visibleOrders.map((order) => (
-          <OrderCard key={order.id} order={order} boardLabel={boardLabel(order)} stockItems={stockItems} blueRate={blueRate} open={openOrderIds.includes(order.id)} focused={focusedOrderId === order.id} selected={order.status !== "delivered" && selectedOrderIds.includes(order.id)} copied={copiedOrderId === order.id} onToggle={() => toggleOrder(order.id)} onSelectedChange={() => toggleSelectedOrder(order.id)} onComplete={onComplete} onCancel={onCancel} onPacked={onPacked} onDelivered={onDelivered} onPayment={onPayment} onNote={onNote} onMessageSent={(sent) => onMessageSent(order.id, sent)} onLinePacked={onLinePacked} onLines={onLines} onCopy={async () => { if (await copyToClipboard(buildClaimOrderMessage(order))) { setCopiedOrderId(order.id); if (!order.messageSentAt) await onMessageSent(order.id, true); window.setTimeout(() => setCopiedOrderId(""), 1200); } }} />
+          <OrderCard key={order.id} order={order} boardLabel={boardLabel(order)} stockItems={stockItems} blueRate={blueRate} resellers={resellers} open={openOrderIds.includes(order.id)} focused={focusedOrderId === order.id} selected={order.status !== "delivered" && selectedOrderIds.includes(order.id)} copied={copiedOrderId === order.id} onToggle={() => toggleOrder(order.id)} onSelectedChange={() => toggleSelectedOrder(order.id)} onAssignReseller={onAssignReseller} onComplete={onComplete} onCancel={onCancel} onPacked={onPacked} onDelivered={onDelivered} onPayment={onPayment} onNote={onNote} onMessageSent={(sent) => onMessageSent(order.id, sent)} onLinePacked={onLinePacked} onLines={onLines} onCopy={async () => { if (await copyToClipboard(buildClaimOrderMessage(order))) { setCopiedOrderId(order.id); if (!order.messageSentAt) await onMessageSent(order.id, true); window.setTimeout(() => setCopiedOrderId(""), 1200); } }} />
         ))}
       </div> : <EmptyState title={orders.length ? "Sin coincidencias" : showingDelivered ? "Sin entregas realizadas" : "Sin ordenes activas"} body={orders.length ? "No hay compradores ni cartas que coincidan con esa busqueda." : showingDelivered ? "Cuando marques una orden como entregada, va a quedar registrada aca como historial." : "Las reservas creadas desde Inventario / Venta aparecen aca."} />}
     </section>
@@ -4677,7 +4693,7 @@ function orderLineDrafts(order: SaleRecord): OrderLineDraft[] {
   }));
 }
 
-function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, selected, copied, onToggle, onSelectedChange, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines, onCopy }: { order: SaleRecord; boardLabel: string; stockItems: StockRow[]; blueRate: BlueExchangeRate; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void>; onCopy: () => void }) {
+function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, focused, selected, copied, onToggle, onSelectedChange, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines, onCopy }: { order: SaleRecord; boardLabel: string; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void>; onCopy: () => void }) {
   const [paymentDraft, setPaymentDraft] = useState("");
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
   const [quickPaymentMode, setQuickPaymentMode] = useState<"full" | "partial">("full");
@@ -4688,6 +4704,9 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
   const [lineSearch, setLineSearch] = useState("");
   const [lineSaving, setLineSaving] = useState(false);
   const [lineError, setLineError] = useState("");
+  const [resellerDraft, setResellerDraft] = useState("");
+  const [resellerAssigning, setResellerAssigning] = useState(false);
+  const [resellerError, setResellerError] = useState("");
   useEffect(() => setPaymentDraft(""), [order.id, order.amountPaidArs]);
   useEffect(() => setDueDraft(order.paymentDueAt ? order.paymentDueAt.slice(0, 10) : ""), [order.paymentDueAt]);
   useEffect(() => setNoteDraft(order.internalNote || ""), [order.id, order.internalNote]);
@@ -4698,6 +4717,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
   const canBatchSelect = order.status !== "cancelled" && !isDelivered;
   const canPack = order.status !== "cancelled" && !isDelivered;
   const canEdit = order.status !== "cancelled" && order.status !== "paid" && order.status !== "delivered";
+  const canEditLines = canEdit && !order.assignedResellerUserId;
   const startLineEditing = () => {
     setLineDrafts(orderLineDrafts(order));
     setLineSearch("");
@@ -4769,6 +4789,22 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
     const confirmed = window.confirm(`Eliminar la orden de ${order.customerName}? Se cancela la reserva y se libera el stock.`);
     if (confirmed) void onCancel(order.id);
   };
+  const confirmResellerAssignment = async () => {
+    if (!resellerDraft || order.assignedResellerUserId) return;
+    const reseller = resellers.find((item) => item.userId === resellerDraft);
+    const confirmed = window.confirm(`Asignar las ${units} unidad(es) de esta orden a ${reseller?.displayName || "este revendedor"}? Las cartas pasaran a su inventario y ya no se podran editar en la orden.`);
+    if (!confirmed) return;
+    setResellerAssigning(true);
+    setResellerError("");
+    try {
+      await onAssignReseller(order.id, resellerDraft);
+      setResellerDraft("");
+    } catch (error) {
+      setResellerError(errorMessage(error));
+    } finally {
+      setResellerAssigning(false);
+    }
+  };
   const openQuickPayment = (event: React.MouseEvent, mode: "full" | "partial" = "full") => {
     event.stopPropagation();
     setQuickPaymentMode(mode);
@@ -4795,7 +4831,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
           <label className={`order-row-check ${messageSent ? "checked" : ""}`}><input type="checkbox" disabled={order.status === "cancelled" || isDelivered} checked={messageSent} onChange={(event) => onMessageSent(event.target.checked)} /><span>{messageSent ? "Enviado" : "Pendiente"}</span></label>
         </div>
         <div className="order-pack-cell"><strong>{packedUnits}/{units}</strong><span>embaladas</span></div>
-        <div className="order-summary-meta"><span className={`pill ${statusPillClass}`}>{saleStatusLabel(order.status)}</span>{order.paymentDueAt ? <span className={`pill ${overdue ? "warning" : "neutral"}`}>{overdue ? "Vencida" : "Vence"} {formatShortDate(order.paymentDueAt)}</span> : null}{order.internalNote ? <span className="pill neutral">Nota</span> : null}</div>
+        <div className="order-summary-meta"><span className={`pill ${statusPillClass}`}>{saleStatusLabel(order.status)}</span>{order.assignedResellerName ? <span className="pill reseller-assigned-pill">{order.assignedResellerName}</span> : null}{order.paymentDueAt ? <span className={`pill ${overdue ? "warning" : "neutral"}`}>{overdue ? "Vencida" : "Vence"} {formatShortDate(order.paymentDueAt)}</span> : null}{order.internalNote ? <span className="pill neutral">Nota</span> : null}</div>
         <div className="order-row-actions" onClick={stopClick}>
           {!isDelivered ? <button className="secondary-action" disabled={order.status === "cancelled"} onClick={onCopy}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Mensaje"}</button> : null}
           {canEdit ? <button className="secondary-action" onClick={(event) => openQuickPayment(event, "full")}><Icon name="sales" />Pago</button> : null}
@@ -4827,6 +4863,11 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
               {canPack ? <button className="secondary-action" onClick={() => onPacked(order.id)}><Icon name="check" />Marcar embalada</button> : null}
             </div>
           </div>
+          <section className={`order-reseller-assignment ${order.assignedResellerUserId ? "assigned" : ""}`}>
+            <div><strong>{order.assignedResellerName ? `Asignada a ${order.assignedResellerName}` : "Asignar orden a revendedor"}</strong><span>{order.assignedResellerName ? `${units} unidad(es) ya forman parte de su inventario.` : "Entrega todas las cartas de esta orden a un inventario en consignacion."}</span></div>
+            {order.assignedResellerUserId ? <span className="pill ok"><Icon name="check" />Asignada</span> : <div className="order-reseller-controls"><select value={resellerDraft} disabled={!canEdit || resellerAssigning} onChange={(event) => { setResellerDraft(event.target.value); setResellerError(""); }}><option value="">Elegir revendedor</option>{resellers.map((reseller) => <option key={reseller.userId} value={reseller.userId}>{reseller.displayName}</option>)}</select><button className="primary-action" disabled={!canEdit || !resellerDraft || resellerAssigning} onClick={() => void confirmResellerAssignment()}><Icon name="sales" />{resellerAssigning ? "Asignando..." : "Asignar orden"}</button></div>}
+            {resellerError ? <div className="feedback error" role="alert">{resellerError}</div> : null}
+          </section>
           <div className="order-work-grid">
             <section className="order-work-panel order-payment-panel">
               <div className="order-panel-heading"><h4>Pago</h4><div className="order-payment-badges"><span>Pagado <strong>{formatArs(order.amountPaidArs || 0)}</strong></span><span>Resta <strong>{formatArs(remaining)}</strong></span>{paymentToAdd > 0 ? <span>Quedaria <strong>{formatArs(nextRemaining)}</strong></span> : null}</div></div>
@@ -4846,7 +4887,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, open, focused, sel
             </section>
           </div>
           <section className="order-work-panel order-items-panel">
-            <div className="order-panel-heading"><h4>Cartas</h4><div className="order-items-heading-actions"><span>{packedUnits}/{units} embaladas</span>{canEdit && !editingLines ? <button className="secondary-action" onClick={startLineEditing}><Icon name="edit" />Editar cartas</button> : null}</div></div>
+            <div className="order-panel-heading"><h4>Cartas</h4><div className="order-items-heading-actions"><span>{packedUnits}/{units} embaladas</span>{canEditLines && !editingLines ? <button className="secondary-action" onClick={startLineEditing}><Icon name="edit" />Editar cartas</button> : null}{order.assignedResellerUserId ? <span className="muted">Inventario ya entregado</span> : null}</div></div>
             {editingLines ? <div className="order-line-editor">
               <div className="order-line-editor-list">{lineDrafts.map((line) => <article className="order-edit-line" key={line.key}>
                 <CardArt src={line.imageUrl} alt={line.name} label={line.name} className="order-line-image" fallbackClassName="order-line-image order-line-image-placeholder" />

@@ -8,6 +8,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import {
   getOrderBoards,
   changeOrderBoard,
+  assignOrderToReseller,
   assignResellerStock,
   adjustInventoryQuantity,
   addClaimFree,
@@ -4469,6 +4470,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const saleId = url.pathname.split("/")[2];
       const body = await readJson<Parameters<typeof updateReservationSaleLines>[2]>(request);
       sendJson(response, 200, { sale: await updateReservationSaleLines(db, saleId, body, user) });
+      return;
+    }
+
+    if (url.pathname.match(/^\/sales\/[^/]+\/assign-reseller$/) && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const saleId = url.pathname.split("/")[2];
+      const body = await readJson<{ resellerUserId: string }>(request);
+      sendJson(response, 200, { sale: await assignOrderToReseller(db, saleId, body.resellerUserId, user) });
       return;
     }
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { it } from "node:test";
 import {
+  assignOrderToReseller,
   assignResellerStock,
   cancelOwnResellerOrder,
   cancelResellerSale,
@@ -18,14 +19,62 @@ import {
   getDefaultOperationalUser,
   getResellerDashboard,
   listStockForBusiness,
+  listSales,
   listResellers,
   loginUser,
   resolveResellerStockRequest,
   updateOwnResellerOrderWorkflow,
   updateResellerAssignmentPrice,
   updateResellerCreditLimit,
+  updateReservationSaleLines,
   upsertInventoryItem
 } from "./index.js";
+
+it("assigns every card in a central order to one reseller without duplicating it", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-order-reseller-"));
+  const db = await createOperationalDatabase({ dataDir });
+  const admin = await getDefaultOperationalUser(db);
+  const first = await upsertInventoryItem(db, {
+    sku: "TEST-ORDER-ASSIGN-001", name: "Carta Uno", expansion: "Set Test", number: "1",
+    language: "EN", condition: "NM", finish: "normal", quantityOnHand: 3, quantityReserved: 0, priceArs: 5000
+  }, admin);
+  const second = await upsertInventoryItem(db, {
+    sku: "TEST-ORDER-ASSIGN-002", name: "Carta Dos", expansion: "Set Test", number: "2",
+    language: "EN", condition: "NM", finish: "normal", quantityOnHand: 2, quantityReserved: 0, priceArs: 8000
+  }, admin);
+  const reseller = await createReseller(db, {
+    displayName: "Revendedor Orden", email: "orden@test.local", password: "password-segura", commissionPercent: 20
+  }, admin);
+  const order = await createSale(db, {
+    customerName: "Cliente con entrega", saleType: "reservation", channel: "mostrador",
+    lines: [
+      { inventoryItemId: first.id, quantity: 2, unitPriceArs: 5000 },
+      { inventoryItemId: second.id, quantity: 1, unitPriceArs: 8000 }
+    ]
+  }, admin);
+
+  let assignedOrder = await assignOrderToReseller(db, order.id, reseller.reseller.userId, admin);
+  assert.equal(assignedOrder.assignedResellerUserId, reseller.reseller.userId);
+  assert.equal(assignedOrder.assignedResellerName, "Revendedor Orden");
+  let dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  assert.equal(dashboard.summary.remainingUnits, 3);
+  assert.equal(dashboard.summary.assignedValueArs, 18000);
+
+  assignedOrder = await assignOrderToReseller(db, order.id, reseller.reseller.userId, admin);
+  dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  assert.equal(dashboard.summary.remainingUnits, 3);
+  await assert.rejects(() => updateReservationSaleLines(db, order.id, {
+    lines: assignedOrder.lines.map((line) => ({
+      saleItemId: line.saleItemId,
+      quantity: line.quantity,
+      priceCurrency: line.priceCurrency,
+      unitPriceArs: line.unitPriceArs,
+      unitPriceUsd: line.unitPriceUsd
+    }))
+  }, admin), /entregada a un revendedor/);
+  assert.equal((await listSales(db, admin.businessId)).sales.find((sale) => sale.id === order.id)?.assignedResellerName, "Revendedor Orden");
+  await db.close();
+});
 
 it("lets a reseller request global stock and lets an admin approve quantity and price together", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-reseller-request-"));
