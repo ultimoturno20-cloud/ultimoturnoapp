@@ -126,6 +126,11 @@ import {
   loginUser,
   logoutUser,
   upsertInventoryItem,
+  recordPriceHistorySnapshot,
+  importPriceHistory,
+  getPriceHistory,
+  listPriceChanges,
+  type PriceHistoryPoint,
   type AuthenticatedUser,
   type ClaimPlanItemInput,
   type CoolstuffPriceObservation,
@@ -4013,6 +4018,20 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/cron/price-history-snapshot" && request.method === "GET") {
+      if (!requestHasCronAccess(request)) {
+        sendJson(response, 401, { ok: false, error: "CRON_SECRET o clave de acceso requerida." });
+        return;
+      }
+      try {
+        const db = await dbPromise;
+        sendJson(response, 200, { ok: true, job: "price-history-snapshot", result: await recordPriceHistorySnapshot(db) });
+      } catch (error) {
+        sendJson(response, 502, { ok: false, job: "price-history-snapshot", error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
     if (url.pathname === "/reseller/auth/login" && request.method === "POST") {
       const body = await readJson<{ email?: string; password?: string }>(request);
       const db = await dbPromise;
@@ -4826,6 +4845,28 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/coolstuff-prices/status" && request.method === "GET") {
       sendJson(response, 200, await getCoolstuffPriceStatus(db));
+      return;
+    }
+
+    if (url.pathname === "/price-history" && request.method === "GET") {
+      sendJson(response, 200, await getPriceHistory(db, {
+        priceChartingId: url.searchParams.get("priceChartingId") || "",
+        finish: url.searchParams.get("finish") || "",
+        condition: url.searchParams.get("condition") || "",
+        days: Number(url.searchParams.get("days") || 365)
+      }));
+      return;
+    }
+
+    if (url.pathname === "/price-history/changes" && request.method === "GET") {
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, await listPriceChanges(db, user.businessId, { blueRateSell: blueRate.sell }));
+      return;
+    }
+
+    if (url.pathname === "/price-history/import" && request.method === "POST") {
+      const body = await readJson<{ points?: PriceHistoryPoint[] }>(request);
+      sendJson(response, 200, { ok: true, result: await importPriceHistory(db, body.points || [], user) });
       return;
     }
 

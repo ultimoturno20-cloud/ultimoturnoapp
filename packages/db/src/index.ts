@@ -214,7 +214,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -9345,4 +9345,300 @@ export async function changeOrderBoard(db: PGlite, input: {action:string; name?:
   return input.action === "move" ? readOrderBoards(db,actor.businessId) : getOrderBoards(db,actor.businessId);
 }
 
+
+
+export type PriceHistorySource = "pricecharting" | "tcgplayer" | "coolstuff" | "tcgapi";
+export const priceHistorySources: readonly PriceHistorySource[] = ["pricecharting", "tcgplayer", "coolstuff", "tcgapi"];
+
+export type PriceHistoryPoint = {
+  snapshotDate: string;
+  priceChartingId: string;
+  finish: string;
+  condition: string;
+  source: PriceHistorySource;
+  priceUsd: number;
+};
+
+export type PriceChangeRow = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  finish: string;
+  condition: string;
+  quantityOnHand: number;
+  priceArs: number;
+  priceChartingId: string;
+  source: "pricecharting" | "tcgplayer";
+  currentUsd: number;
+  usd7d: number | null;
+  usd30d: number | null;
+  usd90d: number | null;
+  change7dPct: number | null;
+  change30dPct: number | null;
+  change90dPct: number | null;
+  min90dUsd: number;
+  max90dUsd: number;
+  fromMax90dPct: number;
+  costUsd: number | null;
+  marketBelowCost: boolean;
+  saleBelowCost: boolean;
+  historySince: string;
+};
+
+export type PriceChangesReport = {
+  today: string;
+  tracked: number;
+  withHistory30d: number;
+  marketBelowCost: number;
+  saleBelowCost: number;
+  droppedFromMax: number;
+  items: PriceChangeRow[];
+};
+
+const priceHistoryTimeZone = "America/Argentina/Buenos_Aires";
+
+export function priceHistoryToday(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: priceHistoryTimeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+function shiftPriceHistoryDate(date: string, days: number): string {
+  const value = new Date(date + "T00:00:00Z");
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function isPriceHistoryDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + "T00:00:00Z")) && shiftPriceHistoryDate(value, 0) === value;
+}
+
+function normalizePriceHistoryPoint(point: PriceHistoryPoint): PriceHistoryPoint {
+  return {
+    snapshotDate: String(point.snapshotDate || "").trim(),
+    priceChartingId: String(point.priceChartingId || "").trim(),
+    finish: String(point.finish || "").trim().toLowerCase(),
+    condition: String(point.condition || "").trim().toUpperCase(),
+    source: point.source,
+    priceUsd: Math.round(Number(point.priceUsd) * 100) / 100
+  };
+}
+
+function priceHistoryKey(point: Pick<PriceHistoryPoint, "priceChartingId" | "finish" | "condition" | "source">): string {
+  return [point.priceChartingId, point.finish, point.condition, point.source].join("|");
+}
+
+function mapPriceHistoryRow(row: Record<string, unknown>): PriceHistoryPoint {
+  return {
+    snapshotDate: String(row.snapshot_date).slice(0, 10),
+    priceChartingId: String(row.pricecharting_id),
+    finish: String(row.finish),
+    condition: String(row.condition),
+    source: String(row.source) as PriceHistorySource,
+    priceUsd: Number(row.price_usd)
+  };
+}
+
+async function writePriceHistoryPoints(db: PGlite, points: PriceHistoryPoint[], onlyChanged: boolean): Promise<number> {
+  let pending = points;
+  if (onlyChanged && pending.length) {
+    // Only store a new point when the price moved since the latest stored point.
+    const onOrBefore = pending.reduce((latestDate, point) => (point.snapshotDate > latestDate ? point.snapshotDate : latestDate), "");
+    const result = await db.query<Record<string, unknown>>(
+      "select distinct on (pricecharting_id, finish, condition, source) snapshot_date::text as snapshot_date, pricecharting_id, finish, condition, source, price_usd " +
+      "from price_history where pricecharting_id = any($1::text[]) and snapshot_date <= $2::date " +
+      "order by pricecharting_id, finish, condition, source, snapshot_date desc",
+      [[...new Set(pending.map((point) => point.priceChartingId))], onOrBefore]
+    );
+    const latest = new Map(result.rows.map((row) => {
+      const point = mapPriceHistoryRow(row);
+      return [priceHistoryKey(point), point.priceUsd] as const;
+    }));
+    pending = pending.filter((point) => latest.get(priceHistoryKey(point)) !== point.priceUsd);
+  }
+  for (let start = 0; start < pending.length; start += 400) {
+    const chunk = pending.slice(start, start + 400);
+    const params: unknown[] = [];
+    const values = chunk.map((point, index) => {
+      params.push(point.snapshotDate, point.priceChartingId, point.finish, point.condition, point.source, point.priceUsd);
+      const offset = index * 6;
+      return "($" + (offset + 1) + "::date, $" + (offset + 2) + ", $" + (offset + 3) + ", $" + (offset + 4) + ", $" + (offset + 5) + ", $" + (offset + 6) + ")";
+    });
+    await db.query(
+      "insert into price_history (snapshot_date, pricecharting_id, finish, condition, source, price_usd) values " + values.join(", ") +
+      " on conflict (pricecharting_id, finish, condition, source, snapshot_date) do update set price_usd = excluded.price_usd, recorded_at = now()",
+      params
+    );
+  }
+  return pending.length;
+}
+
+export async function recordPriceHistorySnapshot(db: PGlite, input: { snapshotDate?: string } = {}): Promise<{ snapshotDate: string; cards: number; points: number; written: number }> {
+  const snapshotDate = input.snapshotDate || priceHistoryToday();
+  if (!isPriceHistoryDate(snapshotDate)) throw new Error("Fecha de historial invalida.");
+  const businesses = await db.query<Record<string, unknown>>("select distinct business_id from inventory_items where quantity_on_hand > 0");
+  const points = new Map<string, PriceHistoryPoint>();
+  for (const business of businesses.rows) {
+    const stock = await listStockInternal(db, String(business.business_id));
+    for (const item of stock.items) {
+      const references = item.priceReferences;
+      const priceChartingId = references.priceCharting.priceChartingId;
+      if (item.quantityOnHand <= 0 || !priceChartingId) continue;
+      const prices: Array<[PriceHistorySource, number | null]> = [
+        ["pricecharting", references.priceCharting.usd],
+        ["tcgplayer", references.tcgplayer.marketPriceUsd ?? references.tcgplayer.usd],
+        ["coolstuff", references.coolstuff.usd]
+      ];
+      for (const [source, usd] of prices) {
+        if (!(usd && usd > 0)) continue;
+        const point = normalizePriceHistoryPoint({ snapshotDate, priceChartingId, finish: item.variant.finish, condition: item.variant.condition, source, priceUsd: usd });
+        points.set(priceHistoryKey(point), point);
+      }
+    }
+  }
+  const written = await writePriceHistoryPoints(db, [...points.values()], true);
+  return { snapshotDate, cards: new Set([...points.values()].map((point) => point.priceChartingId)).size, points: points.size, written };
+}
+
+export async function importPriceHistory(db: PGlite, points: PriceHistoryPoint[], actor: AuthenticatedUser): Promise<{ received: number; written: number }> {
+  if (actor.roles && !actor.roles.includes("admin")) throw new Error("Se requiere rol administrador.");
+  if (!Array.isArray(points) || !points.length) throw new Error("No hay puntos de historial para importar.");
+  if (points.length > 5000) throw new Error("Maximo 5000 puntos por tanda.");
+  const latestAllowed = shiftPriceHistoryDate(priceHistoryToday(), 1);
+  const unique = new Map<string, PriceHistoryPoint>();
+  points.forEach((raw, index) => {
+    const point = normalizePriceHistoryPoint(raw);
+    if (!isPriceHistoryDate(point.snapshotDate) || point.snapshotDate > latestAllowed) throw new Error("Fila " + (index + 1) + ": fecha invalida.");
+    if (!point.priceChartingId || point.priceChartingId.length > 80) throw new Error("Fila " + (index + 1) + ": falta el ID de PriceCharting.");
+    if (!priceHistorySources.includes(point.source)) throw new Error("Fila " + (index + 1) + ": fuente invalida.");
+    if (!Number.isFinite(point.priceUsd) || point.priceUsd <= 0 || point.priceUsd > 1000000) throw new Error("Fila " + (index + 1) + ": precio invalido.");
+    unique.set(priceHistoryKey(point) + "|" + point.snapshotDate, point);
+  });
+  return { received: points.length, written: await writePriceHistoryPoints(db, [...unique.values()], false) };
+}
+
+export async function getPriceHistory(db: PGlite, input: { priceChartingId: string; finish?: string; condition?: string; days?: number }): Promise<{ points: PriceHistoryPoint[] }> {
+  const priceChartingId = String(input.priceChartingId || "").trim();
+  if (!priceChartingId) throw new Error("Falta el ID de PriceCharting.");
+  const days = Math.max(1, Math.min(1000, Math.floor(Number(input.days) || 365)));
+  const result = await db.query<Record<string, unknown>>(
+    "select snapshot_date::text as snapshot_date, pricecharting_id, finish, condition, source, price_usd from price_history " +
+    "where pricecharting_id = $1 and ($2 = '' or finish = $2) and ($3 = '' or condition = $3) and snapshot_date >= $4::date " +
+    "order by snapshot_date, source",
+    [priceChartingId, String(input.finish || "").trim().toLowerCase(), String(input.condition || "").trim().toUpperCase(), shiftPriceHistoryDate(priceHistoryToday(), -days)]
+  );
+  return { points: result.rows.map(mapPriceHistoryRow) };
+}
+
+export async function listPriceChanges(db: PGlite, businessId: string, input: { blueRateSell: number; today?: string }): Promise<PriceChangesReport> {
+  const today = input.today || priceHistoryToday();
+  const blueRateSell = Math.max(1, Number(input.blueRateSell) || 0);
+  const stock = await listStockInternal(db, businessId);
+  const items = stock.items.filter((item) => item.quantityOnHand > 0 && item.priceReferences.priceCharting.priceChartingId);
+  const ids = [...new Set(items.map((item) => item.priceReferences.priceCharting.priceChartingId))];
+  const windowStart = shiftPriceHistoryDate(today, -120);
+  const series = new Map<string, Array<{ date: string; usd: number; rank: number }>>();
+  if (ids.length) {
+    const inWindow = await db.query<Record<string, unknown>>(
+      "select snapshot_date::text as snapshot_date, pricecharting_id, finish, condition, source, price_usd from price_history " +
+      "where pricecharting_id = any($1::text[]) and source <> 'coolstuff' and snapshot_date > $2::date and snapshot_date <= $3::date",
+      [ids, windowStart, today]
+    );
+    const carried = await db.query<Record<string, unknown>>(
+      "select distinct on (pricecharting_id, finish, condition, source) snapshot_date::text as snapshot_date, pricecharting_id, finish, condition, source, price_usd " +
+      "from price_history where pricecharting_id = any($1::text[]) and source <> 'coolstuff' and snapshot_date <= $2::date " +
+      "order by pricecharting_id, finish, condition, source, snapshot_date desc",
+      [ids, windowStart]
+    );
+    for (const row of [...carried.rows, ...inWindow.rows]) {
+      const point = mapPriceHistoryRow(row);
+      // Backfilled TCG API prices extend the TCGplayer series; the daily TCGplayer price wins on the same date.
+      const source = point.source === "tcgapi" ? "tcgplayer" : point.source;
+      const key = priceHistoryKey({ ...point, source });
+      const list = series.get(key) || [];
+      list.push({ date: point.snapshotDate, usd: point.priceUsd, rank: point.source === "tcgapi" ? 1 : 0 });
+      series.set(key, list);
+    }
+    for (const [key, list] of series) {
+      const byDate = new Map<string, { date: string; usd: number; rank: number }>();
+      for (const point of list) {
+        const previous = byDate.get(point.date);
+        if (!previous || point.rank < previous.rank) byDate.set(point.date, point);
+      }
+      series.set(key, [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date)));
+    }
+  }
+  const round1 = (value: number) => Math.round(value * 10) / 10;
+  const rows: PriceChangeRow[] = [];
+  for (const item of items) {
+    const priceChartingId = item.priceReferences.priceCharting.priceChartingId;
+    const finish = item.variant.finish.trim().toLowerCase();
+    const condition = item.variant.condition.trim().toUpperCase();
+    let source: "pricecharting" | "tcgplayer" = "pricecharting";
+    let points = series.get(priceHistoryKey({ priceChartingId, finish, condition, source })) || [];
+    if (!points.length) {
+      source = "tcgplayer";
+      points = series.get(priceHistoryKey({ priceChartingId, finish, condition, source })) || [];
+    }
+    if (!points.length) continue;
+    const priceAt = (date: string) => {
+      let value: number | null = null;
+      for (const point of points) {
+        if (point.date > date) break;
+        value = point.usd;
+      }
+      return value;
+    };
+    const currentUsd = priceAt(today);
+    if (!currentUsd) continue;
+    const since90 = shiftPriceHistoryDate(today, -90);
+    const window = [priceAt(since90), ...points.filter((point) => point.date > since90).map((point) => point.usd)].filter((value): value is number => value !== null);
+    const change = (past: number | null) => (past ? round1(((currentUsd - past) / past) * 100) : null);
+    const usd7d = priceAt(shiftPriceHistoryDate(today, -7));
+    const usd30d = priceAt(shiftPriceHistoryDate(today, -30));
+    const usd90d = priceAt(since90);
+    const max90dUsd = Math.max(...window);
+    const costUsd = item.purchaseCost && item.purchaseCost > 0 ? (item.purchaseCurrency === "USD" ? item.purchaseCost : item.purchaseCost / blueRateSell) : null;
+    rows.push({
+      inventoryItemId: item.id,
+      sku: item.sku,
+      name: item.product.name,
+      expansion: item.product.expansion,
+      number: item.product.number || "",
+      imageUrl: item.product.imageUrl || "",
+      finish,
+      condition,
+      quantityOnHand: item.quantityOnHand,
+      priceArs: item.priceArs,
+      priceChartingId,
+      source,
+      currentUsd,
+      usd7d,
+      usd30d,
+      usd90d,
+      change7dPct: change(usd7d),
+      change30dPct: change(usd30d),
+      change90dPct: change(usd90d),
+      min90dUsd: Math.min(...window),
+      max90dUsd,
+      fromMax90dPct: round1(((currentUsd - max90dUsd) / max90dUsd) * 100),
+      costUsd: costUsd === null ? null : Math.round(costUsd * 100) / 100,
+      marketBelowCost: costUsd !== null && currentUsd < costUsd,
+      saleBelowCost: costUsd !== null && item.priceArs > 0 && item.priceArs / blueRateSell < costUsd,
+      historySince: points[0].date
+    });
+  }
+  const weight = (row: PriceChangeRow) => Math.abs(row.change30dPct ?? row.change7dPct ?? 0) * row.currentUsd * row.quantityOnHand;
+  rows.sort((left, right) => weight(right) - weight(left) || right.currentUsd - left.currentUsd);
+  return {
+    today,
+    tracked: rows.length,
+    withHistory30d: rows.filter((row) => row.usd30d !== null).length,
+    marketBelowCost: rows.filter((row) => row.marketBelowCost).length,
+    saleBelowCost: rows.filter((row) => row.saleBelowCost).length,
+    droppedFromMax: rows.filter((row) => row.fromMax90dPct <= -20).length,
+    items: rows
+  };
+}
 

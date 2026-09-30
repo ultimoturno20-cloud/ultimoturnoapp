@@ -746,6 +746,42 @@ type CoolstuffPriceQuote = {
 
 type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
 
+type PriceChangeFilter = "moved" | "below-cost" | "dropped" | "rising";
+
+type PriceChangeRow = {
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  expansion: string;
+  number: string;
+  imageUrl: string;
+  quantityOnHand: number;
+  priceArs: number;
+  source: "pricecharting" | "tcgplayer";
+  currentUsd: number;
+  usd30d: number | null;
+  change7dPct: number | null;
+  change30dPct: number | null;
+  change90dPct: number | null;
+  min90dUsd: number;
+  max90dUsd: number;
+  fromMax90dPct: number;
+  costUsd: number | null;
+  marketBelowCost: boolean;
+  saleBelowCost: boolean;
+  historySince: string;
+};
+
+type PriceChangesReport = {
+  today: string;
+  tracked: number;
+  withHistory30d: number;
+  marketBelowCost: number;
+  saleBelowCost: number;
+  droppedFromMax: number;
+  items: PriceChangeRow[];
+};
+
 type InventoryPriceRepairCandidate = {
   inventoryItemId: string;
   sku: string;
@@ -6482,6 +6518,27 @@ function AdminView(props: {
   const [priceRepairPreview, setPriceRepairPreview] = useState<InventoryPriceRepairPreview | null>(null);
   const [priceRepairBusy, setPriceRepairBusy] = useState(false);
   const [priceRepairFeedback, setPriceRepairFeedback] = useState("");
+  const [priceChanges, setPriceChanges] = useState<PriceChangesReport | null>(null);
+  const [priceChangeFilter, setPriceChangeFilter] = useState<PriceChangeFilter>("moved");
+  const [priceChangesBusy, setPriceChangesBusy] = useState(false);
+  const [priceChangesFeedback, setPriceChangesFeedback] = useState("");
+  const loadPriceChanges = async () => {
+    setPriceChangesBusy(true);
+    setPriceChangesFeedback("");
+    try {
+      setPriceChanges(await api<PriceChangesReport>("/price-history/changes"));
+    } catch (error) {
+      setPriceChangesFeedback(errorMessage(error));
+    } finally {
+      setPriceChangesBusy(false);
+    }
+  };
+  const visiblePriceChanges = (priceChanges?.items || []).filter((row) => {
+    if (priceChangeFilter === "below-cost") return row.marketBelowCost || row.saleBelowCost;
+    if (priceChangeFilter === "dropped") return row.fromMax90dPct <= -20;
+    if (priceChangeFilter === "rising") return (row.change30dPct ?? row.change7dPct ?? 0) >= 10;
+    return (row.change30dPct ?? row.change7dPct ?? 0) !== 0;
+  }).slice(0, 24);
   const previewPriceRepairs = async () => {
     setPriceRepairBusy(true);
     setPriceRepairFeedback("");
@@ -6668,6 +6725,48 @@ function AdminView(props: {
           {priceRepairPreview.totalCandidates > 12 ? <p className="muted">Mostrando 12 ejemplos de {priceRepairPreview.totalCandidates.toLocaleString("es-AR")}. La tanda aplica hasta 250.</p> : null}
         </> : <p className="muted">Genera la vista previa para ver exactamente que cartas cambiarian.</p>}
         {priceRepairFeedback ? <p className="intake-feedback" role="status">{priceRepairFeedback}</p> : null}
+      </section>
+
+      <section className="panel sale-price-repair-panel">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Historial de precios</p>
+            <h3>Cambios de precio</h3>
+            <p>Compara el precio de mercado de cada carta en stock con el de hace 7, 30 y 90 días. El historial se guarda solo todas las mañanas. Para marcar lo que está bajo costo, cargá el costo de compra de la carta.</p>
+          </div>
+          <div className="price-repair-controls">
+            <select value={priceChangeFilter} disabled={priceChangesBusy} onChange={(event) => setPriceChangeFilter(event.target.value as PriceChangeFilter)}>
+              <option value="moved">Más movidas</option>
+              <option value="below-cost">Bajo costo: no vender</option>
+              <option value="dropped">Bajaron 20% o más del máximo</option>
+              <option value="rising">Subieron 10% o más</option>
+            </select>
+            <button className="secondary-action" disabled={priceChangesBusy} onClick={() => void loadPriceChanges()}><Icon name="search" />{priceChangesBusy ? "Calculando..." : "Ver cambios"}</button>
+          </div>
+        </div>
+        {priceChanges ? <>
+          <div className="price-repair-summary">
+            <div><span>Con historial</span><strong>{priceChanges.tracked.toLocaleString("es-AR")}</strong></div>
+            <div><span>Con 30 días</span><strong>{priceChanges.withHistory30d.toLocaleString("es-AR")}</strong></div>
+            <div><span>Mercado bajo costo</span><strong>{priceChanges.marketBelowCost.toLocaleString("es-AR")}</strong></div>
+            <div><span>Venta bajo costo</span><strong>{priceChanges.saleBelowCost.toLocaleString("es-AR")}</strong></div>
+            <div><span>Bajaron 20%+</span><strong>{priceChanges.droppedFromMax.toLocaleString("es-AR")}</strong></div>
+          </div>
+          {visiblePriceChanges.length ? <div className="price-repair-list">{visiblePriceChanges.map((row) => (
+            <article className="price-repair-row" key={row.inventoryItemId}>
+              <CardArt src={row.imageUrl} alt={row.name} label={row.name} className="price-repair-thumb" fallbackClassName="price-repair-thumb image-placeholder" />
+              <div className="price-repair-copy">
+                <strong>{row.name}</strong>
+                <span>{row.expansion}{row.number ? ` #${row.number}` : ""} · x{row.quantityOnHand}</span>
+                <small>{row.source === "pricecharting" ? "PriceCharting" : "TCGplayer"} {formatUsd(row.currentUsd)} · 7d {formatPercentChange(row.change7dPct)} · 30d {formatPercentChange(row.change30dPct)} · 90d {formatPercentChange(row.change90dPct)}</small>
+                <small>Rango 90d {formatUsd(row.min90dUsd)} a {formatUsd(row.max90dUsd)} ({formatPercentChange(row.fromMax90dPct)} del máximo){row.costUsd ? ` · costo ${formatUsd(row.costUsd)}` : ""}</small>
+                {row.marketBelowCost || row.saleBelowCost ? <small className="price-repair-warning">{row.saleBelowCost ? "Tu precio de venta está bajo el costo" : "El mercado está bajo tu costo"}</small> : null}
+              </div>
+              <div className="price-repair-change"><MoneyStack ars={row.priceArs || null} blueRate={props.blueRate} compact label="Venta" /></div>
+            </article>
+          ))}</div> : <p className="muted">{priceChanges.tracked ? "No hay cartas en este filtro." : "Todavía no hay historial. Se empieza a guardar con la próxima actualización diaria."}</p>}
+        </> : <p className="muted">Tocá "Ver cambios" para calcular cómo se movieron los precios del stock.</p>}
+        {priceChangesFeedback ? <p className="intake-feedback" role="status">{priceChangesFeedback}</p> : null}
       </section>
 
       <div className="admin-grid">
@@ -9432,6 +9531,11 @@ function formatShortDate(value: string) {
 function formatUsd(value: number | null) {
   if (value === null) return "Sin precio";
   return usdFormatter.format(value);
+}
+
+function formatPercentChange(value: number | null) {
+  if (value === null) return "s/d";
+  return `${value > 0 ? "+" : ""}${value.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`;
 }
 
 function roundUsd(value: number) {
