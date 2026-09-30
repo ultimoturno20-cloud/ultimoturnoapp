@@ -303,8 +303,24 @@ export async function loadExpansionWithDiskCache(options: Options, url: string):
   return products;
 }
 
-async function searchCoolstuff(target: WorkerTarget, options: Options, expansionLinks: CoolstuffExpansionLink[]) {
-  const expansionUrl = findCoolstuffExpansionUrl(target.expansion, expansionLinks);
+// PriceCharting files many promos under a bare "Promo" set; the number prefix tells which CoolStuff promo set holds the card.
+const COOLSTUFF_PROMO_SETS: Array<[RegExp, string, string]> = [
+  [/^swsh\s*\d/i, "SWSH Promos", "5973"],
+  [/^svp\s*\d/i, "SV Promos", "7495"],
+  [/^sm\s*\d/i, "SM Promos", "3651"],
+  [/^xy\s*\d/i, "XY Promos", "1898"],
+  [/^mep?\s*\d/i, "ME Promos", "9796"]
+];
+
+export function coolstuffPromoTarget<T extends CoolstuffPriceTarget>(target: T): { target: T; url: string } {
+  if (!/^promos?$/i.test(target.expansion.trim())) return { target, url: "" };
+  const hit = COOLSTUFF_PROMO_SETS.find(([pattern]) => pattern.test(target.number.trim()));
+  if (!hit) return { target, url: "" };
+  return { target: { ...target, expansion: hit[1] }, url: "https://www.coolstuffinc.com/page/" + hit[2] };
+}
+
+async function searchCoolstuff(target: WorkerTarget, options: Options, expansionLinks: CoolstuffExpansionLink[], knownUrl = "") {
+  const expansionUrl = knownUrl || findCoolstuffExpansionUrl(target.expansion, expansionLinks);
   if (!expansionUrl) throw new Error(`No se encontro una expansion CoolStuff confiable para ${target.expansion}.`);
   let cached = expansionCache.get(expansionUrl);
   if (!cached || cached.expiresAt <= Date.now()) {
@@ -366,7 +382,8 @@ export async function runCycle(options: Options, stats: RunStats = newRunStats()
   for (const target of response.targets) {
     let observation: Observation;
     try {
-      const match = matchCoolstuffProduct(target, await searchCoolstuff(target, options, expansionLinks));
+      const promo = coolstuffPromoTarget(target);
+      const match = matchCoolstuffProduct(promo.target, await searchCoolstuff(promo.target, options, expansionLinks, promo.url));
       observation = observationForMatch(target, match);
       if (observation.status === "matched") stats.matched++;
       else if (observation.status === "not_found") stats.notFound++;

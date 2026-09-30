@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findCoolstuffExpansionUrl } from "../packages/importers/src/index.js";
-import { loadExpansionProducts, loadExpansionWithDiskCache, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, resetWorkerCachesForTests, runCycle, runSummary } from "./coolstuff-price-worker.js";
+import { coolstuffPromoTarget, loadExpansionProducts, loadExpansionWithDiskCache, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, resetWorkerCachesForTests, runCycle, runSummary } from "./coolstuff-price-worker.js";
 
 const product = (number: string) => `<div class="product-search-row" itemtype="https://schema.org/Product"><a class="productLink" href="/p/Pokemon/Card-${number}"><span itemprop="name">Card - ${number}/132</span></a><div class="breadcrumb-trail">Pokemon » Mega Evolution</div><div itemprop="offers" itemtype="https://schema.org/Offer"><div><span class="card-qty">1</span>Near Mint</div><b itemprop="price" content="1.25"></b></div></div>`;
 
@@ -182,4 +182,16 @@ test("expansion disk cache skips CoolStuff downloads while fresh", async (t) => 
   assert.equal((await loadExpansionWithDiskCache(options, url)).length, 1);
   assert.equal((await loadExpansionWithDiskCache(options, url)).length, 1);
   assert.equal(requests, 1);
+});
+
+test("bare Promo cards resolve to the CoolStuff promo set of their number prefix", () => {
+  const card = { priceChartingId: "p", name: "Alakazam ex", expansion: "Promo", number: "SVP050", condition: "NM", finish: "normal" };
+  const sv = coolstuffPromoTarget(card);
+  assert.equal(sv.target.expansion, "SV Promos");
+  assert.equal(sv.url, "https://www.coolstuffinc.com/page/7495");
+  assert.equal(coolstuffPromoTarget({ ...card, number: "SWSH251" }).target.expansion, "SWSH Promos");
+  // Shiny Vault numbers (SV001) and unprefixed numbers keep the original set.
+  assert.equal(coolstuffPromoTarget({ ...card, number: "SV001" }).url, "");
+  assert.equal(coolstuffPromoTarget({ ...card, number: "050" }).url, "");
+  assert.equal(coolstuffPromoTarget({ ...card, expansion: "Destined Rivals" }).url, "");
 });
