@@ -1679,6 +1679,31 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
   return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
+export async function updateResellerAssignmentPrice(
+  db: PGlite,
+  resellerUserId: string,
+  inventoryItemId: string,
+  priceArs: number,
+  actor: AuthenticatedUser
+): Promise<ResellerDashboard> {
+  if (actor.roles && !actor.roles.includes("admin")) throw new Error("Se requiere rol administrador.");
+  const normalizedPrice = Number(priceArs);
+  if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0) throw new Error("El precio de venta no es valido.");
+  const assignment = await db.query(`
+    select 1 from reseller_stock_assignments
+    where business_id = $1 and reseller_user_id = $2 and inventory_item_id = $3
+  `, [actor.businessId, resellerUserId, inventoryItemId]);
+  if (!assignment.rows[0]) throw new Error("La carta no esta asignada a este revendedor.");
+  const before = await db.query<Record<string, unknown>>("select price_ars, price_usd from current_prices where inventory_item_id = $1 and business_id = $2", [inventoryItemId, actor.businessId]);
+  await db.query(`
+    insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
+    values ($1, $2, $3, null, true)
+    on conflict (inventory_item_id) do update set price_ars = excluded.price_ars, manual_override = true, updated_at = now()
+  `, [inventoryItemId, actor.businessId, normalizedPrice]);
+  await writeAudit(db, actor, "reseller.assignment.price.update", "inventory_item", inventoryItemId, before.rows[0] || null, { resellerUserId, priceArs: normalizedPrice });
+  return getResellerDashboard(db, resellerUserId, actor.businessId, false);
+}
+
 export async function returnResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad devuelta debe ser un entero positivo.");
   await inventoryTransaction(db, async (db) => {

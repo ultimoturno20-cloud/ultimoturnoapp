@@ -22,6 +22,7 @@ import {
   loginUser,
   resolveResellerStockRequest,
   updateOwnResellerOrderWorkflow,
+  updateResellerAssignmentPrice,
   updateResellerCreditLimit,
   upsertInventoryItem
 } from "./index.js";
@@ -68,23 +69,27 @@ it("lets a reseller request global stock and lets an admin approve quantity and 
   assert.equal(dashboard.assignments[0].priceArs, 12500);
   assert.equal(dashboard.summary.assignedValueArs, 25000);
 
+  dashboard = await updateResellerAssignmentPrice(db, created.reseller.userId, item.id, 12000, admin);
+  assert.equal(dashboard.assignments[0].priceArs, 12000);
+  assert.equal(dashboard.summary.assignedValueArs, 24000);
+
   dashboard = await updateResellerCreditLimit(db, created.reseller.userId, 30000, admin);
   assert.equal(dashboard.reseller.creditLimitArs, 30000);
-  assert.equal(dashboard.summary.availableCreditArs, 5000);
+  assert.equal(dashboard.summary.availableCreditArs, 6000);
   await assert.rejects(
     () => createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 1 }, reseller!),
     /supera tu limite/
   );
   await createResellerSale(db, {
     customerName: "Venta libera cupo",
-    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12500 }]
+    lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 12000 }]
   }, reseller!);
   dashboard = await getResellerDashboard(db, created.reseller.userId, admin.businessId);
-  assert.equal(dashboard.summary.assignedValueArs, 12500);
+  assert.equal(dashboard.summary.assignedValueArs, 12000);
   dashboard = await createResellerStockRequest(db, { inventoryItemId: item.id, quantity: 1 }, reseller!);
   assert.equal(dashboard.stockRequests[0].quantityRequested, 1);
-  assert.equal(dashboard.summary.pendingRequestValueArs, 12500);
-  assert.equal(dashboard.summary.availableCreditArs, 5000);
+  assert.equal(dashboard.summary.pendingRequestValueArs, 12000);
+  assert.equal(dashboard.summary.availableCreditArs, 6000);
 });
 
 it("keeps consigned stock available centrally and validates real stock when a reseller sells", async () => {

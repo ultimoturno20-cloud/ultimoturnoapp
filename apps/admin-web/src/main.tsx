@@ -5717,6 +5717,8 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
   const [resolvingRequestId, setResolvingRequestId] = useState("");
   const [creditLimitDrafts, setCreditLimitDrafts] = useState<Record<string, string>>({});
   const [savingCreditLimit, setSavingCreditLimit] = useState(false);
+  const [assignmentPriceDrafts, setAssignmentPriceDrafts] = useState<Record<string, string>>({});
+  const [savingAssignmentPriceId, setSavingAssignmentPriceId] = useState("");
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
 
   const load = async (quiet = false) => {
@@ -5788,6 +5790,18 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSavingCreditLimit(false); }
+  }
+
+  async function saveAssignmentPrice(item: ResellerAssignment) {
+    if (!selected) return;
+    const priceArs = Number(assignmentPriceDrafts[item.inventoryItemId] ?? item.priceArs);
+    setSavingAssignmentPriceId(item.inventoryItemId);
+    try {
+      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments/${item.inventoryItemId}/price`, { method: "PUT", body: { priceArs } }));
+      setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: String(priceArs) }));
+      setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+    finally { setSavingAssignmentPriceId(""); }
   }
 
   async function registerReturn(item: ResellerAssignment) {
@@ -5880,7 +5894,7 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
               </div> : <p className="reseller-stock-hint">Escribi para ver y elegir resultados directamente.</p>}
             </section>
             <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero.</p></div></div>
-              <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b>{!assignmentOnly ? <button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button> : null}</div>)}</div>
+              <div className="reseller-table">{selected.assignments.map((item) => <div className="reseller-row reseller-assignment-row" key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div><span>{item.remaining} en mano</span><b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b>{!assignmentOnly ? <div className="reseller-assignment-price"><label>Precio ARS<input type="number" min="0" step="100" value={assignmentPriceDrafts[item.inventoryItemId] ?? String(item.priceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button className="secondary-action" disabled={savingAssignmentPriceId === item.inventoryItemId} onClick={() => void saveAssignmentPrice(item)}>{savingAssignmentPriceId === item.inventoryItemId ? "Guardando..." : "Guardar precio"}</button></div> : <strong>{formatArs(item.priceArs)}</strong>}{!assignmentOnly ? <button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button> : null}</div>)}</div>
             </section>
             {!assignmentOnly ? <section className="panel"><div className="section-heading"><div><h3>Ventas y rendiciones</h3><p>Saldo neto luego de comision.</p></div><button className="primary-action" disabled={!selected.summary.outstandingArs} onClick={() => void settle()}>Registrar rendicion</button></div>
               <div className="reseller-table">{selected.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)} bruto</span><b>{formatArs(sale.netDueArs)} neto</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span>{sale.status === "confirmed" ? <button className="secondary-action" onClick={() => void cancelSale(sale)}>Anular</button> : <span />}</div>)}</div>

@@ -105,6 +105,7 @@ import {
   reviewCardIndexEntry,
   updateMobileInventoryEntryStatus,
   updateResellerCreditLimit,
+  updateResellerAssignmentPrice,
   updateClaimPlan,
   upsertClaimPlanItems,
   updateInventoryItemTags,
@@ -4191,6 +4192,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (resellerAssignMatch && request.method === "POST") {
       const body = await readJson<{ inventoryItemId: string; quantity: number }>(request);
       sendJson(response, 200, await assignResellerStock(db, resellerAssignMatch[1], body.inventoryItemId, Number(body.quantity), user));
+      return;
+    }
+
+    const resellerAssignmentPriceMatch = url.pathname.match(/^\/resellers\/([^/]+)\/assignments\/([^/]+)\/price$/);
+    if (resellerAssignmentPriceMatch && request.method === "PUT") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson<{ priceArs: number }>(request);
+      sendJson(response, 200, await updateResellerAssignmentPrice(db, resellerAssignmentPriceMatch[1], resellerAssignmentPriceMatch[2], Number(body.priceArs), user));
       return;
     }
 
