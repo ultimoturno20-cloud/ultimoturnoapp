@@ -2023,11 +2023,13 @@ describe("operational inventory database", () => {
     // TCGplayer lists Cosmos/Poke Ball printings as their own product priced as "Holofoil".
     await replaceTcgplayerPriceCache(db, {
       source: "tcgcsv", categoryId: "3", sourceVersion: "test-version-special", groupsSeen: 1,
-      rowsReceived: 3, rowsSkipped: 0,
+      rowsReceived: 5, rowsSkipped: 0,
       rows: [
         { tcgplayerProductId: "555", subTypeName: "Normal", lowPriceUsd: 1, midPriceUsd: 2, highPriceUsd: 3, marketPriceUsd: 2.5, directLowPriceUsd: null, sourceGroupId: "900" },
         { tcgplayerProductId: "555", subTypeName: "Reverse Holofoil", lowPriceUsd: 4, midPriceUsd: 5, highPriceUsd: 6, marketPriceUsd: 5.5, directLowPriceUsd: 4.5, sourceGroupId: "900" },
-        { tcgplayerProductId: "556", subTypeName: "Holofoil", lowPriceUsd: 7, midPriceUsd: 8, highPriceUsd: 9, marketPriceUsd: 7.75, directLowPriceUsd: null, sourceGroupId: "900" }
+        { tcgplayerProductId: "556", subTypeName: "Holofoil", lowPriceUsd: 7, midPriceUsd: 8, highPriceUsd: 9, marketPriceUsd: 7.75, directLowPriceUsd: null, sourceGroupId: "900" },
+        { tcgplayerProductId: "557", subTypeName: "Holofoil", lowPriceUsd: 4, midPriceUsd: 5, highPriceUsd: 6, marketPriceUsd: 5, directLowPriceUsd: null, sourceGroupId: "900" },
+        { tcgplayerProductId: "557", subTypeName: "Reverse Holofoil", lowPriceUsd: 40, midPriceUsd: 50, highPriceUsd: 60, marketPriceUsd: 50, directLowPriceUsd: null, sourceGroupId: "900" }
       ]
     });
     await upsertInventoryItem(db, {
@@ -2036,6 +2038,14 @@ describe("operational inventory database", () => {
       quantityOnHand: 1, quantityReserved: 0, priceArs: 1000
     }, user);
     const specialStock = await listStockForBusiness(db, user.businessId);
+    // A normal-finish card whose product has no Normal price takes Holofoil, never the Reverse price.
+    await upsertInventoryItem(db, {
+      sku: "TEST-TCG-HOLO-ONLY-557", name: "Umbreon", expansion: "Promo", number: "557", language: "EN", condition: "NM",
+      finish: "normal", imageUrl: "https://tcgplayer-cdn.tcgplayer.com/product/557_in_1000x1000.jpg",
+      quantityOnHand: 1, quantityReserved: 0, priceArs: 1000
+    }, user);
+    const holoOnly = (await listStockForBusiness(db, user.businessId)).items.find((item) => item.sku === "TEST-TCG-HOLO-ONLY-557");
+    assert.equal(holoOnly?.priceReferences.tcgplayer.marketPriceUsd, 5);
     assert.equal(specialStock.items.find((item) => item.sku === "TEST-TCG-POKEBALL-026")?.priceReferences.tcgplayer.marketPriceUsd, 7.75);
     assert.equal(specialStock.items.find((item) => item.sku === "TEST-TCG-COSMOS-025")?.priceReferences.tcgplayer.marketPriceUsd, null);
 

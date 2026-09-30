@@ -4133,6 +4133,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
         when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) like '%unlimited%' then 0
         when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 1
         when lower(candidate_price.sub_type_name) = 'normal' then 1
+        -- A card without a reverse tag must not take the (usually pricier) Reverse Holofoil price.
+        when lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 3
         else 2
       end, candidate_price.market_price_usd desc nulls last
       limit 1
@@ -4435,6 +4437,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
         when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) like '%unlimited%' then 0
         when lower(v.finish) not like '%reverse%' and lower(v.finish) not like '%holo%' and lower(candidate_price.sub_type_name) = 'normal' then 1
         when lower(candidate_price.sub_type_name) = 'normal' then 1
+        -- A card without a reverse tag must not take the (usually pricier) Reverse Holofoil price.
+        when lower(v.finish) not like '%reverse%' and lower(candidate_price.sub_type_name) like '%reverse%' then 3
         else 2
       end, candidate_price.market_price_usd desc nulls last
       limit 1
