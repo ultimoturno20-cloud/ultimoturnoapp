@@ -17,6 +17,8 @@ Actualizado: 2026-09-30
 - Crear una solicitud desde el portal y confirmar que Administracion muestre
   Venta, TCGplayer, PriceCharting y CoolStuff. Pulsar una referencia debe copiar
   su conversion ARS al precio a aprobar.
+- En `Mercaderia en consignacion`, comprobar que las mismas cuatro referencias
+  aparezcan en cada carta y que al pulsarlas completen su precio editable.
 - Revisar en la lista lateral el valor asignado, saldo a rendir y ventas del mes
   de varios revendedores, incluyendo uno sin movimientos.
 

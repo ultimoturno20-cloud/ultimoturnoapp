@@ -50,8 +50,10 @@ Actualizado: 2026-09-30
   libera automaticamente, y nuevas solicitudes o asignaciones que superen el
   limite quedan bloqueadas. Un limite vacio mantiene el perfil sin tope.
 - `Mercaderia en consignacion` muestra el precio ARS de cada carta asignada y
-  permite editarlo en la misma fila. El cambio actualiza el precio real usado
-  por el portal, el valor asignado y el cupo disponible del revendedor.
+  permite compararlo con Venta, TCGplayer, PriceCharting y CoolStuff. Al tocar
+  una referencia se completa el precio editable de la misma fila; al guardarlo
+  se actualiza el precio real usado por el portal, el valor asignado y el cupo
+  disponible del revendedor.
 - Inventario permite iniciar una asignacion desde cada tarjeta o desde su panel
   de detalle: se elige revendedor y cantidad sin navegar a otra pantalla. Solo
   admite unidades realmente libres; las reservadas por ordenes quedan excluidas

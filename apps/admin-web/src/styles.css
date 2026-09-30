@@ -12801,7 +12801,8 @@ main:has(.trello-orders) .operations-dock { display:none; }
 .reseller-request-actions button { white-space: nowrap; }
 .reseller-table { display: grid; gap: 8px; }
 .reseller-row { display: grid; grid-template-columns: 48px minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
-.reseller-row.reseller-assignment-row { grid-template-columns: 48px minmax(180px, 1fr) auto auto minmax(245px, 300px) auto; }
+.reseller-row.reseller-assignment-row { grid-template-columns: 48px minmax(160px, 1fr) auto auto minmax(300px, 1.25fr) minmax(245px, 300px) auto; }
+.reseller-assignment-references { min-width: 300px; }
 .reseller-assignment-price { display: grid; grid-template-columns: minmax(110px, 1fr) auto; gap: 6px; align-items: end; }
 .reseller-assignment-price label { display: grid; gap: 3px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .reseller-assignment-price input { width: 100%; min-width: 0; padding: 8px; }
@@ -13021,6 +13022,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
   .reseller-request-list article { grid-template-columns: 48px minmax(0, 1fr); }
   .reseller-request-list article > label, .reseller-request-prices, .reseller-request-stock, .reseller-request-actions { grid-column: 1 / -1; }
   .reseller-request-prices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reseller-assignment-references { min-width: 0; }
   .reseller-request-actions { display: grid; grid-template-columns: 1fr 1.35fr; }
   .reseller-global-grid { grid-template-columns: 1fr; }
   .reseller-global-grid article { grid-template-columns: 64px minmax(0, 1fr) auto; }
