@@ -63,7 +63,7 @@ type ResellerDashboard = {
   settlements: Array<{ id: string; amountArs: number; note: string; settledAt: string }>;
   summary: { assignedUnits: number; remainingUnits: number; sellableUnits: number; assignedValueArs: number; pendingRequestValueArs: number; availableCreditArs: number | null; grossSalesArs: number; commissionArs: number; netDueArs: number; settledArs: number; outstandingArs: number };
 };
-type AvailabilityFilter = "all" | "available" | "reserved" | "out";
+type AvailabilityFilter = "all" | "in_stock" | "available" | "assigned" | "reserved" | "out";
 type LanguageGroupFilter = "all" | "english" | "japanese" | "chinese";
 type SortMode = "name" | "expansion" | "number" | "price" | "quantity";
 type IssueFilter = "all" | "missingImage" | "missingPriceCharting" | "zeroPrice" | "lowStock" | "duplicates";
@@ -123,6 +123,8 @@ type StockRow = {
   tags: string;
   quantityOnHand: number;
   quantityReserved: number;
+  quantityAssigned: number;
+  freeQuantity: number;
   availableQuantity: number;
   priceArs: number;
   priceUsd: number | null;
@@ -1062,7 +1064,7 @@ function App() {
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
-  const [availability, setAvailability] = useState<AvailabilityFilter>("available");
+  const [availability, setAvailability] = useState<AvailabilityFilter>("in_stock");
   const [inventoryPriceSource, setInventoryPriceSource] = useState<InventoryPriceSource>("sale");
   const [inventoryDensity, setInventoryDensity] = useState<InventoryDensity>("comfortable");
   const [sortMode, setSortMode] = useState<SortMode>("name");
@@ -1386,9 +1388,12 @@ function App() {
           (ownerFilter === "all" || (ownerFilter === "ultimoturno" ? !item.ownerUserId : item.ownerUserId === ownerFilter)) &&
           (issue === "all" || stockItemIssues(item, duplicateKeys).includes(issue)) &&
           (availability === "all" ||
-            (availability === "available" && item.availableQuantity > 0) ||
+            (parsedSearch.tokens.length > 0 && availability === "in_stock") ||
+            (availability === "in_stock" && item.quantityOnHand > 0) ||
+            (availability === "available" && item.freeQuantity > 0) ||
+            (availability === "assigned" && item.quantityAssigned > 0) ||
             (availability === "reserved" && item.quantityReserved > 0) ||
-            (availability === "out" && item.availableQuantity === 0));
+            (availability === "out" && item.quantityOnHand === 0));
       })
       .sort((left, right) => {
         if (parsedSearch.tokens.length && left.searchScore !== right.searchScore) return right.searchScore - left.searchScore;
@@ -2573,7 +2578,7 @@ function App() {
     setLocationFilter("all");
     setBatchFilter("all");
     setInventoryStatusFilter("all");
-    setAvailability("available");
+    setAvailability("in_stock");
     setInventoryPriceSource("sale");
     setSortMode("name");
     setIssue("all");
@@ -2769,7 +2774,7 @@ function App() {
             setInventoryStatusFilter("all");
             setTagFilter("all");
             setOwnerFilter("all");
-            setAvailability("available");
+            setAvailability("in_stock");
             setInventoryPriceSource("sale");
             setSortMode("name");
             setIssue("all");
@@ -3397,9 +3402,11 @@ function InventoryView(props: {
   const ownerOptions = useMemo(() => unique(allItems.filter((item) => item.ownerUserId).map((item) => `${item.ownerUserId}\t${item.ownerName}`)), [allItems]);
   const availabilityCounts = useMemo(() => ({
     all: allItems.length,
-    available: allItems.filter((item) => item.availableQuantity > 0).length,
+    inStock: allItems.filter((item) => item.quantityOnHand > 0).length,
+    available: allItems.filter((item) => item.freeQuantity > 0).length,
+    assigned: allItems.filter((item) => item.quantityAssigned > 0).length,
     reserved: allItems.filter((item) => item.quantityReserved > 0).length,
-    out: allItems.filter((item) => item.availableQuantity === 0).length
+    out: allItems.filter((item) => item.quantityOnHand === 0).length
   }), [allItems]);
   const priceSourceCounts = useMemo(() => ({
     sale: allItems.filter((item) => inventoryPriceDisplay(item, "sale", props.blueRate).hasPrice).length,
@@ -3484,8 +3491,9 @@ function InventoryView(props: {
         <div className="inventory-quick-filter-bar">
           <div className="availability-filter-row" aria-label="Disponibilidad">
             {([
-              ["available", "Con stock", availabilityCounts.available],
-              ["all", "Todo", availabilityCounts.all],
+              ["in_stock", "En stock", availabilityCounts.inStock],
+              ["available", "Disponibles", availabilityCounts.available],
+              ["assigned", "Asignadas", availabilityCounts.assigned],
               ["reserved", "Reservadas", availabilityCounts.reserved],
               ["out", "Sin stock", availabilityCounts.out]
             ] as const).map(([value, label, count]) => (
@@ -3566,11 +3574,16 @@ function InventoryView(props: {
                 const displayPrice = inventoryPriceDisplay(item, filters.priceSource, props.blueRate);
                 const itemTags = inventoryTags(item.tags).slice(0, 3);
                 return (
-                  <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""}`} key={item.id}>
+                  <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""} ${item.quantityReserved > 0 ? "has-reserved" : ""} ${item.quantityAssigned > 0 ? "has-assigned" : ""}`} key={item.id}>
                     <button className="inventory-card-main" onClick={() => setIntakeId(item.id)}>
                       <div className="inventory-card-image-wrap">
                         <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="inventory-card-image" fallbackClassName="inventory-card-image placeholder" />
-                        <span className={`inventory-stock-badge ${item.availableQuantity > 0 ? "" : "out-of-stock"}`}>{item.availableQuantity} disp.</span>
+                        <div className="inventory-unit-state-list">
+                          {item.freeQuantity > 0 ? <span className="inventory-unit-state available">{item.freeQuantity} disponible{item.freeQuantity === 1 ? "" : "s"}</span> : null}
+                          {item.quantityAssigned > 0 ? <span className="inventory-unit-state assigned">{item.quantityAssigned} asignada{item.quantityAssigned === 1 ? "" : "s"}</span> : null}
+                          {item.quantityReserved > 0 ? <span className="inventory-unit-state reserved">{item.quantityReserved} reservada{item.quantityReserved === 1 ? "" : "s"}</span> : null}
+                          {item.quantityOnHand === 0 ? <span className="inventory-unit-state out">0 stock</span> : null}
+                        </div>
                       </div>
                       <div className="inventory-card-body">
                         <strong>{item.product.name}</strong>
@@ -3644,16 +3657,18 @@ function InventoryView(props: {
                   <div><dt>Condicion</dt><dd>{selected.variant.gradingCompany ? "No aplica" : selected.variant.condition}</dd></div>
                   {selected.variant.gradingCompany || selected.variant.grade ? <div><dt>Grading</dt><dd>{inventoryGradingLabel(selected)}</dd></div> : null}
                   {selected.variant.gradingCert ? <div><dt>Certificado</dt><dd>{selected.variant.gradingCert}</dd></div> : null}
-                  <div><dt>Total</dt><dd>{selected.quantityOnHand}</dd></div>
+                  <div><dt>Total fisico</dt><dd>{selected.quantityOnHand}</dd></div>
+                  <div><dt>Disponibles</dt><dd>{selected.freeQuantity}</dd></div>
+                  <div><dt>Asignadas</dt><dd>{selected.quantityAssigned}</dd></div>
                   <div><dt>Reservadas</dt><dd>{selected.quantityReserved}</dd></div>
                   <div><dt>Lote</dt><dd>{selected.intakeBatch || "-"}</dd></div>
                   <div><dt>Estado</dt><dd>{inventoryStatusLabel(selected.inventoryStatus)}</dd></div>
                   <div className={`important-number quick-stock-card ${quickStockOpen ? "editing" : ""}`}>
-                    <dt><span>Disponible</span><button type="button" className="mini-icon-action" aria-label="Editar disponible" title="Editar disponible" onClick={() => { setQuickStockDraft(String(selected.availableQuantity)); setQuickStockOpen((open) => !open); }}><Icon name="edit" /></button></dt>
+                    <dt><span>Venta central</span><button type="button" className="mini-icon-action" aria-label="Editar disponibilidad central" title="Editar disponibilidad central" onClick={() => { setQuickStockDraft(String(selected.availableQuantity)); setQuickStockOpen((open) => !open); }}><Icon name="edit" /></button></dt>
                     <dd>{selected.availableQuantity}</dd>
                     {quickStockOpen ? (
                       <form className="quick-stock-editor" onSubmit={submitQuickStock}>
-                        <label>Nuevo disponible<input type="number" min={0} autoFocus value={quickStockDraft} onChange={(event) => setQuickStockDraft(event.target.value)} /></label>
+                        <label>Nueva disponibilidad central<input type="number" min={0} autoFocus value={quickStockDraft} onChange={(event) => setQuickStockDraft(event.target.value)} /></label>
                         <small>{quickStockDelta === 0 ? "Sin cambios" : `Ajuste ${formatDelta(quickStockDelta)} / total ${selected.quantityReserved + quickStockTarget}`}</small>
                         <div>
                           <button type="button" className="secondary-action" disabled={quickStockSaving} onClick={() => setQuickStockOpen(false)}><Icon name="close" />Cancelar</button>
@@ -9389,7 +9404,7 @@ function canvasAssetUrls(value: string) {
 
 function exportInventoryCsv(items: StockRow[]) {
   downloadCsv("ultimoturno-inventario-vista.csv", [
-    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "quantityReserved", "availableQuantity", "priceArs", "priceUsd", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "tags", "priceChartingId", "priceChartingUrl", "imageUrl"],
+    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "freeQuantity", "quantityAssigned", "quantityReserved", "availableQuantityCentral", "priceArs", "priceUsd", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "tags", "priceChartingId", "priceChartingUrl", "imageUrl"],
     ...items.map((item) => {
       const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
       return [
@@ -9404,6 +9419,8 @@ function exportInventoryCsv(items: StockRow[]) {
         item.variant.grade || "",
         item.variant.gradingCert || "",
         item.quantityOnHand,
+        item.freeQuantity,
+        item.quantityAssigned,
         item.quantityReserved,
         item.availableQuantity,
         item.priceArs,

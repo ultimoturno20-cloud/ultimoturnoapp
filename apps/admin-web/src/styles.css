@@ -5640,6 +5640,50 @@ select {
   background: rgba(245, 37, 70, 0.9);
 }
 
+.inventory-unit-state-list {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  left: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.inventory-unit-state {
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #fff;
+  background: rgba(5, 5, 6, 0.9);
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 16px;
+}
+
+.inventory-unit-state.available {
+  border-color: rgba(34, 197, 94, 0.72);
+  background: rgba(20, 83, 45, 0.94);
+}
+
+.inventory-unit-state.assigned {
+  border-color: rgba(59, 130, 246, 0.76);
+  background: rgba(30, 64, 175, 0.94);
+}
+
+.inventory-unit-state.reserved {
+  border-color: rgba(250, 204, 21, 0.78);
+  background: rgba(113, 63, 18, 0.95);
+}
+
+.inventory-unit-state.out {
+  border-color: rgba(245, 37, 70, 0.78);
+  background: rgba(159, 18, 57, 0.95);
+}
+
 .inventory-card-body {
   display: grid;
   gap: 5px;

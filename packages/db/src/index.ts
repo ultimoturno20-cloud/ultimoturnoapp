@@ -27,6 +27,8 @@ export type DbStockRow = {
   tags: string;
   quantityOnHand: number;
   quantityReserved: number;
+  quantityAssigned: number;
+  freeQuantity: number;
   active: boolean;
   priceArs: number;
   priceUsd: number | null;
@@ -3997,6 +3999,8 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       ii.quantity_reserved,
       ii.active,
       greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
+      least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as assigned_quantity,
+      greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as free_quantity,
       coalesce(cp.price_ars, 0) as price_ars,
       cp.price_usd,
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
@@ -4030,6 +4034,16 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       coalesce(identifier_data.identifiers, '[]'::json) as identifiers
     from inventory_items ii
     left join app_users owner_user on owner_user.id = ii.owner_user_id and owner_user.business_id = ii.business_id
+    left join (
+      select business_id, inventory_item_id, sum(greatest(0, quantity_assigned - quantity_sold - quantity_returned))::integer as remaining_quantity
+      from reseller_stock_assignments group by business_id, inventory_item_id
+    ) assigned_stock on assigned_stock.business_id = ii.business_id and assigned_stock.inventory_item_id = ii.id
+    left join (
+      select s.business_id, si.inventory_item_id, sum(si.quantity)::integer as reserved_quantity
+      from sales s join sale_items si on si.sale_id = s.id and si.business_id = s.business_id
+      where s.sale_type = 'reservation' and s.status in ('pending', 'packed') and s.assigned_reseller_user_id is not null
+      group by s.business_id, si.inventory_item_id
+    ) assigned_orders on assigned_orders.business_id = ii.business_id and assigned_orders.inventory_item_id = ii.id
     join card_products p on p.id = ii.product_id
     join card_variants v on v.id = ii.variant_id
     left join current_prices cp on cp.inventory_item_id = ii.id
@@ -4279,6 +4293,8 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       ii.quantity_reserved,
       ii.active,
       greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
+      least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as assigned_quantity,
+      greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as free_quantity,
       coalesce(cp.price_ars, 0) as price_ars,
       cp.price_usd,
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
@@ -4312,6 +4328,16 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       coalesce(identifier_data.identifiers, '[]'::json) as identifiers
     from inventory_items ii
     left join app_users owner_user on owner_user.id = ii.owner_user_id and owner_user.business_id = ii.business_id
+    left join (
+      select business_id, inventory_item_id, sum(greatest(0, quantity_assigned - quantity_sold - quantity_returned))::integer as remaining_quantity
+      from reseller_stock_assignments group by business_id, inventory_item_id
+    ) assigned_stock on assigned_stock.business_id = ii.business_id and assigned_stock.inventory_item_id = ii.id
+    left join (
+      select s.business_id, si.inventory_item_id, sum(si.quantity)::integer as reserved_quantity
+      from sales s join sale_items si on si.sale_id = s.id and si.business_id = s.business_id
+      where s.sale_type = 'reservation' and s.status in ('pending', 'packed') and s.assigned_reseller_user_id is not null
+      group by s.business_id, si.inventory_item_id
+    ) assigned_orders on assigned_orders.business_id = ii.business_id and assigned_orders.inventory_item_id = ii.id
     join card_products p on p.id = ii.product_id
     join card_variants v on v.id = ii.variant_id
     left join current_prices cp on cp.inventory_item_id = ii.id
@@ -5137,6 +5163,7 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
         values ($1, $2, $3, 'reservation_sale', $4, 'sale', $5, $6, $7, $8)
       `, [crypto.randomUUID(), actor.businessId, line.inventoryItemId, -line.quantity, saleId, `movement-complete-${saleId}-${line.inventoryItemId}`, `Reserva cobrada a ${sale.customerName}`, actor.id]);
     }
+    await settleOrderResellerAssignment(db, saleId, actor, "sale");
     await db.query("update sales set status = 'paid', amount_paid_ars = total_ars, completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, stockExceptions.length ? "sale.complete_stock_reconciled" : "sale.complete", "sale", saleId, sale, {
@@ -5146,6 +5173,50 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
     });
   });
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
+}
+
+async function settleOrderResellerAssignment(
+  db: PGlite,
+  saleId: string,
+  actor: AuthenticatedUser,
+  action: "sale" | "return"
+): Promise<void> {
+  const assignment = await db.query<{ reseller_user_id: string }>(`
+    select assigned_reseller_user_id as reseller_user_id
+    from sales
+    where id = $1 and business_id = $2 and assigned_reseller_user_id is not null
+    limit 1
+  `, [saleId, actor.businessId]);
+  const resellerUserId = assignment.rows[0]?.reseller_user_id;
+  if (!resellerUserId) return;
+  const alreadySettled = await db.query<{ id: string }>(`
+    select id from reseller_stock_events
+    where business_id = $1 and reseller_user_id = $2 and reference_type = 'sale' and reference_id = $3 and event_type = $4
+    limit 1
+  `, [actor.businessId, resellerUserId, saleId, action]);
+  if (alreadySettled.rows[0]) return;
+  const assignedLines = await db.query<{ inventory_item_id: string; quantity: number }>(`
+    select inventory_item_id, sum(quantity)::integer as quantity
+    from reseller_stock_events
+    where business_id = $1 and reseller_user_id = $2 and reference_type = 'sale' and reference_id = $3 and event_type = 'assign'
+    group by inventory_item_id
+  `, [actor.businessId, resellerUserId, saleId]);
+  for (const line of assignedLines.rows) {
+    const quantity = Number(line.quantity || 0);
+    const quantityColumn = action === "sale" ? "quantity_sold" : "quantity_returned";
+    const updated = await db.query<{ id: string }>(`
+      update reseller_stock_assignments
+      set ${quantityColumn} = ${quantityColumn} + $1, updated_at = now()
+      where business_id = $2 and reseller_user_id = $3 and inventory_item_id = $4
+        and quantity_sold + quantity_returned + $1 <= quantity_assigned
+      returning id
+    `, [quantity, actor.businessId, resellerUserId, line.inventory_item_id]);
+    if (!updated.rows[0]) throw new Error("La asignacion del revendedor ya no coincide con la orden.");
+    await db.query(`
+      insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, reference_type, reference_id, note, created_by)
+      values ($1, $2, $3, $4, $5, $6, 'sale', $7, $8, $9)
+    `, [crypto.randomUUID(), actor.businessId, resellerUserId, line.inventory_item_id, action, quantity, saleId, action === "sale" ? "Orden central cobrada" : "Orden central cancelada", actor.id]);
+  }
 }
 
 export async function assignOrderToReseller(
@@ -5550,6 +5621,7 @@ export async function cancelReservationSale(db: PGlite, saleId: string, actor: A
         values ($1, $2, $3, 'reservation_release', 0, 'sale', $4, $5, $6, $7)
       `, [crypto.randomUUID(), actor.businessId, line.inventoryItemId, saleId, `movement-cancel-${saleId}-${line.inventoryItemId}`, `Reserva cancelada de ${sale.customerName}`, actor.id]);
     }
+    await settleOrderResellerAssignment(db, saleId, actor, "return");
     await db.query("update sales set status = 'cancelled', cancelled_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, "sale.cancel", "sale", saleId, sale, { status: "cancelled" });
@@ -7564,6 +7636,8 @@ function toStockRow(row: Record<string, unknown>): DbStockRow {
     tags: String(row.tags || ""),
     quantityOnHand: Number(row.quantity_on_hand),
     quantityReserved: Number(row.quantity_reserved),
+    quantityAssigned: Number(row.assigned_quantity || 0),
+    freeQuantity: Number(row.free_quantity || 0),
     active: Boolean(row.active),
     priceArs: Number(row.price_ars || 0),
     priceUsd: optionalNumber(row.price_usd) ?? null,

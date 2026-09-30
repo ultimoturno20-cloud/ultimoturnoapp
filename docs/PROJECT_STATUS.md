@@ -231,6 +231,13 @@ Actualizado: 2026-09-29
   idioma y fuente de precio quedan siempre accesibles en una franja compacta;
   expansion, condicion, lote, ubicacion, estado, categoria y calidad se agrupan
   en un panel avanzado corto, sin desplegar el bloque alto anterior.
+- Cada SKU muestra ahora un desglose no superpuesto por unidad: `Disponible`
+  para mercaderia libre, `Asignada` para consignacion y `Reservada` para ordenes
+  pendientes de cobro o entrega. La vista inicial incluye todo el stock fisico,
+  aunque su disponibilidad libre sea cero, y una busqueda por nombre tambien
+  encuentra SKUs agotados. Las asignaciones hechas desde una orden cuentan como
+  reservadas hasta cobrarla; al cobrar salen de la tenencia del revendedor y al
+  cancelar se liberan automaticamente.
 - Cada tarjeta de Inventario sin imagen muestra `Reparar imagen` como una accion
   propia debajo de Stock, Detalles y Carrito. No depende de overlays ni de abrir
   el editor completo, y actualiza la tarjeta cuando encuentra una fuente valida.

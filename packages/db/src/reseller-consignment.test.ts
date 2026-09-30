@@ -7,7 +7,9 @@ import {
   assignOrderToReseller,
   assignResellerStock,
   cancelOwnResellerOrder,
+  cancelReservationSale,
   cancelResellerSale,
+  completeReservationSale,
   confirmOwnResellerOrder,
   createOperationalDatabase,
   createReseller,
@@ -59,6 +61,14 @@ it("assigns every card in a central order to one reseller without duplicating it
   let dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
   assert.equal(dashboard.summary.remainingUnits, 3);
   assert.equal(dashboard.summary.assignedValueArs, 18000);
+  let stock = await listStockForBusiness(db, admin.businessId);
+  assert.deepEqual(
+    stock.items.filter((item) => [first.id, second.id].includes(item.id)).map((item) => ({ sku: item.sku, free: item.freeQuantity, assigned: item.quantityAssigned, reserved: item.quantityReserved })),
+    [
+      { sku: "TEST-ORDER-ASSIGN-002", free: 1, assigned: 0, reserved: 1 },
+      { sku: "TEST-ORDER-ASSIGN-001", free: 1, assigned: 0, reserved: 2 }
+    ]
+  );
 
   assignedOrder = await assignOrderToReseller(db, order.id, reseller.reseller.userId, admin);
   dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
@@ -73,6 +83,23 @@ it("assigns every card in a central order to one reseller without duplicating it
     }))
   }, admin), /entregada a un revendedor/);
   assert.equal((await listSales(db, admin.businessId)).sales.find((sale) => sale.id === order.id)?.assignedResellerName, "Revendedor Orden");
+  await completeReservationSale(db, order.id, admin);
+  dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  assert.equal(dashboard.summary.remainingUnits, 0);
+  stock = await listStockForBusiness(db, admin.businessId);
+  assert.ok(stock.items.filter((item) => [first.id, second.id].includes(item.id)).every((item) => item.quantityReserved === 0 && item.quantityAssigned === 0));
+  const cancelledOrder = await createSale(db, {
+    customerName: "Cliente cancelado", saleType: "reservation", channel: "mostrador",
+    lines: [{ inventoryItemId: first.id, quantity: 1, unitPriceArs: 5000 }]
+  }, admin);
+  await assignOrderToReseller(db, cancelledOrder.id, reseller.reseller.userId, admin);
+  await cancelReservationSale(db, cancelledOrder.id, admin);
+  dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  assert.equal(dashboard.summary.remainingUnits, 0);
+  const cancelledStock = (await listStockForBusiness(db, admin.businessId)).items.find((item) => item.id === first.id)!;
+  assert.equal(cancelledStock.quantityReserved, 0);
+  assert.equal(cancelledStock.quantityAssigned, 0);
+  assert.equal(cancelledStock.freeQuantity, 1);
   await db.close();
 });
 
@@ -168,7 +195,10 @@ it("keeps consigned stock available centrally and validates real stock when a re
   assert.equal(dashboard.summary.remainingUnits, 2);
   assert.equal(dashboard.globalStock[0].availableQuantity, 3);
   assert.equal(dashboard.globalStock[0].tags, "jugables, promo");
-  assert.equal((await listStockForBusiness(db, admin.businessId)).items[0].availableQuantity, 3);
+  const assignedStock = (await listStockForBusiness(db, admin.businessId)).items[0];
+  assert.equal(assignedStock.availableQuantity, 3);
+  assert.equal(assignedStock.freeQuantity, 1);
+  assert.equal(assignedStock.quantityAssigned, 2);
 
   const session = await loginUser(db, "revendedor@test.local", "password-segura");
   const reseller = await getAuthenticatedUserContext(db, session.token);

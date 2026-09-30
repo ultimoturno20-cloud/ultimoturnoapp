@@ -7,6 +7,20 @@ Actualizado: 2026-09-29
 
 ## Prioridades vigentes
 
+### Verificar estados unitarios de inventario
+
+- Buscar una carta libre, una asignada a consignacion y una incluida en una
+  orden pendiente. Las tarjetas deben mostrar respectivamente `Disponible`,
+  `Asignada` y `Reservada`, combinando cantidades cuando un SKU tenga varios
+  estados.
+- Confirmar que una carta con una unidad reservada y cero libres siga visible
+  en la vista inicial y que el carrito permanezca deshabilitado para esa unidad.
+- Cobrar y cancelar ordenes asignadas a revendedores para verificar que la
+  tenencia consignada se cierre o libere sin dejar unidades fantasma.
+
+Senal de exito: el total fisico coincide con la suma de disponible, asignado y
+reservado, y ninguna reserva pendiente se presenta como venta libre.
+
 ### Pilotear asignacion de ordenes a revendedores
 
 - Abrir una orden pendiente, elegir un revendedor y pulsar `Asignar orden`.
