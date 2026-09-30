@@ -8005,6 +8005,11 @@ select {
   font-size: 11px;
 }
 
+.price-repair-copy .price-repair-warning {
+  color: var(--warning);
+  font-weight: 700;
+}
+
 .price-repair-summary strong {
   font-size: 20px;
 }

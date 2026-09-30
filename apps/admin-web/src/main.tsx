@@ -6545,7 +6545,7 @@ function AdminView(props: {
           {priceRepairPreview.candidates.length ? <div className="price-repair-list">{priceRepairPreview.candidates.slice(0, 12).map((candidate) => (
             <article className="price-repair-row" key={candidate.inventoryItemId}>
               <CardArt src={candidate.imageUrl} alt={candidate.name} label={candidate.name} className="price-repair-thumb" fallbackClassName="price-repair-thumb image-placeholder" />
-              <div className="price-repair-copy"><strong>{candidate.name}</strong><span>{candidate.expansion}{candidate.number ? ` #${candidate.number}` : ""}</span><small>{candidate.referenceLabel} · {formatUsd(candidate.referenceUsd)}</small></div>
+              <div className="price-repair-copy"><strong>{candidate.name}</strong><span>{candidate.expansion}{candidate.number ? ` #${candidate.number}` : ""}</span><small>{candidate.referenceLabel} · {formatUsd(candidate.referenceUsd)}</small>{candidate.currentArs > 0 && candidate.suggestedArs > candidate.currentArs * 3 ? <small className="price-repair-warning">Revisar vínculo: la referencia es más de 3 veces tu precio</small> : null}</div>
               <div className="price-repair-change"><MoneyStack ars={candidate.currentArs || null} blueRate={props.blueRate} compact label="Actual" /><Icon name="arrow-right" /><MoneyStack ars={candidate.suggestedArs} blueRate={props.blueRate} compact label="Nuevo" /></div>
             </article>
           ))}</div> : <p className="muted">Los precios de este alcance ya estan al dia.</p>}
