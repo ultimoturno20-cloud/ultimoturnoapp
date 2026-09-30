@@ -3183,6 +3183,13 @@ async function operationalUser(): Promise<AuthenticatedUser> {
   return getDefaultOperationalUser(db);
 }
 
+// Vercel overwrites x-forwarded-for with the real client address.
+function clientIp(request: IncomingMessage) {
+  const forwarded = request.headers["x-forwarded-for"];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded || "").split(",")[0].trim();
+  return (first || request.socket?.remoteAddress || "").slice(0, 64);
+}
+
 function bearerToken(request: IncomingMessage) {
   const value = Array.isArray(request.headers.authorization) ? request.headers.authorization[0] : request.headers.authorization || "";
   return value.startsWith("Bearer ") ? value.slice(7).trim() : "";
@@ -4009,7 +4016,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/reseller/auth/login" && request.method === "POST") {
       const body = await readJson<{ email?: string; password?: string }>(request);
       const db = await dbPromise;
-      const session = await loginUser(db, body.email?.trim() || "", body.password || "");
+      const session = await loginUser(db, body.email?.trim() || "", body.password || "", clientIp(request));
       const context = await getAuthenticatedUserContext(db, session.token);
       if (!context?.roles.includes("reseller")) {
         await logoutUser(db, session.token);
@@ -4030,7 +4037,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/auth/login" && request.method === "POST") {
       const body = await readJson<{ email?: string; password?: string }>(request);
       const db = await dbPromise;
-      const session = await loginUser(db, body.email?.trim() || "", body.password || "");
+      const session = await loginUser(db, body.email?.trim() || "", body.password || "", clientIp(request));
       const context = await getAuthenticatedUserContext(db, session.token);
       if (!context || !context.roles.some((role) => role === "admin" || role === "stock_owner" || role === "reseller")) {
         await logoutUser(db, session.token);
