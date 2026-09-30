@@ -55,7 +55,11 @@ import {
   upsertClaimPlanItems,
   upsertInventoryItem,
   linkInventoryItemPriceCharting,
-  finishFromName
+  finishFromName,
+  getPriceHistory,
+  importPriceHistory,
+  listPriceChanges,
+  recordPriceHistorySnapshot
 } from "./index.js";
 
 describe("operational inventory database", () => {
@@ -2361,6 +2365,43 @@ describe("operational inventory database", () => {
 
     const missingUrlQueue = await claimPriceChartingImageQueue(db, 10, { onlyMissingSourceImageUrl: true });
     assert.deepEqual(missingUrlQueue.map((entry) => entry.priceChartingId), ["missing-url"]);
+    await db.close();
+  });
+
+  it("keeps a daily price history and reports changes against cost", async () => {
+    const db = await createOperationalDatabase({ dataDir: await mkdtemp(path.join(tmpdir(), "ultimoturno-price-history-")) });
+    const user = await getDefaultOperationalUser(db);
+    const setPrice = (loosePriceUsd: number) => replacePriceChartingCache(db, { category: "pokemon-cards", sourceHash: "h" + loosePriceUsd, rowsReceived: 1, rowsSkipped: 0,
+      rows: [{ priceChartingId: "pc-zard", canonicalUrl: "", sourceUrl: "", productName: "Charizard ex", normalizedName: "charizard ex",
+        expansionName: "151", normalizedExpansion: "151", cardNumber: "199", loosePriceUsd, imageUrl: "", searchKey: "pc-zard" }] });
+    await setPrice(400);
+    await upsertInventoryItem(db, { sku: "HIST-ZARD", name: "Charizard ex", expansion: "151", number: "199", language: "EN", condition: "NM", finish: "normal",
+      quantityOnHand: 2, quantityReserved: 0, priceArs: 600000, priceChartingId: "pc-zard", purchaseCost: 350, purchaseCurrency: "USD" }, user);
+
+    assert.equal((await recordPriceHistorySnapshot(db, { snapshotDate: "2026-06-01" })).written, 1);
+    assert.equal((await recordPriceHistorySnapshot(db, { snapshotDate: "2026-06-02" })).written, 0, "an unchanged price is not stored again");
+    await setPrice(336);
+    assert.equal((await recordPriceHistorySnapshot(db, { snapshotDate: "2026-07-10" })).written, 1);
+
+    // Older TCG API points extend the history backwards.
+    await importPriceHistory(db, [{ snapshotDate: "2026-04-01", priceChartingId: "pc-zard", finish: "normal", condition: "NM", source: "tcgapi", priceUsd: 380 }], user);
+    await assert.rejects(importPriceHistory(db, [{ snapshotDate: "2026-13-01", priceChartingId: "pc-zard", finish: "normal", condition: "NM", source: "tcgapi", priceUsd: 1 }], user), /fecha invalida/);
+
+    const history = await getPriceHistory(db, { priceChartingId: "pc-zard", days: 1000 });
+    assert.deepEqual(history.points.map((point) => [point.snapshotDate, point.source, point.priceUsd]), [
+      ["2026-04-01", "tcgapi", 380], ["2026-06-01", "pricecharting", 400], ["2026-07-10", "pricecharting", 336]
+    ]);
+
+    const report = await listPriceChanges(db, user.businessId, { blueRateSell: 1500, today: "2026-07-15" });
+    const row = report.items.find((item) => item.sku === "HIST-ZARD");
+    assert.ok(row);
+    assert.equal(row.currentUsd, 336);
+    assert.equal(row.usd30d, 400);
+    assert.equal(row.change30dPct, -16);
+    assert.equal(row.max90dUsd, 400);
+    assert.equal(row.marketBelowCost, true);
+    assert.equal(row.saleBelowCost, false);
+    assert.equal(report.marketBelowCost, 1);
     await db.close();
   });
 });

@@ -35,3 +35,11 @@ jobs:
             "${API}/cron/tcgplayer-refresh" | tee tcgplayer.json
           echo "### TCGplayer" >> "$GITHUB_STEP_SUMMARY"
           jq -r '.status.lastRun | "estado: \(.status), categorias: \(.categoryId), filas: \(.rowsImported), fin: \(.completedAt)"' tcgplayer.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Price history snapshot
+        if: always()
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 320 \
+            -H "X-UltimoTurno-Access-Key: $ACCESS_KEY" \
+            "${API}/cron/price-history-snapshot" | tee price-history.json
+          echo "### Historial de precios" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.result | "fecha: \(.snapshotDate), cartas: \(.cards), precios nuevos: \(.written) de \(.points)"' price-history.json >> "$GITHUB_STEP_SUMMARY"
