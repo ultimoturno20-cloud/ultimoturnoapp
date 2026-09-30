@@ -185,6 +185,34 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("prices playable cards from CoolStuff and lists underpriced stock as opportunities", async () => {
+    const db = await createOperationalDatabase({ dataDir: await mkdtemp(path.join(tmpdir(), "ultimoturno-opportunities-")) });
+    const user = await getDefaultOperationalUser(db);
+    const row = (priceChartingId: string, loosePriceUsd: number) => ({
+      priceChartingId, canonicalUrl: "", sourceUrl: "", productName: priceChartingId, normalizedName: priceChartingId,
+      expansionName: "Test", normalizedExpansion: "test", cardNumber: "1", loosePriceUsd, imageUrl: "", searchKey: priceChartingId
+    });
+    await replacePriceChartingCache(db, { category: "pokemon-cards", sourceHash: "opportunities", rowsReceived: 3, rowsSkipped: 0,
+      rows: [row("pc-playable", 1), row("pc-collection", 5), row("pc-fair", 1)] });
+    const card = { expansion: "Test", number: "1", language: "EN", condition: "NM", finish: "normal", quantityOnHand: 2, quantityReserved: 0 };
+    const playable = await upsertInventoryItem(db, { ...card, sku: "OPP-PLAY", name: "Playable", tags: "jugables", priceArs: 1500, priceChartingId: "pc-playable" }, user);
+    await upsertInventoryItem(db, { ...card, sku: "OPP-COLL", name: "Collection", priceArs: 2000, priceChartingId: "pc-collection" }, user);
+    await upsertInventoryItem(db, { ...card, sku: "OPP-FAIR", name: "Fair", priceArs: 1500, priceChartingId: "pc-fair" }, user);
+    await recordCoolstuffPriceObservation(db, {
+      priceChartingId: "pc-playable", condition: "NM", finish: "normal", status: "matched",
+      coolstuffUrl: "https://www.coolstuffinc.com/p/Pokemon/Playable", productName: "Playable", expansionName: "Test",
+      cardNumber: "1", sourceCondition: "Near Mint", priceUsd: 10, quantity: 3, confidence: 100
+    });
+    const preview = await previewInventorySalePriceRepair(db, user.businessId, { scope: "opportunities", blueRateSell: 1500, limit: 20 });
+    assert.deepEqual(preview.candidates.map((candidate) => [candidate.sku, candidate.referenceSource, candidate.suggestedArs]), [
+      ["OPP-PLAY", "coolstuff", 15000],
+      ["OPP-COLL", "pricecharting", 7500]
+    ]);
+    assert.equal(preview.coolstuffCandidates, 1);
+    assert.ok(playable.id);
+    await db.close();
+  });
+
   it("publishes a claim plan from existing inventory without duplicating stock", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-claim-planner-"));
     const db = await createOperationalDatabase({ dataDir });

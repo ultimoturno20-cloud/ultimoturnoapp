@@ -4250,7 +4250,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/inventory/prices/repair-preview" && request.method === "GET") {
-      const scope = url.searchParams.get("scope") === "all" ? "all" : "floor";
+      const requestedScope = url.searchParams.get("scope");
+      const scope = requestedScope === "all" || requestedScope === "opportunities" ? requestedScope : "floor";
       const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") || 100)));
       const blueRate = await getBlueExchangeRate();
       sendJson(response, 200, await previewInventorySalePriceRepair(db, user.businessId, { scope, blueRateSell: blueRate.sell, limit }));
@@ -4258,14 +4259,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/inventory/prices/repair" && request.method === "POST") {
-      const body = await readJson<{ scope?: "floor" | "all"; limit?: number; confirmation?: string }>(request);
+      const body = await readJson<{ scope?: "floor" | "all" | "opportunities"; limit?: number; confirmation?: string }>(request);
       if (body.confirmation !== "REPARAR PRECIOS") {
         sendJson(response, 400, { ok: false, error: "Confirmacion invalida. Genera la vista previa antes de aplicar." });
         return;
       }
       const blueRate = await getBlueExchangeRate();
       const result = await repairInventorySalePrices(db, {
-        scope: body.scope === "all" ? "all" : "floor",
+        scope: body.scope === "all" || body.scope === "opportunities" ? body.scope : "floor",
         blueRateSell: blueRate.sell,
         limit: Math.max(1, Math.min(250, Number(body.limit || 100)))
       }, user);
