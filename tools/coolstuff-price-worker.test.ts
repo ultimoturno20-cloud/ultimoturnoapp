@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { findCoolstuffExpansionUrl } from "../packages/importers/src/index.js";
-import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, resetWorkerCachesForTests, runCycle, runSummary } from "./coolstuff-price-worker.js";
+import { loadExpansionProducts, loadExpansionWithDiskCache, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, resetWorkerCachesForTests, runCycle, runSummary } from "./coolstuff-price-worker.js";
 
 const product = (number: string) => `<div class="product-search-row" itemtype="https://schema.org/Product"><a class="productLink" href="/p/Pokemon/Card-${number}"><span itemprop="name">Card - ${number}/132</span></a><div class="breadcrumb-trail">Pokemon » Mega Evolution</div><div itemprop="offers" itemtype="https://schema.org/Offer"><div><span class="card-qty">1</span>Near Mint</div><b itemprop="price" content="1.25"></b></div></div>`;
 
@@ -160,4 +163,23 @@ test("successive batches reuse expansion downloads and save each observation", a
   assert.equal(indexRequests, 1);
   assert.equal(expansionRequests, 1);
   assert.equal(writes, 2);
+});
+
+test("expansion disk cache skips CoolStuff downloads while fresh", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "coolstuff-"));
+  process.env.COOLSTUFF_CACHE_DIR = dir;
+  t.after(() => {
+    delete process.env.COOLSTUFF_CACHE_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const options = { ...parseOptions([]), delayMs: 0 };
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    requests++;
+    return new Response(product("1"));
+  });
+  const url = "https://www.coolstuffinc.com/page/9126";
+  assert.equal((await loadExpansionWithDiskCache(options, url)).length, 1);
+  assert.equal((await loadExpansionWithDiskCache(options, url)).length, 1);
+  assert.equal(requests, 1);
 });

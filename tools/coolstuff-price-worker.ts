@@ -1,5 +1,6 @@
 import { findCoolstuffExpansionUrl, matchCoolstuffProduct, parseCoolstuffExpansionLinks, parseCoolstuffPageCount, parseCoolstuffProducts, type CoolstuffExpansionLink, type CoolstuffPriceTarget, type CoolstuffProduct } from "../packages/importers/src/index.js";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 type WorkerTarget = CoolstuffPriceTarget & {
@@ -281,12 +282,33 @@ export async function loadExpansionProducts(options: Options, expansionUrl: stri
   return products;
 }
 
+// Actions restores this folder between runs (actions/cache), so each set is scraped at most once per COOLSTUFF_CACHE_HOURS.
+function diskCachePath(url: string) {
+  return join(process.env.COOLSTUFF_CACHE_DIR || "", url.replace(/[^a-z0-9]+/gi, "_") + ".json");
+}
+
+export async function loadExpansionWithDiskCache(options: Options, url: string): Promise<CoolstuffProduct[]> {
+  const dir = process.env.COOLSTUFF_CACHE_DIR;
+  if (!dir) return loadExpansionProducts(options, url);
+  const maxAgeMs = Number(process.env.COOLSTUFF_CACHE_HOURS || 48) * 3600000;
+  try {
+    const entry = JSON.parse(readFileSync(diskCachePath(url), "utf8")) as { fetchedAt: number; products: CoolstuffProduct[] };
+    if (Date.now() - entry.fetchedAt < maxAgeMs && entry.products.length) return entry.products;
+  } catch {
+    // Missing or unreadable cache file: download the set again.
+  }
+  const products = await loadExpansionProducts(options, url);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(diskCachePath(url), JSON.stringify({ fetchedAt: Date.now(), products }));
+  return products;
+}
+
 async function searchCoolstuff(target: WorkerTarget, options: Options, expansionLinks: CoolstuffExpansionLink[]) {
   const expansionUrl = findCoolstuffExpansionUrl(target.expansion, expansionLinks);
   if (!expansionUrl) throw new Error(`No se encontro una expansion CoolStuff confiable para ${target.expansion}.`);
   let cached = expansionCache.get(expansionUrl);
   if (!cached || cached.expiresAt <= Date.now()) {
-    const products = loadExpansionProducts(options, expansionUrl);
+    const products = loadExpansionWithDiskCache(options, expansionUrl);
     cached = { expiresAt: Date.now() + options.refreshHours * 3600000, products };
     expansionCache.set(expansionUrl, cached);
     const entry = cached;
