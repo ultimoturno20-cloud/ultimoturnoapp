@@ -2317,6 +2317,8 @@ export async function listCoolstuffPriceTargets(db: PGlite, businessId: string, 
       limit 1
     ) pc_identifier on true
     join pricecharting_cache_entries pce on pce.pricecharting_id = pc_identifier.external_id
+      -- CoolStuff only sells English cards; skip stock whose PriceCharting entry is a Japanese or Chinese print.
+      and coalesce(pce.language_group, 'english') = 'english'
     left join coolstuff_price_cache cpc
       on cpc.pricecharting_id = pc_identifier.external_id
       and lower(cpc.condition) = lower(v.condition)
