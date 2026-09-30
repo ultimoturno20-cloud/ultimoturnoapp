@@ -2292,6 +2292,7 @@ export async function listCoolstuffPriceTargets(db: PGlite, businessId: string, 
   const limit = Math.max(1, Math.min(100, Math.floor(options.limit || 20)));
   const refreshHours = Math.max(6, Math.min(24 * 30, Math.floor(options.refreshHours || 24)));
   const result = await db.query<Record<string, unknown>>(`
+    select * from (
     select distinct on (pc_identifier.external_id, v.condition, v.finish)
       pc_identifier.external_id as pricecharting_id,
       p.name,
@@ -2333,6 +2334,9 @@ export async function listCoolstuffPriceTargets(db: PGlite, businessId: string, 
       )
     order by pc_identifier.external_id, v.condition, v.finish,
       ii.quantity_on_hand desc, cpc.last_attempt_at nulls first
+    ) due
+    -- Oldest day first, then one set at a time so each CoolStuff set download serves many cards.
+    order by due.last_attempt_at::date nulls first, due.expansion, due.card_number
     limit $2
   `, [businessId, limit, refreshHours]);
   return {

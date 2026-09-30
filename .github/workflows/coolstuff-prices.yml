@@ -9,7 +9,7 @@ on:
 jobs:
   update-prices:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 180
     concurrency:
       group: coolstuff-prices
       cancel-in-progress: false
@@ -29,11 +29,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore CoolStuff expansion cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .coolstuff-cache
+          key: coolstuff-expansions-${{ github.run_id }}
+          restore-keys: coolstuff-expansions-
+
       - name: Update CoolStuff prices
         env:
           ULTIMOTURNO_ACCESS_KEY: ${{ secrets.ULTIMOTURNO_ACCESS_KEY }}
-          COOLSTUFF_MAX_RUNTIME_MS: "16200000"
+          COOLSTUFF_CACHE_DIR: .coolstuff-cache
+          COOLSTUFF_CACHE_HOURS: "48"
+          # 2h per run; progress is saved per card and the next run continues.
+          COOLSTUFF_MAX_RUNTIME_MS: "7200000"
         run: npm run coolstuff:prices:until-done -- --api=https://ultimoturnoapp-api.vercel.app/api
+
+      - name: Save CoolStuff expansion cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .coolstuff-cache
+          key: coolstuff-expansions-${{ github.run_id }}
 
       - name: Alert on failure
         if: failure()
@@ -47,3 +64,4 @@ jobs:
           else
             gh issue create --repo ${{ github.repository }} --title 'CoolStuff prices: falló el cron' --body "$BODY"
           fi
+
