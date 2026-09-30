@@ -351,7 +351,12 @@ export async function runCycle(options: Options, stats: RunStats = newRunStats()
       console.log(`${target.name} ${target.number} [${target.condition}/${target.finish}] -> ${observation.status}${observation.priceUsd ? ` USD ${observation.priceUsd.toFixed(2)}` : ""}`);
     } catch (error) {
       observation = failedObservation(target, error);
-      stats.failed++;
+      if (/No se encontro una expansion CoolStuff/i.test(observation.errorMessage)) {
+        observation.status = "not_found";
+        stats.notFound++;
+      } else {
+        stats.failed++;
+      }
       console.error(`${target.name}: ${observation.errorMessage}`);
     }
     stats.reviewed++;

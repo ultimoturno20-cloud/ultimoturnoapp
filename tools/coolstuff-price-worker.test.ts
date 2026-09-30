@@ -54,6 +54,29 @@ test("failed observation POST counts as failed instead of aborting the cycle", a
   resetWorkerCachesForTests();
 });
 
+test("missing CoolStuff expansion is saved as not_found and not failed", async (t) => {
+  const options = { ...parseOptions([]), apiBaseUrl: "http://localhost:4000", delayMs: 0, dryRun: false };
+  const target = { priceChartingId: "local-missing-expansion", name: "Card JP", expansion: "Japanese Set", number: "1/132", condition: "NM", finish: "normal" };
+  const posted: Array<{ status: string }> = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/targets?")) return Response.json({ targets: [target], status: { matchedEntries: 0, totalEntries: 1 } });
+    if (url.endsWith("/observations")) {
+      posted.push(JSON.parse(String(init?.body)).observations[0]);
+      return Response.json({ ok: true });
+    }
+    if (url.endsWith("/pokemon/")) return new Response('<div class="set-list"><a href="/page/777">Mega Evolution</a></div>');
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  const stats = newRunStats();
+  assert.equal(await runCycle(options, stats), 1);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].status, "not_found");
+  assert.equal(stats.notFound, 1);
+  assert.equal(stats.failed, 0);
+  resetWorkerCachesForTests();
+});
+
 test("run summary counts every status and renders markdown", () => {
   const stats = newRunStats();
   stats.reviewed = 5;

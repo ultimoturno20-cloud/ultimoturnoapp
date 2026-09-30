@@ -2315,6 +2315,7 @@ export async function listCoolstuffPriceTargets(db: PGlite, businessId: string, 
       order by case when ei.variant_id = v.id then 0 else 1 end, ei.id
       limit 1
     ) pc_identifier on true
+    join pricecharting_cache_entries pce on pce.pricecharting_id = pc_identifier.external_id
     left join coolstuff_price_cache cpc
       on cpc.pricecharting_id = pc_identifier.external_id
       and lower(cpc.condition) = lower(v.condition)
