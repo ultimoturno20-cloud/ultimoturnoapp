@@ -55,6 +55,11 @@ it("assigns every card in a central order to one reseller without duplicating it
     ]
   }, admin);
 
+  await assert.rejects(
+    () => assignResellerStock(db, reseller.reseller.userId, first.id, 2, admin),
+    /unidades libres/
+  );
+
   let assignedOrder = await assignOrderToReseller(db, order.id, reseller.reseller.userId, admin);
   assert.equal(assignedOrder.assignedResellerUserId, reseller.reseller.userId);
   assert.equal(assignedOrder.assignedResellerName, "Revendedor Orden");

@@ -1536,7 +1536,7 @@ export async function resolveResellerStockRequest(
     if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad aprobada debe ser un entero positivo.");
     if (!Number.isFinite(priceArs) || priceArs < 0) throw new Error("El precio aprobado no es valido.");
     const item = await tx.query<Record<string, unknown>>(`
-      select ii.quantity_on_hand, coalesce(cp.price_ars, 0) as current_price_ars
+      select ii.quantity_on_hand, ii.quantity_reserved, coalesce(cp.price_ars, 0) as current_price_ars
       from inventory_items ii
       left join current_prices cp on cp.inventory_item_id = ii.id
       where ii.id = $1 and ii.business_id = $2 and ii.active = true
@@ -1547,8 +1547,9 @@ export async function resolveResellerStockRequest(
       select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
       from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2
     `, [actor.businessId, pending.inventory_item_id]);
-    if (Number(assigned.rows[0]?.total || 0) + quantity > Number(item.rows[0].quantity_on_hand)) {
-      throw new Error("No hay suficientes unidades fisicas para aprobar esta asignacion.");
+    const assignableQuantity = Math.max(0, Number(item.rows[0].quantity_on_hand) - Number(item.rows[0].quantity_reserved));
+    if (Number(assigned.rows[0]?.total || 0) + quantity > assignableQuantity) {
+      throw new Error("No hay suficientes unidades libres para aprobar esta asignacion. Las unidades reservadas no se pueden consignar manualmente.");
     }
     const profile = await tx.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2 for update", [resellerUserId, actor.businessId]);
     const creditLimitArs = profile.rows[0]?.credit_limit_ars == null ? null : Number(profile.rows[0].credit_limit_ars);
@@ -1660,7 +1661,7 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
     const reseller = await db.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2", [resellerUserId, actor.businessId]);
     if (!reseller.rows[0]) throw new Error("Revendedor no encontrado.");
     const item = await db.query<Record<string, unknown>>(`
-      select ii.quantity_on_hand, ii.owner_user_id, coalesce(cp.price_ars, 0) as price_ars
+      select ii.quantity_on_hand, ii.quantity_reserved, ii.owner_user_id, coalesce(cp.price_ars, 0) as price_ars
       from inventory_items ii left join current_prices cp on cp.inventory_item_id = ii.id
       where ii.id = $1 and ii.business_id = $2 and ii.active = true for update of ii
     `, [inventoryItemId, actor.businessId]);
@@ -1673,7 +1674,8 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
       select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
       from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2
     `, [actor.businessId, inventoryItemId]);
-    if (Number(assigned.rows[0]?.total || 0) + quantity > Number(item.rows[0].quantity_on_hand)) throw new Error("No hay suficientes unidades fisicas para asignar. La asignacion no reserva stock, pero no puede duplicar mercaderia.");
+    const assignableQuantity = Math.max(0, Number(item.rows[0].quantity_on_hand) - Number(item.rows[0].quantity_reserved));
+    if (Number(assigned.rows[0]?.total || 0) + quantity > assignableQuantity) throw new Error("No hay suficientes unidades libres para asignar. Las unidades reservadas por ordenes no se pueden consignar manualmente.");
     const creditLimitArs = reseller.rows[0].credit_limit_ars == null ? null : Number(reseller.rows[0].credit_limit_ars);
     if (creditLimitArs !== null) {
       const assignedValue = await db.query<{ total: string }>(`

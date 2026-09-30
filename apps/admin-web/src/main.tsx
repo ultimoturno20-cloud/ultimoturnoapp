@@ -1149,7 +1149,14 @@ function App() {
           api<{ sales: SaleRecord[] }>("/sales")
         ]);
         setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales);
-      } else if (targetView === "inventory" || targetView === "resellers") {
+      } else if (targetView === "inventory") {
+        const [stockData, resellerData] = await Promise.all([
+          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
+          api<{ resellers: ResellerDashboard[] }>("/resellers")
+        ]);
+        setStock(stockData);
+        setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
+      } else if (targetView === "resellers") {
         await refreshStock();
       } else if (targetView === "claims") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
@@ -1731,6 +1738,21 @@ function App() {
       const result = await api<{ sale: SaleRecord }>(`/sales/${id}/assign-reseller`, { method: "POST", body: { resellerUserId } });
       setSales((current) => current.map((sale) => sale.id === result.sale.id ? result.sale : sale));
       showMessage(`Orden asignada a ${result.sale.assignedResellerName || "revendedor"}. Las cartas ya figuran en su inventario.`);
+    } catch (nextError) {
+      showError(nextError);
+      throw nextError;
+    }
+  }
+
+  async function assignInventoryReseller(item: StockRow, resellerUserId: string, quantity: number) {
+    try {
+      const reseller = orderResellers.find((entry) => entry.userId === resellerUserId);
+      await api(`/resellers/${resellerUserId}/assignments`, {
+        method: "POST",
+        body: { inventoryItemId: item.id, quantity }
+      });
+      await refreshStock();
+      showMessage(`${quantity} unidad(es) de ${item.product.name} asignada(s) a ${reseller?.displayName || "revendedor"}.`);
     } catch (nextError) {
       showError(nextError);
       throw nextError;
@@ -2747,6 +2769,7 @@ function App() {
           saleChannel={saleChannel}
           cartFocusNonce={cartFocusNonce}
           imageRepairingId={imageRepairingId}
+          resellers={orderResellers}
           onCartFocusHandled={() => setCartFocusNonce(0)}
           onFilterChange={(patch) => {
             if (patch.query !== undefined) setQuery(patch.query);
@@ -2794,6 +2817,7 @@ function App() {
           onAvailableQuantitySet={setAvailableQuantity}
           onTagsChange={(item, tags) => void updateInventoryTags(item, tags)}
           onAddToCart={addToCart}
+          onAssignReseller={assignInventoryReseller}
           onRepairImage={(item) => void repairInventoryCardImage(item)}
           onCartChange={setCart}
           onCartModeChange={setCartMode}
@@ -2905,7 +2929,7 @@ function App() {
           onExit={() => setView("dashboard")}
         />
       ) : null}
-      {view === "resellers" ? <ResellersAdminView stock={stock.items} assignmentOnly={restrictedStockOwner} /> : null}
+      {view === "resellers" ? <ResellersAdminView stock={stock.items} assignmentOnly={restrictedStockOwner} blueRate={blueRate} /> : null}
       {view === "admin" ? (
         <AdminView
           environment={environment}
@@ -3344,6 +3368,7 @@ function InventoryView(props: {
   saleChannel: string;
   cartFocusNonce: number;
   imageRepairingId: string;
+  resellers: Array<{ userId: string; displayName: string }>;
   onCartFocusHandled: () => void;
   onFilterChange: (patch: Partial<InventoryFilters>) => void;
   onClearFilters: () => void;
@@ -3359,6 +3384,7 @@ function InventoryView(props: {
   onAvailableQuantitySet: (item: StockRow, targetAvailable: number) => Promise<void>;
   onTagsChange: (item: StockRow, tags: string) => void;
   onAddToCart: (item: StockRow) => void;
+  onAssignReseller: (item: StockRow, resellerUserId: string, quantity: number) => Promise<void>;
   onRepairImage: (item: StockRow) => void;
   onCartChange: (cart: CartLine[]) => void;
   onCartModeChange: (mode: "sale" | "reservation") => void;
@@ -3371,6 +3397,11 @@ function InventoryView(props: {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"detail" | "cart" | null>(null);
   const [intakeId, setIntakeId] = useState("");
+  const [assignmentItemId, setAssignmentItemId] = useState("");
+  const [assignmentResellerId, setAssignmentResellerId] = useState("");
+  const [assignmentQuantity, setAssignmentQuantity] = useState("1");
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentError, setAssignmentError] = useState("");
   const inventoryPageSize = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches ? 16 : 24;
   const [renderLimit, setRenderLimit] = useState(inventoryPageSize);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -3385,7 +3416,7 @@ function InventoryView(props: {
     return () => observer.disconnect();
   }, [inventoryPageSize, items.length, renderLimit]);
   useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setSideTab(null); setIntakeId(""); } };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setSideTab(null); setIntakeId(""); setAssignmentItemId(""); } };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, []);
@@ -3424,6 +3455,43 @@ function InventoryView(props: {
   const handleAdd = (item: StockRow) => {
     props.onAddToCart(item);
     setSideTab("cart");
+  };
+  const openAssignment = (item: StockRow) => {
+    props.onSelect(item);
+    setSideTab("detail");
+    setAssignmentItemId(item.id);
+    setAssignmentResellerId("");
+    setAssignmentQuantity("1");
+    setAssignmentError("");
+  };
+  const closeAssignment = () => {
+    setAssignmentItemId("");
+    setAssignmentResellerId("");
+    setAssignmentQuantity("1");
+    setAssignmentError("");
+  };
+  const submitAssignment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected || assignmentItemId !== selected.id) return;
+    const quantity = Number(assignmentQuantity);
+    if (!assignmentResellerId) {
+      setAssignmentError("Elegí un revendedor.");
+      return;
+    }
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > selected.freeQuantity) {
+      setAssignmentError(`Ingresá una cantidad entre 1 y ${selected.freeQuantity}.`);
+      return;
+    }
+    setAssignmentSaving(true);
+    setAssignmentError("");
+    try {
+      await props.onAssignReseller(selected, assignmentResellerId, quantity);
+      closeAssignment();
+    } catch (nextError) {
+      setAssignmentError(errorMessage(nextError));
+    } finally {
+      setAssignmentSaving(false);
+    }
   };
   const selectedTags = selected ? inventoryTags(selected.tags) : [];
   const suggestedTags = unique([...inventoryTagSuggestions, ...options.tags]);
@@ -3602,6 +3670,7 @@ function InventoryView(props: {
                     <div className={`inventory-card-actions ${item.product.imageUrl ? "" : "with-image-repair"}`}>
                       <button className="primary-action" onClick={() => setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name="plus" />Stock</button>
                       <button className="secondary-action" onClick={() => handleSelect(item)}>Detalles</button>
+                      <button className="secondary-action" type="button" aria-label={`Asignar ${item.product.name} a un revendedor`} title="Asignar a revendedor" disabled={item.freeQuantity <= 0 || !props.resellers.length} onClick={() => openAssignment(item)}><Icon name="arrow-right" /></button>
                       <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
                       {!item.product.imageUrl ? <button className="secondary-action inventory-card-repair-action" type="button" disabled={Boolean(props.imageRepairingId)} onClick={() => props.onRepairImage(item)}><Icon name="refresh" />{props.imageRepairingId === `inventory:${item.id}` ? "Buscando imagen..." : "Reparar imagen"}</button> : null}
                     </div>
@@ -3704,7 +3773,21 @@ function InventoryView(props: {
                   {!selected.product.imageUrl ? <div className="quality-warning"><span>Sin imagen</span><strong>Prioridad de cache</strong></div> : null}
                   {!selected.priceArs ? <div className="quality-warning"><span>Precio cero</span><strong>Revisar antes de vender</strong></div> : null}
                 </div>
-                <div className="detail-actions"><button className="secondary-action" onClick={() => props.onRestock(selected)}><Icon name="plus" />Agregar existencias</button><button className="secondary-action" onClick={() => props.onEdit(selected)}><Icon name="edit" />Editar</button><button className="primary-action" disabled={selected.availableQuantity <= 0} onClick={() => handleAdd(selected)}><Icon name="cart" />Agregar al carrito</button></div>
+                <div className="detail-actions"><button className="secondary-action" onClick={() => props.onRestock(selected)}><Icon name="plus" />Agregar existencias</button><button className="secondary-action" onClick={() => props.onEdit(selected)}><Icon name="edit" />Editar</button><button className="secondary-action" disabled={selected.freeQuantity <= 0 || !props.resellers.length} onClick={() => openAssignment(selected)}><Icon name="arrow-right" />Asignar</button><button className="primary-action" disabled={selected.availableQuantity <= 0} onClick={() => handleAdd(selected)}><Icon name="cart" />Agregar al carrito</button></div>
+                {assignmentItemId === selected.id ? (
+                  <form className="inventory-assignment-panel" onSubmit={submitAssignment}>
+                    <div className="inventory-assignment-heading">
+                      <div><strong>Asignar a revendedor</strong><small>{selected.freeQuantity} unidad(es) libres. Las reservadas no se pueden asignar.</small></div>
+                      <button type="button" className="mini-icon-action" aria-label="Cerrar asignacion" title="Cerrar" onClick={closeAssignment}><Icon name="close" /></button>
+                    </div>
+                    <div className="inventory-assignment-fields">
+                      <label>Revendedor<select autoFocus value={assignmentResellerId} onChange={(event) => setAssignmentResellerId(event.target.value)}><option value="">Elegir revendedor</option>{props.resellers.map((reseller) => <option key={reseller.userId} value={reseller.userId}>{reseller.displayName}</option>)}</select></label>
+                      <label>Cantidad<input type="number" min={1} max={selected.freeQuantity} value={assignmentQuantity} onChange={(event) => setAssignmentQuantity(event.target.value)} /></label>
+                    </div>
+                    {assignmentError ? <p className="field-error">{assignmentError}</p> : null}
+                    <div className="inventory-assignment-actions"><button type="button" className="secondary-action" disabled={assignmentSaving} onClick={closeAssignment}>Cancelar</button><button className="primary-action" disabled={assignmentSaving || !assignmentResellerId || selected.freeQuantity <= 0}><Icon name="check" />{assignmentSaving ? "Asignando..." : "Confirmar asignacion"}</button></div>
+                  </form>
+                ) : null}
               </>
             ) : <EmptyState title="Sin seleccion" body="Selecciona un producto para ver el detalle." />}
           </section>
@@ -5761,7 +5844,7 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
   );
 }
 
-function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow[]; assignmentOnly?: boolean }) {
+function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock: StockRow[]; assignmentOnly?: boolean; blueRate: BlueExchangeRate }) {
   const [resellers, setResellers] = useState<ResellerDashboard[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -5777,6 +5860,16 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
   const [assignmentPriceDrafts, setAssignmentPriceDrafts] = useState<Record<string, string>>({});
   const [savingAssignmentPriceId, setSavingAssignmentPriceId] = useState("");
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
+  const stockById = useMemo(() => new Map(stock.map((item) => [item.id, item])), [stock]);
+  const monthlySalesArs = (dashboard: ResellerDashboard) => {
+    const now = new Date();
+    return dashboard.sales.reduce((sum, sale) => {
+      const soldAt = new Date(sale.soldAt);
+      return sale.status === "confirmed" && soldAt.getFullYear() === now.getFullYear() && soldAt.getMonth() === now.getMonth()
+        ? sum + sale.grossTotalArs
+        : sum;
+    }, 0);
+  };
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -5892,7 +5985,7 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
         <aside className="panel reseller-sidebar">
           <h3>Equipo</h3>
           {loading ? <p className="muted">Cargando...</p> : null}
-          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}</strong><span>{item.stockRequests.length ? `${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"} · ` : ""}{formatArs(item.summary.outstandingArs)} a rendir</span></button>)}
+          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}
           {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
             <h3>Nuevo revendedor</h3>
             <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
@@ -5911,7 +6004,7 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
               <Metric label="Vendibles ahora" value={selected.summary.sellableUnits} helper="segun stock real" />
               <Metric label="Valor asignado" value={formatArs(selected.summary.assignedValueArs)} helper="mercaderia en mano" />
               <Metric label="Limite" value={selected.reseller.creditLimitArs == null ? "Sin limite" : formatArs(selected.reseller.creditLimitArs)} helper={selected.summary.pendingRequestValueArs ? `${formatArs(selected.summary.pendingRequestValueArs)} solicitado` : "sin solicitudes computadas"} />
-              {!assignmentOnly ? <><Metric label="Ventas" value={formatArs(selected.summary.grossSalesArs)} helper="bruto confirmado" />
+              {!assignmentOnly ? <><Metric label="Ventas del mes" value={formatArs(monthlySalesArs(selected))} helper="bruto confirmado este mes" />
               <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
               <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} /></> : null}
             </section>
@@ -5920,9 +6013,18 @@ function ResellersAdminView({ stock, assignmentOnly = false }: { stock: StockRow
               <div className="section-heading"><div><h3>Solicitudes de asignacion</h3><p>Revisa cantidad y precio antes de entregar la mercaderia.</p></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
               {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
                 const draft = requestDrafts[request.id];
+                const stockItem = stockById.get(request.inventoryItemId);
+                const referencePrices = stockItem ? (["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => ({ source, ...inventoryPriceDisplay(stockItem, source, blueRate) })) : [];
+                const useReferencePrice = (priceArs: number | null) => {
+                  if (!priceArs) return;
+                  setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: String(Math.round(priceArs)) } }));
+                };
                 return <article key={request.id}>
                   <CardArt src={request.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
                   <div className="reseller-request-copy"><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
+                  <div className="reseller-request-prices" aria-label="Precios de referencia">
+                    {referencePrices.map((price) => <button type="button" key={price.source} disabled={!price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => useReferencePrice(price.ars)}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
+                  </div>
                   <label>Cantidad<input type="number" min="1" max={Math.max(1, request.availableQuantity)} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
                   <label>Precio ARS<input type="number" min="0" step="100" value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
                   <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>

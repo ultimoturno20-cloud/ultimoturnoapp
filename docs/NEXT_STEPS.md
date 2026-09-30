@@ -1,11 +1,28 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-29
+Actualizado: 2026-09-30
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Verificar asignacion directa y resumen de revendedores
+
+- En Inventario, elegir una carta con unidades libres y usar `Asignar` desde la
+  tarjeta y desde el detalle. Confirmar que permite elegir revendedor y cantidad
+  sin cambiar de sector.
+- Probar una carta completamente reservada por una orden: el control debe quedar
+  deshabilitado y una peticion manual no debe poder consumir esa reserva.
+- Crear una solicitud desde el portal y confirmar que Administracion muestre
+  Venta, TCGplayer, PriceCharting y CoolStuff. Pulsar una referencia debe copiar
+  su conversion ARS al precio a aprobar.
+- Revisar en la lista lateral el valor asignado, saldo a rendir y ventas del mes
+  de varios revendedores, incluyendo uno sin movimientos.
+
+Senal de exito: la consignacion se inicia desde Inventario sin duplicar unidades,
+las cuatro referencias permiten decidir el precio y el resumen lateral coincide
+con el detalle de cada cuenta.
 
 ### Verificar estados unitarios de inventario
 

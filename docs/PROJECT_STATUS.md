@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-09-29
+Actualizado: 2026-09-30
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -37,9 +37,13 @@ Actualizado: 2026-09-29
   en consignacion. Repetir el pedido sobre la misma carta actualiza la solicitud
   pendiente y no reserva ni descuenta inventario.
 - Administracion muestra las solicitudes pendientes dentro de cada revendedor.
-  Antes de aprobar puede corregir cantidad y precio ARS; la aprobacion actualiza
-  el precio global y crea la asignacion en una sola transaccion. Tambien puede
-  rechazar el pedido sin modificar stock.
+  Antes de aprobar puede comparar Venta, TCGplayer, PriceCharting y CoolStuff,
+  usar cualquiera de esas referencias como precio ARS, y corregir cantidad o
+  importe. La aprobacion actualiza el precio global y crea la asignacion en una
+  sola transaccion. Tambien puede rechazar el pedido sin modificar stock.
+- La lista administrativa de revendedores muestra por persona el valor de la
+  mercaderia asignada, el saldo a rendir y las ventas brutas confirmadas del mes,
+  ademas de destacar solicitudes pendientes sin tener que abrir cada perfil.
 - Cada revendedor admite un limite de mercaderia en ARS. El capital asignado se
   calcula con las unidades que aun conserva por el precio actual; las solicitudes
   pendientes tambien consumen cupo. Al vender o devolver unidades el cupo se
@@ -48,6 +52,10 @@ Actualizado: 2026-09-29
 - `Mercaderia en consignacion` muestra el precio ARS de cada carta asignada y
   permite editarlo en la misma fila. El cambio actualiza el precio real usado
   por el portal, el valor asignado y el cupo disponible del revendedor.
+- Inventario permite iniciar una asignacion desde cada tarjeta o desde su panel
+  de detalle: se elige revendedor y cantidad sin navegar a otra pantalla. Solo
+  admite unidades realmente libres; las reservadas por ordenes quedan excluidas
+  tanto en la interfaz como en la validacion transaccional del servidor.
 - Las ordenes pendientes o a embalar pueden asignarse completas a un
   revendedor desde su detalle. Todas las cantidades pasan juntas a su
   inventario en consignacion, respetando stock fisico y limite de mercaderia;
