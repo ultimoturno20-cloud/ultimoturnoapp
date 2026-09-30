@@ -10,7 +10,7 @@ it("locks an email after repeated failed logins, even with the right password", 
   const admin = { ...(await getDefaultOperationalUser(db)), roles: ["admin"] };
   await createManagedUser(db, { displayName: "Seba", email: "seba@test.local", password: "password-segura-123", role: "stock_owner" }, admin);
   // A successful login clears earlier failures.
-  await assert.rejects(loginUser(db, "seba@test.local", "mal", "1.1.1.1"), /incorrectos/);
+  await assert.rejects(loginUser(db, "seba@test.local", "mal", "1.1.1.1"), (error: Error & { statusCode?: number }) => error.statusCode === 401);
   await loginUser(db, "seba@test.local", "password-segura-123", "1.1.1.1");
   for (let attempt = 0; attempt < 10; attempt++) {
     await assert.rejects(loginUser(db, "SEBA@test.local", "mal", "1.1.1.1"), /incorrectos/);

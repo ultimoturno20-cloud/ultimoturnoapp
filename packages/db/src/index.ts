@@ -1176,7 +1176,7 @@ export async function loginUser(db: PGlite, email: string, password: string, cli
   const row = result.rows[0];
   if (!row || !verifyPassword(password, String(row.password_hash || ""))) {
     await db.query("insert into auth_login_failures (id, email, ip) values ($1, $2, $3)", [crypto.randomUUID(), email, clientIp]);
-    throw new Error("Email o password incorrectos");
+    throw Object.assign(new Error("Email o password incorrectos"), { statusCode: 401 });
   }
   await db.query("delete from auth_login_failures where lower(email) = lower($1) or attempted_at < now() - interval '1 day'", [email]);
   const token = crypto.randomBytes(32).toString("hex");
