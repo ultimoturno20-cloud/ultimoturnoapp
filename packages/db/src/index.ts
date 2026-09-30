@@ -80,7 +80,7 @@ export type DbStockSummary = {
   stockValueArs: number;
 };
 
-export type InventoryPriceRepairScope = "floor" | "all";
+export type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
 
 export type InventoryPriceRepairCandidate = {
   inventoryItemId: string;
@@ -92,7 +92,7 @@ export type InventoryPriceRepairCandidate = {
   currentArs: number;
   currentUsd: number | null;
   referenceUsd: number;
-  referenceSource: "pricecharting" | "tcgplayer";
+  referenceSource: "pricecharting" | "tcgplayer" | "coolstuff";
   referenceLabel: string;
   suggestedArs: number;
   suggestedUsd: number;
@@ -110,6 +110,7 @@ export type InventoryPriceRepairPreview = {
   totalDifferenceArs: number;
   priceChartingCandidates: number;
   tcgplayerCandidates: number;
+  coolstuffCandidates: number;
   candidates: InventoryPriceRepairCandidate[];
 };
 
@@ -4177,15 +4178,18 @@ export async function listStockForActor(db: PGlite, actor: AuthenticatedUser): P
   return { summary: summarizeDbStock(items), items };
 }
 
-function inventoryReferencePrice(item: DbStockRow): { usd: number; source: "pricecharting" | "tcgplayer"; label: string } | null {
-  const priceChartingUsd = Number(item.priceReferences.priceCharting.usd || 0);
-  if (priceChartingUsd > 0) return { usd: priceChartingUsd, source: "pricecharting", label: "PriceCharting" };
+// Playable cards ("jugables" tag) sell at the tournament price from CoolStuff; collection cards at TCGplayer market.
+function inventoryReferencePrice(item: DbStockRow): { usd: number; source: "pricecharting" | "tcgplayer" | "coolstuff"; label: string } | null {
+  const coolstuffUsd = Number(item.priceReferences.coolstuff.usd || 0);
+  if (coolstuffUsd > 0 && /jugable/i.test(item.tags || "")) return { usd: coolstuffUsd, source: "coolstuff", label: "CoolStuff (jugable)" };
   const tcgplayer = item.priceReferences.tcgplayer;
   const tcgplayerUsd = [tcgplayer.marketPriceUsd, tcgplayer.usd, tcgplayer.midPriceUsd, tcgplayer.lowPriceUsd, tcgplayer.directLowPriceUsd, tcgplayer.highPriceUsd]
     .map((value) => Number(value || 0))
     .find((value) => value > 0) || 0;
-  if (!tcgplayerUsd) return null;
-  return { usd: tcgplayerUsd, source: "tcgplayer", label: tcgplayer.subTypeName ? `TCGplayer ${tcgplayer.subTypeName}` : "TCGplayer" };
+  if (tcgplayerUsd > 0) return { usd: tcgplayerUsd, source: "tcgplayer", label: tcgplayer.subTypeName ? `TCGplayer ${tcgplayer.subTypeName}` : "TCGplayer" };
+  const priceChartingUsd = Number(item.priceReferences.priceCharting.usd || 0);
+  if (priceChartingUsd > 0) return { usd: priceChartingUsd, source: "pricecharting", label: "PriceCharting" };
+  return null;
 }
 
 function recommendedInventorySalePriceArs(referenceUsd: number, blueRateSell: number): number {
@@ -4199,7 +4203,7 @@ export async function previewInventorySalePriceRepair(
   businessId: string,
   input: { scope?: InventoryPriceRepairScope; blueRateSell: number; limit?: number }
 ): Promise<InventoryPriceRepairPreview> {
-  const scope: InventoryPriceRepairScope = input.scope === "all" ? "all" : "floor";
+  const scope: InventoryPriceRepairScope = input.scope === "all" || input.scope === "opportunities" ? input.scope : "floor";
   const blueRateSell = Math.max(1, Number(input.blueRateSell || 0));
   const limit = Math.max(1, Math.min(500, Math.floor(Number(input.limit || 100))));
   const stock = await listStockForBusiness(db, businessId);
@@ -4214,9 +4218,12 @@ export async function previewInventorySalePriceRepair(
     const currentArs = Math.max(0, Number(item.priceArs || 0));
     const suggestedArs = recommendedInventorySalePriceArs(reference.usd, blueRateSell);
     const differenceArs = suggestedArs - currentArs;
+    // Opportunities: cards in stock sold at least 20% (and $500) below their reference.
     const shouldRepair = scope === "floor"
       ? currentArs <= minimumSalePriceArs && differenceArs > 0
-      : Math.abs(differenceArs) >= 100;
+      : scope === "opportunities"
+        ? item.quantityOnHand > 0 && differenceArs >= 500 && suggestedArs >= currentArs * 1.2
+        : Math.abs(differenceArs) >= 100;
     if (!shouldRepair) continue;
     allCandidates.push({
       inventoryItemId: item.id,
@@ -4236,6 +4243,7 @@ export async function previewInventorySalePriceRepair(
     });
   }
   allCandidates.sort((left, right) => {
+    if (scope === "opportunities") return right.differenceArs - left.differenceArs || left.name.localeCompare(right.name);
     const leftFloor = left.currentArs <= minimumSalePriceArs ? 0 : 1;
     const rightFloor = right.currentArs <= minimumSalePriceArs ? 0 : 1;
     return leftFloor - rightFloor || Math.abs(right.differenceArs) - Math.abs(left.differenceArs) || left.name.localeCompare(right.name);
@@ -4251,6 +4259,7 @@ export async function previewInventorySalePriceRepair(
     totalDifferenceArs: allCandidates.reduce((sum, candidate) => sum + candidate.differenceArs, 0),
     priceChartingCandidates: allCandidates.filter((candidate) => candidate.referenceSource === "pricecharting").length,
     tcgplayerCandidates: allCandidates.filter((candidate) => candidate.referenceSource === "tcgplayer").length,
+    coolstuffCandidates: allCandidates.filter((candidate) => candidate.referenceSource === "coolstuff").length,
     candidates: allCandidates.slice(0, limit)
   };
 }

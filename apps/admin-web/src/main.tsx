@@ -744,7 +744,7 @@ type CoolstuffPriceQuote = {
   updatedAt: string;
 };
 
-type InventoryPriceRepairScope = "floor" | "all";
+type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
 
 type InventoryPriceRepairCandidate = {
   inventoryItemId: string;
@@ -756,7 +756,7 @@ type InventoryPriceRepairCandidate = {
   currentArs: number;
   currentUsd: number | null;
   referenceUsd: number;
-  referenceSource: "pricecharting" | "tcgplayer";
+  referenceSource: "pricecharting" | "tcgplayer" | "coolstuff";
   referenceLabel: string;
   suggestedArs: number;
   suggestedUsd: number;
@@ -774,6 +774,7 @@ type InventoryPriceRepairPreview = {
   totalDifferenceArs: number;
   priceChartingCandidates: number;
   tcgplayerCandidates: number;
+  coolstuffCandidates: number;
   candidates: InventoryPriceRepairCandidate[];
 };
 
@@ -6519,11 +6520,12 @@ function AdminView(props: {
           <div>
             <p className="eyebrow">Precios de venta</p>
             <h3>Reparador general</h3>
-            <p>Recalcula inventario con PriceCharting y, cuando falta, TCGplayer. Primero genera una vista previa; no modifica claims, ordenes ni ventas anteriores.</p>
+            <p>Sugiere precios con CoolStuff para las cartas con categoria "jugables" y con TCGplayer para colección (PriceCharting si falta). "Oportunidades" muestra las cartas en stock que estás vendiendo al menos 20% por debajo. Primero genera una vista previa; no modifica claims, ordenes ni ventas anteriores.</p>
           </div>
           <div className="price-repair-controls">
             <select value={priceRepairScope} disabled={priceRepairBusy} onChange={(event) => { setPriceRepairScope(event.target.value as InventoryPriceRepairScope); setPriceRepairPreview(null); setPriceRepairFeedback(""); }}>
               <option value="floor">Solo $800 y faltantes</option>
+              <option value="opportunities">Oportunidades: vendo barato</option>
               <option value="all">Todos los desactualizados</option>
             </select>
             <button className="secondary-action" disabled={priceRepairBusy} onClick={() => void previewPriceRepairs()}><Icon name="search" />{priceRepairBusy ? "Calculando..." : "Generar vista previa"}</button>
@@ -6535,6 +6537,7 @@ function AdminView(props: {
             <div><span>A reparar</span><strong>{priceRepairPreview.totalCandidates.toLocaleString("es-AR")}</strong></div>
             <div><span>Suben</span><strong>{priceRepairPreview.increases.toLocaleString("es-AR")}</strong></div>
             <div><span>Bajan</span><strong>{priceRepairPreview.decreases.toLocaleString("es-AR")}</strong></div>
+            <div><span>CoolStuff</span><strong>{(priceRepairPreview.coolstuffCandidates || 0).toLocaleString("es-AR")}</strong></div>
             <div><span>PriceCharting</span><strong>{priceRepairPreview.priceChartingCandidates.toLocaleString("es-AR")}</strong></div>
             <div><span>TCGplayer</span><strong>{priceRepairPreview.tcgplayerCandidates.toLocaleString("es-AR")}</strong></div>
             <div><span>Sin referencia</span><strong>{priceRepairPreview.withoutReference.toLocaleString("es-AR")}</strong></div>
