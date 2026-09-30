@@ -239,7 +239,6 @@ const pgModule = require("pg") as PgModule;
 
 class PostgresOperationalDatabase {
   private readonly pool: PgPoolLike;
-  private manualTransactionClient: PgClientLike | null = null;
 
   constructor(options: { databaseUrl: string; ssl?: boolean; poolMax?: number }) {
     const { Pool, types } = pgModule;
@@ -258,28 +257,13 @@ class PostgresOperationalDatabase {
   }
 
   async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryLikeResult<T>> {
-    return (this.manualTransactionClient || this.pool).query<T>(sql, params);
+    return this.pool.query<T>(sql, params);
   }
 
   async exec(sql: string): Promise<void> {
     const command = sql.trim().replace(/;+$/, "").toLowerCase();
-    if (command === "begin") {
-      if (this.manualTransactionClient) throw new Error("Ya hay una transaccion manual activa.");
-      this.manualTransactionClient = await this.pool.connect();
-      await this.manualTransactionClient.query("begin");
-      return;
-    }
-    if (command === "commit" || command === "rollback") {
-      const client = this.manualTransactionClient;
-      if (!client) throw new Error(`No hay una transaccion manual activa para ${command}.`);
-      try {
-        await client.query(command);
-      } finally {
-        this.manualTransactionClient = null;
-        client.release?.();
-      }
-      return;
-    }
+    // A manual transaction on the shared pool would capture queries from concurrent requests.
+    if (["begin", "commit", "rollback"].includes(command)) throw new Error("Usa db.transaction() o inventoryTransaction() para transacciones.");
     await this.query(sql);
   }
 
@@ -1300,8 +1284,7 @@ export async function createReseller(db: PGlite, input: {
   if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) throw new Error("La comision debe estar entre 0 y 100.");
   if (creditLimitArs !== null && (!Number.isFinite(creditLimitArs) || creditLimitArs < 0)) throw new Error("El limite de mercaderia no es valido.");
   const userId = crypto.randomUUID();
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     const existing = await db.query("select id from app_users where business_id = $1 and lower(email) = lower($2)", [actor.businessId, email]);
     if (existing.rows[0]) throw new Error("Ya existe un usuario con ese email.");
     await db.query(`
@@ -1316,11 +1299,7 @@ export async function createReseller(db: PGlite, input: {
       values ($1, $2, $3, $4, $5, $6)
     `, [userId, actor.businessId, commissionPercent, input.phone?.trim() || "", input.notes?.trim() || "", creditLimitArs]);
     await writeAudit(db, actor, "reseller.create", "reseller", userId, null, { displayName, email, commissionPercent, creditLimitArs });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return getResellerDashboard(db, userId, actor.businessId);
 }
 
@@ -1655,8 +1634,7 @@ async function listResellerSales(db: PGlite, businessId: string, resellerUserId:
 
 export async function assignResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad a asignar debe ser un entero positivo.");
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     const reseller = await db.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2", [resellerUserId, actor.businessId]);
     if (!reseller.rows[0]) throw new Error("Revendedor no encontrado.");
     const item = await db.query<Record<string, unknown>>(`
@@ -1697,23 +1675,20 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
     `, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity]);
     await db.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'assign', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity, actor.id]);
     await writeAudit(db, actor, "reseller.stock.assign", "reseller", resellerUserId, null, { inventoryItemId, quantity });
-    await db.exec("commit");
-  } catch (error) { await db.exec("rollback"); throw error; }
+  });
   return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
 export async function returnResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad devuelta debe ser un entero positivo.");
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     const assignment = await db.query<Record<string, unknown>>("select * from reseller_stock_assignments where business_id = $1 and reseller_user_id = $2 and inventory_item_id = $3 for update", [actor.businessId, resellerUserId, inventoryItemId]);
     const row = assignment.rows[0];
     if (!row || quantity > Number(row.quantity_assigned) - Number(row.quantity_sold) - Number(row.quantity_returned)) throw new Error("La devolucion supera las unidades pendientes del revendedor.");
     await db.query("update reseller_stock_assignments set quantity_returned = quantity_returned + $1, updated_at = now() where id = $2", [quantity, row.id]);
     await db.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'return', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity, actor.id]);
     await writeAudit(db, actor, "reseller.stock.return", "reseller", resellerUserId, null, { inventoryItemId, quantity });
-    await db.exec("commit");
-  } catch (error) { await db.exec("rollback"); throw error; }
+  });
   return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
@@ -1728,8 +1703,7 @@ export async function createResellerOrder(db: PGlite, input: { customerName?: st
   }
   const orderId = crypto.randomUUID();
   const totalArs = [...quantities.values()].reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     const profile = await db.query("select 1 from reseller_profiles where user_id = $1 and business_id = $2", [actor.id, actor.businessId]);
     if (!profile.rows[0]) throw new Error("El usuario no es un revendedor activo.");
     for (const [inventoryItemId, line] of quantities) {
@@ -1749,8 +1723,7 @@ export async function createResellerOrder(db: PGlite, input: { customerName?: st
       await db.query(`insert into reseller_order_items (id,business_id,order_id,inventory_item_id,quantity,unit_price_ars,line_total_ars) values ($1,$2,$3,$4,$5,$6,$7)`, [crypto.randomUUID(), actor.businessId, orderId, inventoryItemId, line.quantity, line.unitPriceArs, line.quantity * line.unitPriceArs]);
     }
     await writeAudit(db, actor, "reseller.order.create", "reseller_order", orderId, null, { totalArs, customerName: input.customerName || "" });
-    await db.exec("commit");
-  } catch (error) { await db.exec("rollback"); throw error; }
+  });
   return getResellerDashboard(db, actor.id, actor.businessId);
 }
 
@@ -1835,8 +1808,7 @@ export async function createResellerSale(db: PGlite, input: { customerName?: str
   const grossTotalArs = [...quantities.values()].reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
   const commissionArs = Math.round(grossTotalArs * commissionPercent) / 100;
   const netDueArs = grossTotalArs - commissionArs;
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     if (input.resellerOrderId) {
       const order = await db.query<Record<string, unknown>>("select status from reseller_orders where id = $1 and business_id = $2 and reseller_user_id = $3 for update", [input.resellerOrderId, actor.businessId, actor.id]);
       if (!order.rows[0] || order.rows[0].status !== "pending") throw new Error("El pedido ya no esta pendiente.");
@@ -1857,15 +1829,13 @@ export async function createResellerSale(db: PGlite, input: { customerName?: str
     }
     if (input.resellerOrderId) await db.query("update reseller_orders set status = 'converted', converted_sale_id = $1, updated_at = now() where id = $2", [saleId, input.resellerOrderId]);
     await writeAudit(db, actor, "reseller.sale.create", "reseller_sale", saleId, null, { grossTotalArs, commissionArs, netDueArs });
-    await db.exec("commit");
-  } catch (error) { await db.exec("rollback"); throw error; }
+  });
   return (await listResellerSales(db, actor.businessId, actor.id)).find((sale) => sale.id === saleId)!;
 }
 
 export async function cancelResellerSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<ResellerDashboard> {
-  await db.exec("begin");
   let resellerUserId = "";
-  try {
+  await inventoryTransaction(db, async (db) => {
     const saleResult = await db.query<Record<string, unknown>>("select * from reseller_sales where id = $1 and business_id = $2 for update", [saleId, actor.businessId]);
     const sale = saleResult.rows[0];
     if (!sale) throw new Error("Venta de revendedor no encontrada.");
@@ -1880,8 +1850,7 @@ export async function cancelResellerSale(db: PGlite, saleId: string, actor: Auth
     }
     await db.query("update reseller_sales set status = 'cancelled', cancelled_at = now(), cancelled_by = $1 where id = $2", [actor.id, saleId]);
     await writeAudit(db, actor, "reseller.sale.cancel", "reseller_sale", saleId, sale, { status: "cancelled" });
-    await db.exec("commit");
-  } catch (error) { await db.exec("rollback"); throw error; }
+  });
   return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
@@ -1937,8 +1906,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
   const uniqueRows = [...new Map(input.rows.map((row) => [row.priceChartingId, row])).values()];
   const duplicateRows = input.rows.length - uniqueRows.length;
 
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into pricecharting_cache_runs (
         id, category, status, rows_received, rows_imported, rows_skipped,
@@ -2041,11 +2009,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
       `, [JSON.stringify(uniqueRows.map((row) => row.priceChartingId))]);
     }
     await db.query("update pricecharting_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
 
   return getPriceChartingCacheStatus(db);
 }
@@ -2116,8 +2080,7 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
   const duplicateRows = validRows.length - uniqueRows.length;
   const invalidRows = input.rows.length - validRows.length;
 
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into tcgplayer_price_cache_runs (
         id, source, category_id, source_version, status, groups_seen,
@@ -2173,11 +2136,7 @@ export async function replaceTcgplayerPriceCache(db: PGlite, input: {
 
     await db.query("delete from tcgplayer_price_cache_entries where sync_run_id <> $1", [runId]);
     await db.query("update tcgplayer_price_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
 
   return getTcgplayerPriceCacheStatus(db);
 }
@@ -2353,8 +2312,7 @@ export async function recordCoolstuffPriceObservation(db: PGlite, input: Coolstu
     throw new Error("Una coincidencia CoolStuff requiere precio USD positivo y URL publica de coolstuffinc.com.");
   }
   const retryHours = status === "matched" ? 24 : status === "not_found" ? 24 * 7 : status === "ambiguous" ? 24 * 3 : 2;
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into coolstuff_price_cache (
         pricecharting_id, condition, finish, status, coolstuff_url,
@@ -2402,11 +2360,7 @@ export async function recordCoolstuffPriceObservation(db: PGlite, input: Coolstu
         where pricecharting_id = $1
       `, [priceChartingId, String(input.coolstuffUrl || "")]);
     }
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
 }
 
 export async function getCoolstuffPriceStatus(db: PGlite): Promise<CoolstuffPriceStatus> {
@@ -4810,19 +4764,14 @@ export async function updateInventoryItemTags(
   const before = await getInventoryItem(db, inventoryItemId, actor.businessId);
   if (!before) throw new Error("No se encontro el item de inventario");
   const normalizedTags = normalizeInventoryTags(tags);
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       update inventory_items
       set tags = $1, updated_at = now()
       where id = $2 and business_id = $3
     `, [normalizedTags, inventoryItemId, actor.businessId]);
     await writeAudit(db, actor, "inventory.tags.update", "inventory_item", inventoryItemId, { tags: before.tags }, { tags: normalizedTags });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   const updated = await getInventoryItem(db, inventoryItemId, actor.businessId);
   if (!updated) throw new Error("No se pudo leer el item actualizado");
   return updated;
@@ -4926,8 +4875,7 @@ export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser):
   if (!touchedSkus) return { touchedSkus, unitsCleared, reservationsCleared };
 
   const runId = crypto.randomUUID();
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const row of rows.rows) {
       const quantity = Number(row.quantity_on_hand || 0);
       if (!quantity) continue;
@@ -4958,11 +4906,7 @@ export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser):
         and (quantity_on_hand <> 0 or quantity_reserved <> 0)
     `, [actor.businessId]);
     await writeAudit(db, actor, "inventory.reset_stock", "inventory", runId, { touchedSkus, unitsCleared, reservationsCleared }, { touchedSkus, totalUnits: 0, reservedUnits: 0 });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return { touchedSkus, unitsCleared, reservationsCleared };
 }
 
@@ -5072,8 +5016,7 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
     totalArs += line.quantity * line.unitPriceArs;
   }
 
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, created_by, completed_at)
       values ($1, $2, $3, $4, $5, $6, $7, 0, $8, case when $5 = 'paid' then now() else null end)
@@ -5120,11 +5063,7 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
       void item;
     }
     await writeAudit(db, actor, input.saleType === "reservation" ? "sale.reserve" : "sale.create", "sale", saleId, null, { ...input, totalArs, status });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   if (input.saleType === "reservation") await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   const created = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
   if (!created) throw new Error("No se pudo leer la operacion guardada");
@@ -5135,8 +5074,7 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
   const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
   const stockExceptions: Array<{ inventoryItemId: string; name: string; quantity: number; quantityOnHand: number; quantityReserved: number }> = [];
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const line of sale.lines) {
       if (!line.inventoryItemId) continue;
       const item = await getInventoryItem(db, line.inventoryItemId, actor.businessId);
@@ -5173,11 +5111,7 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
       stockReconciled: stockExceptions.length > 0,
       stockExceptions
     });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
 }
 
@@ -5414,8 +5348,7 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
   }
 
   const mergedGroups: Array<{ customerName: string; mergedOrders: number }> = [];
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const group of groups.values()) {
       if (group.length < 2) continue;
       const keeper = group[0];
@@ -5450,19 +5383,14 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
       await writeAudit(db, actor, "sale.merge_duplicates", "sale", String(keeper.id), { saleIds: allIds }, { keptSaleId: String(keeper.id), mergedSaleIds: duplicateIds });
       mergedGroups.push({ customerName: String(keeper.customer_name || ""), mergedOrders: duplicateIds.length });
     }
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return { merged: mergedGroups.reduce((sum, group) => sum + group.mergedOrders, 0), groups: mergedGroups };
 }
 
 export async function cancelReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
   const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const line of sale.lines) {
       if (!line.inventoryItemId) continue;
       await db.query("update inventory_items set quantity_reserved = greatest(0, quantity_reserved - $1), updated_at = now() where id = $2 and business_id = $3", [line.quantity, line.inventoryItemId, actor.businessId]);
@@ -5475,11 +5403,7 @@ export async function cancelReservationSale(db: PGlite, saleId: string, actor: A
     await db.query("update sales set status = 'cancelled', cancelled_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, "sale.cancel", "sale", saleId, sale, { status: "cancelled" });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
 }
 
@@ -5531,8 +5455,7 @@ export async function createPurchase(db: PGlite, input: CreatePurchaseInput, act
   }
   const purchaseId = crypto.randomUUID();
   const totalArs = lines.reduce((sum, line) => sum + line.quantity * line.unitCostArs, 0);
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into purchases (id, business_id, seller_name, total_ars, note, created_by)
       values ($1, $2, $3, $4, $5, $6)
@@ -5550,11 +5473,7 @@ export async function createPurchase(db: PGlite, input: CreatePurchaseInput, act
       `, [crypto.randomUUID(), actor.businessId, inventoryItemId, line.quantity, line.unitCostArs, purchaseId, `movement-purchase-${purchaseId}-${inventoryItemId}`, `Compra a ${input.sellerName.trim() || "proveedor"}`, actor.id]);
     }
     await writeAudit(db, actor, "purchase.create", "purchase", purchaseId, null, { ...input, totalArs });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return (await listPurchases(db, actor.businessId)).purchases.find((row) => row.id === purchaseId)!;
 }
 
@@ -5806,8 +5725,7 @@ export async function upsertClaimPlanItems(
   if (!items.length) throw new Error("Elegí al menos una carta.");
   const next = await db.query<{ next_order: number }>("select coalesce(max(sort_order), 0)::integer + 1 as next_order from claim_plan_items where plan_id = $1", [planId]);
   let sortOrder = Number(next.rows[0]?.next_order || 1);
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const input of items) {
       const inventoryItemId = String(input.inventoryItemId || "").trim();
       const quantity = Math.max(1, Math.floor(Number(input.quantity) || 1));
@@ -5841,11 +5759,7 @@ export async function upsertClaimPlanItems(
     }
     await db.query("update claim_plans set updated_at = now() where id = $1 and business_id = $2", [planId, actor.businessId]);
     await writeAudit(db, actor, "claim_plan.items.upsert", "claim_plan", planId, null, { items });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return listClaimPlans(db, actor.businessId);
 }
 
@@ -5870,8 +5784,7 @@ export async function publishClaimPlan(db: PGlite, planId: string, actor: Authen
   if (!plan || plan.status !== "draft") throw new Error("El borrador no está disponible.");
   if (!plan.items.length) throw new Error("Agregá al menos una carta antes de publicar.");
   const claimId = crypto.randomUUID();
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await db.query(`
       insert into claim_sessions (id, business_id, name, source_note, created_by)
       values ($1, $2, $3, $4, $5)
@@ -5921,11 +5834,7 @@ export async function publishClaimPlan(db: PGlite, planId: string, actor: Authen
     }
     await db.query("update claim_plans set status = 'published', published_claim_id = $1, updated_at = now() where id = $2 and business_id = $3", [claimId, planId, actor.businessId]);
     await writeAudit(db, actor, "claim_plan.publish", "claim_plan", planId, plan, { claimId });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return { plans: (await listClaimPlans(db, actor.businessId)).plans, workspace: await listClaimsWorkspace(db, actor.businessId) };
 }
 
@@ -6028,15 +5937,10 @@ export async function updateClaimSection(db: PGlite, sectionId: string, input: {
       limit 1
     `, [claimId, actor.businessId, sortOrder]);
     if (other.rows[0]) {
-      await db.exec("begin");
-      try {
+      await inventoryTransaction(db, async (db) => {
         await db.query("update claim_sections set sort_order = $1, updated_at = now() where id = $2", [Number(other.rows[0].sort_order || 0), sectionId]);
         await db.query("update claim_sections set sort_order = $1, updated_at = now() where id = $2", [sortOrder, String(other.rows[0].id)]);
-        await db.exec("commit");
-      } catch (error) {
-        await db.exec("rollback");
-        throw error;
-      }
+      });
     }
   }
   await writeAudit(db, actor, "claim.section.update", "claim_section", sectionId, current, input);
@@ -6078,8 +5982,7 @@ export async function addPriceChartingCardsToClaim(
   let nextOrder = Number(orderStart.rows[0]?.next_order || 1);
   if (!Number.isFinite(nextOrder)) nextOrder = 1;
   const touchedCardIds: string[] = [];
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const id of ids) {
       const entry = await db.query<Record<string, unknown>>(`
         select pce.pricecharting_id, pce.canonical_url, pce.product_name, pce.expansion_name, pce.card_number,
@@ -6138,11 +6041,7 @@ export async function addPriceChartingCardsToClaim(
     }
     for (const cardId of touchedCardIds) await syncClaimCardStock(db, cardId, actor);
     await writeAudit(db, actor, "claim.cards.add", "claim", claim.id, null, { priceChartingIds: ids, cards, sectionId: targetSectionId });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return listClaimsWorkspace(db, actor.businessId);
 }
 
@@ -6160,8 +6059,7 @@ export async function refreshActiveClaimPricesFromPriceCharting(db: PGlite, acto
   let updated = 0;
   let unchanged = 0;
   let missing = 0;
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const row of rows.rows) {
       if (row.loose_price_usd === null || row.loose_price_usd === undefined) {
         missing++;
@@ -6184,11 +6082,7 @@ export async function refreshActiveClaimPricesFromPriceCharting(db: PGlite, acto
       updated++;
     }
     await writeAudit(db, actor, "claim.prices.refresh", "claim", claim.id, null, { updated, unchanged, missing });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
 
   return {
     workspace: await listClaimsWorkspace(db, actor.businessId),
@@ -6262,16 +6156,11 @@ export async function deleteClaimCard(db: PGlite, cardId: string, actor: Authent
     limit 1
   `, [cardId, actor.businessId]);
   if (!before.rows[0]) throw new Error("La carta ya no existe en el claim activo.");
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     await syncClaimCardStock(db, cardId, actor);
     await db.query("delete from claim_cards where id = $1 and business_id = $2", [cardId, actor.businessId]);
     await writeAudit(db, actor, "claim.card.delete", "claim_card", cardId, before.rows[0], null);
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return listClaimsWorkspace(db, actor.businessId);
 }
 
@@ -6393,8 +6282,7 @@ export async function reconcileActiveClaimStock(
   const workspace = await listClaimsWorkspace(db, actor.businessId);
   const claim = workspace.activeClaim;
   if (!claim) throw new Error("No hay un claim activo.");
-  await db.exec("begin");
-  try {
+  return inventoryTransaction(db, async (db) => {
     const repairable = await db.query<{
       id: string;
       inventory_item_id: string;
@@ -6500,17 +6388,13 @@ export async function reconcileActiveClaimStock(
       correctedCards: corrections.length,
       correctedUnits
     });
-    await db.exec("commit");
     return {
       workspace: await listClaimsWorkspace(db, actor.businessId),
       checkedCards: workspace.cards.length,
       correctedCards: corrections.length,
       correctedUnits
     };
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
 }
 
 async function syncClaimCardStock(db: PGlite, cardId: string, actor: AuthenticatedUser): Promise<string> {
@@ -6731,8 +6615,7 @@ export async function archiveActiveClaim(db: PGlite, actor: AuthenticatedUser): 
   const workspace = await listClaimsWorkspace(db, actor.businessId);
   const claim = workspace.activeClaim;
   if (!claim) throw new Error("No hay un claim activo para cancelar.");
-  await db.exec("begin");
-  try {
+  await inventoryTransaction(db, async (db) => {
     for (const card of workspace.cards) await syncClaimCardStock(db, card.id, actor);
     await db.query(`
       update claim_sessions
@@ -6742,11 +6625,7 @@ export async function archiveActiveClaim(db: PGlite, actor: AuthenticatedUser): 
       where id = $1 and business_id = $2 and status = 'open'
     `, [claim.id, actor.businessId]);
     await writeAudit(db, actor, "claim.archive", "claim", claim.id, workspace, { reason: "cancelled_by_user" });
-    await db.exec("commit");
-  } catch (error) {
-    await db.exec("rollback");
-    throw error;
-  }
+  });
   return listClaimsWorkspace(db, actor.businessId);
 }
 
