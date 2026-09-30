@@ -213,7 +213,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1152,7 +1152,21 @@ export async function createOperationalDatabase(options: OperationalDatabaseOpti
   return db;
 }
 
-export async function loginUser(db: PGlite, email: string, password: string): Promise<{ token: string; user: AuthenticatedUser }> {
+const loginWindowMinutes = 15;
+const maxFailuresPerEmail = 10;
+const maxFailuresPerIp = 30;
+
+export async function loginUser(db: PGlite, email: string, password: string, clientIp = ""): Promise<{ token: string; user: AuthenticatedUser }> {
+  const failures = await db.query<{ by_email: string; by_ip: string }>(`
+    select
+      count(*) filter (where lower(email) = lower($1))::text as by_email,
+      count(*) filter (where $2 <> '' and ip = $2)::text as by_ip
+    from auth_login_failures
+    where attempted_at > now() - ($3::text || ' minutes')::interval
+  `, [email, clientIp, loginWindowMinutes]);
+  if (Number(failures.rows[0]?.by_email || 0) >= maxFailuresPerEmail || Number(failures.rows[0]?.by_ip || 0) >= maxFailuresPerIp) {
+    throw Object.assign(new Error(`Demasiados intentos fallidos. Espera ${loginWindowMinutes} minutos.`), { statusCode: 429 });
+  }
   const result = await db.query<Record<string, unknown>>(`
     select id, business_id, display_name, email, password_hash
     from app_users
@@ -1161,8 +1175,10 @@ export async function loginUser(db: PGlite, email: string, password: string): Pr
   `, [email]);
   const row = result.rows[0];
   if (!row || !verifyPassword(password, String(row.password_hash || ""))) {
+    await db.query("insert into auth_login_failures (id, email, ip) values ($1, $2, $3)", [crypto.randomUUID(), email, clientIp]);
     throw new Error("Email o password incorrectos");
   }
+  await db.query("delete from auth_login_failures where lower(email) = lower($1) or attempted_at < now() - interval '1 day'", [email]);
   const token = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
   await db.query("delete from app_sessions where expires_at < now()");
