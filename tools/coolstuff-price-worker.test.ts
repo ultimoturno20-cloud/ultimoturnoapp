@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { findCoolstuffExpansionUrl } from "../packages/importers/src/index.js";
-import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, runCycle, runSummary } from "./coolstuff-price-worker.js";
+import { loadExpansionProducts, mergeCoolstuffExpansionFallbacks, newRunStats, parseOptions, resetWorkerCachesForTests, runCycle, runSummary } from "./coolstuff-price-worker.js";
 
 const product = (number: string) => `<div class="product-search-row" itemtype="https://schema.org/Product"><a class="productLink" href="/p/Pokemon/Card-${number}"><span itemprop="name">Card - ${number}/132</span></a><div class="breadcrumb-trail">Pokemon » Mega Evolution</div><div itemprop="offers" itemtype="https://schema.org/Offer"><div><span class="card-qty">1</span>Near Mint</div><b itemprop="price" content="1.25"></b></div></div>`;
 
@@ -12,6 +12,46 @@ test("worker enforces ten seconds minimum between site requests", () => {
 test("worker accepts until-done mode", () => {
   assert.equal(parseOptions(["--until-done"]).untilDone, true);
   assert.equal(parseOptions([]).untilDone, false);
+});
+
+test("max runtime defaults to 4.5h on GitHub Actions and stays off locally", () => {
+  const previous = { actions: process.env.GITHUB_ACTIONS, runtime: process.env.COOLSTUFF_MAX_RUNTIME_MS };
+  try {
+    delete process.env.COOLSTUFF_MAX_RUNTIME_MS;
+    process.env.GITHUB_ACTIONS = "true";
+    assert.equal(parseOptions([]).maxRuntimeMs, 16200000);
+    delete process.env.GITHUB_ACTIONS;
+    assert.equal(parseOptions([]).maxRuntimeMs, 0);
+    process.env.GITHUB_ACTIONS = "true";
+    assert.equal(parseOptions(["--max-runtime-ms=1000"]).maxRuntimeMs, 1000);
+  } finally {
+    if (previous.actions === undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS = previous.actions;
+    if (previous.runtime === undefined) delete process.env.COOLSTUFF_MAX_RUNTIME_MS; else process.env.COOLSTUFF_MAX_RUNTIME_MS = previous.runtime;
+  }
+});
+
+test("failed observation POST counts as failed instead of aborting the cycle", async (t) => {
+  const options = { ...parseOptions([]), apiBaseUrl: "http://localhost:4000", delayMs: 0, dryRun: false };
+  const target = { priceChartingId: "local-post-fail", name: "Card", expansion: "Mega Evolution", number: "1/132", condition: "NM", finish: "normal" };
+  let posts = 0;
+  t.mock.method(globalThis, "fetch", async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/targets?")) return Response.json({ targets: [target], status: { matchedEntries: 0, totalEntries: 1 } });
+    if (url.endsWith("/observations")) {
+      posts++;
+      return Response.json({ error: "fk violation" }, { status: 500 });
+    }
+    if (url.endsWith("/pokemon/")) return new Response('<div class="set-list"><a href="/page/777">Mega Evolution</a></div>');
+    if (url.includes("/page/777?")) return new Response(product("1"));
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  const stats = newRunStats();
+  assert.equal(await runCycle(options, stats), 1);
+  assert.equal(posts, 1);
+  assert.equal(stats.failed, 1);
+  assert.equal(stats.matched, 0);
+  assert.equal(stats.reviewed, 1);
+  resetWorkerCachesForTests();
 });
 
 test("run summary counts every status and renders markdown", () => {

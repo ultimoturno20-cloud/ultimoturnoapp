@@ -17,6 +17,7 @@ type Options = {
   loop: boolean;
   untilDone: boolean;
   sleepMs: number;
+  maxRuntimeMs: number;
   dryRun: boolean;
 };
 
@@ -113,6 +114,7 @@ export function parseOptions(argv: string[]): Options {
     loop: flags.has("loop") || process.env.npm_config_loop === "true",
     untilDone: flags.has("until-done") || process.env.npm_config_until_done === "true",
     sleepMs: clamp(values.get("sleep-ms") || process.env.npm_config_sleep_ms, 60000, 24 * 60 * 60 * 1000, 60 * 60 * 1000),
+    maxRuntimeMs: maxRuntimeMs(values.get("max-runtime-ms") || process.env.npm_config_max_runtime_ms || process.env.COOLSTUFF_MAX_RUNTIME_MS),
     dryRun: flags.has("dry-run") || process.env.npm_config_dry_run === "true"
   };
 }
@@ -120,6 +122,12 @@ export function parseOptions(argv: string[]): Options {
 function clamp(raw: string | undefined, minimum: number, maximum: number, fallback: number) {
   const value = Number(raw || fallback);
   return Number.isFinite(value) ? Math.max(minimum, Math.min(maximum, Math.floor(value))) : fallback;
+}
+
+function maxRuntimeMs(raw: string | undefined) {
+  if (raw === undefined || raw === "") return process.env.GITHUB_ACTIONS === "true" ? 16200000 : 0;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : (process.env.GITHUB_ACTIONS === "true" ? 16200000 : 0);
 }
 
 function showHelp() {
@@ -142,6 +150,7 @@ Opciones:
   --loop
   --until-done
   --sleep-ms=3600000
+  --max-runtime-ms=16200000
   --dry-run
   --api=https://ultimoturno.app/api
 
@@ -197,6 +206,12 @@ async function postJson<T>(options: Options, route: string, body: unknown): Prom
 let lastCoolstuffRequestAt = 0;
 let expansionLinksCache: { expiresAt: number; links: CoolstuffExpansionLink[] } | undefined;
 const expansionCache = new Map<string, { expiresAt: number; products: Promise<CoolstuffProduct[]> }>();
+
+export function resetWorkerCachesForTests() {
+  lastCoolstuffRequestAt = 0;
+  expansionLinksCache = undefined;
+  expansionCache.clear();
+}
 
 // CoolStuff omits some live set pages from the /pokemon/ index.
 export const COOLSTUFF_EXPANSION_FALLBACKS: CoolstuffExpansionLink[] = [
@@ -341,7 +356,18 @@ export async function runCycle(options: Options, stats: RunStats = newRunStats()
     }
     stats.reviewed++;
     batchReviewed++;
-    if (!options.dryRun) await postJson(options, "/coolstuff-prices/observations", { observations: [observation] });
+    if (!options.dryRun) {
+      try {
+        await postJson(options, "/coolstuff-prices/observations", { observations: [observation] });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`No se pudo guardar la observacion de ${target.name}: ${message}`);
+        if (observation.status === "matched" && stats.matched > 0) stats.matched--;
+        else if (observation.status === "not_found" && stats.notFound > 0) stats.notFound--;
+        else if (observation.status === "ambiguous" && stats.ambiguous > 0) stats.ambiguous--;
+        stats.failed++;
+      }
+    }
   }
   console.log(`Tanda terminada: revisadas=${batchReviewed}, precios=${stats.matched}, modo=${options.dryRun ? "simulacion" : "guardado"}.`);
   return batchReviewed;
@@ -363,9 +389,36 @@ async function main() {
   await getJson(options, "/health");
   const stats = newRunStats();
   console.log(`Worker conectado a ${options.apiBaseUrl}. Pausa CoolStuff: ${Math.round(options.delayMs / 1000)}s.`);
+  const startedAt = Date.now();
+  let consecutiveErrors = 0;
   do {
+    if (options.untilDone && options.maxRuntimeMs > 0 && Date.now() - startedAt >= options.maxRuntimeMs) {
+      console.log(`Presupuesto de tiempo agotado (${Math.round(options.maxRuntimeMs / 60000)} min). Terminando; el progreso ya quedo guardado.`);
+      reportRun(stats, await loadCacheStatus(options));
+      break;
+    }
+    let processed: number;
     try {
-      const processed = await runCycle(options, stats);
+      processed = await runCycle(options, stats);
+      consecutiveErrors = 0;
+    } catch (error) {
+      if ((!options.loop && !options.untilDone) || options.dryRun) throw error;
+      consecutiveErrors++;
+      console.error(`Tanda interrumpida; se reintentara: ${error instanceof Error ? error.message : String(error)}`);
+      if (options.untilDone) {
+        if (consecutiveErrors >= 3) {
+          console.error("3 errores consecutivos de ciclo; terminando con error.");
+          reportRun(stats, await loadCacheStatus(options));
+          process.exitCode = 1;
+          break;
+        }
+        await sleep(30000);
+        continue;
+      }
+      await sleep(options.sleepMs);
+      continue;
+    }
+    {
       if (options.dryRun) break;
       if (options.untilDone) {
         if (!processed) {
@@ -379,9 +432,6 @@ async function main() {
       if (!options.loop) break;
       if (processed) continue;
       console.log(`Sin cartas vencidas. Proxima revision en ${Math.round(options.sleepMs / 60000)} min.`);
-    } catch (error) {
-      if ((!options.loop && !options.untilDone) || options.dryRun) throw error;
-      console.error(`Tanda interrumpida; se reintentara: ${error instanceof Error ? error.message : String(error)}`);
     }
     await sleep(options.sleepMs);
   } while (true);
