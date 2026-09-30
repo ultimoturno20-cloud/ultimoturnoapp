@@ -160,16 +160,17 @@ const target = await createOperationalDatabase({
 });
 
 try {
-  await target.exec("begin");
-  await target.query(`truncate table ${tables.map(quoteIdentifier).join(", ")} cascade`);
-  const copied: Array<{ table: string; rows: number }> = [];
-  const selectedTables = skipCaches ? tables.filter((table) => !cacheTables.has(table)) : tables;
-  for (const table of selectedTables) {
-    const rows = await copyTable(source, target, table);
-    copied.push({ table, rows });
-    console.error(`${table}: ${rows}`);
-  }
-  await target.exec("commit");
+  const copied = await target.transaction(async (tx) => {
+    await tx.query(`truncate table ${tables.map(quoteIdentifier).join(", ")} cascade`);
+    const copiedTables: Array<{ table: string; rows: number }> = [];
+    const selectedTables = skipCaches ? tables.filter((table) => !cacheTables.has(table)) : tables;
+    for (const table of selectedTables) {
+      const rows = await copyTable(source, tx as typeof target, table);
+      copiedTables.push({ table, rows });
+      console.error(`${table}: ${rows}`);
+    }
+    return copiedTables;
+  });
   console.log(JSON.stringify({
     ok: true,
     sourceDataDir,
@@ -177,9 +178,6 @@ try {
     copied,
     totalRows: copied.reduce((sum, item) => sum + item.rows, 0)
   }, null, 2));
-} catch (error) {
-  await target.exec("rollback").catch(() => undefined);
-  throw error;
 } finally {
   await source.close();
   await target.close();

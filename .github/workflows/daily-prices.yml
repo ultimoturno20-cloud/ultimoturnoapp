@@ -1,0 +1,37 @@
+name: Daily prices
+
+on:
+  schedule:
+    # 06:00 Argentina (UTC-3): PriceCharting, then TCGplayer.
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-prices
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      API: https://ultimoturnoapp-api.vercel.app/api/dispatch?path=
+      ACCESS_KEY: ${{ secrets.ULTIMOTURNO_ACCESS_KEY }}
+    steps:
+      - name: PriceCharting
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 320 \
+            -H "X-UltimoTurno-Access-Key: $ACCESS_KEY" \
+            "${API}/cron/pricecharting-refresh" | tee pricecharting.json
+          echo "### PriceCharting" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.status.lastRun | "estado: \(.status), filas: \(.rowsImported), fin: \(.completedAt)"' pricecharting.json >> "$GITHUB_STEP_SUMMARY"
+      - name: TCGplayer
+        if: always()
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 320 \
+            -H "X-UltimoTurno-Access-Key: $ACCESS_KEY" \
+            "${API}/cron/tcgplayer-refresh" | tee tcgplayer.json
+          echo "### TCGplayer" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.status.lastRun | "estado: \(.status), categorias: \(.categoryId), filas: \(.rowsImported), fin: \(.completedAt)"' tcgplayer.json >> "$GITHUB_STEP_SUMMARY"

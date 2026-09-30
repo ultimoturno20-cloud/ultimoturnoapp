@@ -3195,14 +3195,15 @@ async function requireResellerUser(request: IncomingMessage) {
 }
 
 function accessKeyMatches(value: string) {
-  if (!sharedAccessKey) return true;
+  // Without a configured key only local development stays open; production fails closed.
+  if (!sharedAccessKey) return !productionMode;
   const expected = Buffer.from(sharedAccessKey);
   const received = Buffer.from(value || "");
   return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
 function requestHasAccess(request: IncomingMessage) {
-  if (!sharedAccessKey) return true;
+  if (!sharedAccessKey) return !productionMode;
   const headerValue = request.headers["x-ultimoturno-access-key"];
   const accessHeader = Array.isArray(headerValue) ? headerValue[0] : headerValue || "";
   return accessKeyMatches(accessHeader);
@@ -3278,8 +3279,7 @@ async function previewPilotStockQuantityRestore(db: Awaited<typeof dbPromise>): 
 async function restorePilotStockQuantities(db: Awaited<typeof dbPromise>, actor: AuthenticatedUser) {
   const before = await previewPilotStockQuantityRestore(db);
   const runId = crypto.randomUUID();
-  await db.exec("begin");
-  try {
+  return inventoryTransaction(db, async (db) => {
     const valuesSql = pilotStockQuantityRestoreRows.map((_, index) => {
       const offset = index * 3;
       return `($${offset + 1}, $${offset + 2}, $${offset + 3})`;
@@ -3309,7 +3309,6 @@ async function restorePilotStockQuantities(db: Awaited<typeof dbPromise>, actor:
       insert into audit_log (id, business_id, actor_user_id, action, entity_type, entity_id, before_data, after_data)
       values ($1, $2, $3, 'inventory.restore_pilot_quantities', 'inventory', $4, $5::jsonb, $6::jsonb)
     `, [crypto.randomUUID(), actor.businessId, actor.id, runId, JSON.stringify(before), JSON.stringify(after)]);
-    await db.exec("commit");
     return {
       runId,
       before,
@@ -3318,10 +3317,7 @@ async function restorePilotStockQuantities(db: Awaited<typeof dbPromise>, actor:
       totalUnits: Number(updated?.total_units || 0),
       reservedUnits: Number(updated?.reserved_units || 0)
     };
-  } catch (error) {
-    await db.exec("rollback").catch(() => undefined);
-    throw error;
-  }
+  });
 }
 
 type DatabaseUrlChoice = {
