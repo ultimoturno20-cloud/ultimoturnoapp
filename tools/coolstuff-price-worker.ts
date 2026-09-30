@@ -362,6 +362,7 @@ export async function runCycle(options: Options, stats: RunStats = newRunStats()
   const expansionLinks = await loadExpansionLinks(options);
   stats.batches++;
   let batchReviewed = 0;
+  const matchedBefore = stats.matched;
   for (const target of response.targets) {
     let observation: Observation;
     try {
@@ -396,7 +397,7 @@ export async function runCycle(options: Options, stats: RunStats = newRunStats()
       }
     }
   }
-  console.log(`Tanda terminada: revisadas=${batchReviewed}, precios=${stats.matched}, modo=${options.dryRun ? "simulacion" : "guardado"}.`);
+  console.log(`Tanda terminada: revisadas=${batchReviewed}, precios=${stats.matched - matchedBefore}, modo=${options.dryRun ? "simulacion" : "guardado"}.`);
   return batchReviewed;
 }
 
