@@ -41,6 +41,12 @@ Actualizado: 2026-10-03
   superior compacta, un selector para ver una sola columna/estado por vez,
   tarjetas de ancho completo sin scroll horizontal y detalle de orden a pantalla
   completa. El tablero de escritorio y su drag-and-drop no cambian.
+- Revendedores tambien tiene una experiencia movil dedicada. Administracion usa
+  un selector de persona, metricas horizontales y fichas compactas para
+  solicitudes/asignaciones. El portal usa resumen y pestanas desplazables,
+  catalogos de una columna y una barra fija que abre el carrito a pantalla
+  completa; pedidos, ventas, stock propio y stock global conservan todos sus
+  controles en formato tactil.
 
 ### Acceso del portal de revendedores
 

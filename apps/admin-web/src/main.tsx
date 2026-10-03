@@ -6034,7 +6034,8 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
         <aside className="panel reseller-sidebar">
           <h3>Equipo</h3>
           {loading ? <p className="muted">Cargando...</p> : null}
-          {resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}
+          {resellers.length ? <label className="reseller-mobile-picker"><span>Revendedor</span><select value={selected?.reseller.userId || ""} onChange={(event) => setSelectedId(event.target.value)}>{resellers.map((item) => <option key={item.reseller.userId} value={item.reseller.userId}>{item.reseller.displayName}{item.stockRequests.length ? ` · ${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"}` : ""}</option>)}</select><small>{selected ? `${formatArs(selected.summary.assignedValueArs)} asignado · ${formatArs(selected.summary.outstandingArs)} a rendir` : ""}</small></label> : null}
+          <div className="reseller-sidebar-list">{resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}</div>
           {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
             <h3>Nuevo revendedor</h3>
             <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
@@ -6045,6 +6046,15 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
             <label>Limite mercaderia ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label>
             <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
           </form> : null}
+          {!assignmentOnly ? <details className="reseller-mobile-create"><summary><Icon name="plus" />Nuevo revendedor</summary><form className="reseller-create" onSubmit={create}>
+            <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
+            <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            <input required minLength={8} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+            <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
+            <label>Limite mercaderia ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label>
+            <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
+          </form></details> : null}
         </aside>
         <div className="reseller-workspace">
           {!selected ? <EmptyState title="Sin revendedores" body={assignmentOnly ? "Un administrador debe crear primero un usuario revendedor." : "Crea el primer usuario para comenzar a asignar mercaderia."} /> : <>
@@ -6150,6 +6160,7 @@ function ResellerPortal() {
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
+  const [mobileCheckoutOpen, setMobileCheckoutOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const portalRefreshRequest = useRef(false);
@@ -6186,6 +6197,9 @@ function ResellerPortal() {
   useEffect(() => {
     setGlobalRenderLimit(48);
   }, [globalCondition, globalExpansion, globalFinish, globalLanguage, globalLanguageGroup, globalSearch, globalSort, globalTag]);
+  useEffect(() => {
+    if (activeTab !== "sell") setMobileCheckoutOpen(false);
+  }, [activeTab]);
 
   async function login(event: React.FormEvent) {
     event.preventDefault();
@@ -6202,7 +6216,7 @@ function ResellerPortal() {
     setSaving(true);
     try {
       await api("/reseller/portal/sales", { token, method: "POST", body: { customerName, notes, lines } });
-      setCart({}); setCustomerName(""); setNotes(""); await load();
+      setCart({}); setCustomerName(""); setNotes(""); setMobileCheckoutOpen(false); await load();
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
   }
@@ -6213,7 +6227,7 @@ function ResellerPortal() {
     setSaving(true);
     try {
       setDashboard(await api<ResellerDashboard>("/reseller/portal/orders", { token, method: "POST", body: { customerName, notes, lines } }));
-      setCart({}); setCustomerName(""); setNotes(""); setActiveTab("orders"); setError("");
+      setCart({}); setCustomerName(""); setNotes(""); setMobileCheckoutOpen(false); setActiveTab("orders"); setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSaving(false); }
   }
@@ -6347,6 +6361,7 @@ function ResellerPortal() {
 
       {activeTab === "sell" ? (
         <section className="reseller-sell-layout">
+          <button type="button" className="reseller-mobile-cart-bar" aria-expanded={mobileCheckoutOpen} onClick={() => setMobileCheckoutOpen(true)}><Icon name="cart" /><span>Venta actual</span><strong>{cartItems.reduce((sum, item) => sum + cart[item.inventoryItemId].quantity, 0)} un. · {formatArs(saleTotal)}</strong></button>
           <div className="reseller-product-browser">
             <div className="reseller-section-heading"><div><h2>Elegir cartas</h2><p>Agrega al carrito lo que vendiste.</p></div><label className="reseller-search"><Icon name="search" /><input placeholder="Buscar por carta, expansion o numero" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
             {visibleAssignments.length ? <div className="reseller-product-grid">{visibleAssignments.map((item) => {
@@ -6359,8 +6374,8 @@ function ResellerPortal() {
             })}</div> : <EmptyState title="No hay cartas para mostrar" body={search ? "Proba con otro nombre, expansion o numero." : "Todavia no tenes stock asignado disponible para vender."} />}
           </div>
 
-          <aside className="reseller-checkout">
-            <div className="reseller-checkout-title"><div><span>Venta actual</span><h2>{cartItems.length ? `${cartItems.reduce((sum, item) => sum + cart[item.inventoryItemId].quantity, 0)} unidad(es)` : "Carrito vacio"}</h2></div><strong>{formatArs(saleTotal)}</strong></div>
+          <aside className={`reseller-checkout ${mobileCheckoutOpen ? "mobile-open" : ""}`}>
+            <div className="reseller-checkout-title"><div><span>Venta actual</span><h2>{cartItems.length ? `${cartItems.reduce((sum, item) => sum + cart[item.inventoryItemId].quantity, 0)} unidad(es)` : "Carrito vacio"}</h2></div><strong>{formatArs(saleTotal)}</strong><button type="button" className="icon-action reseller-mobile-cart-close" aria-label="Cerrar carrito" onClick={() => setMobileCheckoutOpen(false)}><Icon name="close" /></button></div>
             {cartItems.length ? <div className="reseller-cart-lines">{cartItems.map((item) => {
               const line = cart[item.inventoryItemId];
               return <div className="reseller-cart-line" key={item.inventoryItemId}>
