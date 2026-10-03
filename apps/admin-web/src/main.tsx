@@ -432,6 +432,7 @@ type SaleRecord = {
   totalArs: number;
   totalUsd: number;
   amountPaidArs: number;
+  amountPaidUsd: number;
   paymentDueAt?: string;
   internalNote: string;
   messageSentAt?: string;
@@ -1767,9 +1768,9 @@ function App() {
     }
   }
 
-  async function updateOrderPayment(id: string, amountPaidArs: number, paymentDueAt?: string) {
+  async function updateOrderPayment(id: string, amountPaidArs: number, paymentDueAt?: string, amountPaidUsd?: number) {
     try {
-      const result = await api<{ sale: SaleRecord }>(`/sales/${id}/payment`, { method: "PUT", body: { amountPaidArs, paymentDueAt } });
+      const result = await api<{ sale: SaleRecord }>(`/sales/${id}/payment`, { method: "PUT", body: { amountPaidArs, paymentDueAt, amountPaidUsd } });
       setSales((current) => current.map((sale) => sale.id === result.sale.id ? result.sale : sale));
       showMessage("Pago y fecha de la orden actualizados.");
     } catch (nextError) {
@@ -4663,7 +4664,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   </section>;
 }
 
-function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
+function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string, amountPaidUsd?: number) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
   const reservations = sales.filter((sale) => sale.saleType === "reservation");
   const activeOrders = reservations.filter((sale) => sale.status !== "delivered" && sale.status !== "cancelled");
   const deliveredOrders = reservations.filter((sale) => sale.status === "delivered");
@@ -4853,8 +4854,9 @@ function orderLineDrafts(order: SaleRecord): OrderLineDraft[] {
   }));
 }
 
-function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, focused, selected, copied, onToggle, onSelectedChange, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines, onCopy }: { order: SaleRecord; boardLabel: string; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void>; onCopy: () => void }) {
+function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, focused, selected, copied, onToggle, onSelectedChange, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines, onCopy }: { order: SaleRecord; boardLabel: string; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; open: boolean; focused: boolean; selected: boolean; copied: boolean; onToggle: () => void; onSelectedChange: () => void; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string, amountPaidUsd?: number) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (sent: boolean) => void; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void>; onCopy: () => void }) {
   const [paymentDraft, setPaymentDraft] = useState("");
+  const [paymentUsdDraft, setPaymentUsdDraft] = useState("");
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
   const [quickPaymentMode, setQuickPaymentMode] = useState<"full" | "partial">("full");
   const [dueDraft, setDueDraft] = useState(order.paymentDueAt ? order.paymentDueAt.slice(0, 10) : "");
@@ -4867,7 +4869,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   const [resellerDraft, setResellerDraft] = useState("");
   const [resellerAssigning, setResellerAssigning] = useState(false);
   const [resellerError, setResellerError] = useState("");
-  useEffect(() => setPaymentDraft(""), [order.id, order.amountPaidArs]);
+  useEffect(() => { setPaymentDraft(""); setPaymentUsdDraft(""); }, [order.id, order.amountPaidArs, order.amountPaidUsd]);
   useEffect(() => setDueDraft(order.paymentDueAt ? order.paymentDueAt.slice(0, 10) : ""), [order.paymentDueAt]);
   useEffect(() => setNoteDraft(order.internalNote || ""), [order.id, order.internalNote]);
   const units = order.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -4934,10 +4936,13 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
     }
   };
   const paymentToAdd = Math.max(0, Number(paymentDraft) || 0);
+  const usdToAdd = Math.max(0, Number(paymentUsdDraft) || 0);
   const nextPaid = Math.min(order.totalArs, (order.amountPaidArs || 0) + paymentToAdd);
+  const nextPaidUsd = Math.min(order.totalUsd || 0, (order.amountPaidUsd || 0) + usdToAdd);
   const remaining = Math.max(0, order.totalArs - (order.amountPaidArs || 0));
+  const remainingUsd = Math.max(0, (order.totalUsd || 0) - (order.amountPaidUsd || 0));
   const nextRemaining = Math.max(0, order.totalArs - nextPaid);
-  const overdue = remaining > 0 && Boolean(order.paymentDueAt) && new Date(order.paymentDueAt!).getTime() < Date.now();
+  const overdue = (remaining > 0 || remainingUsd > 0) && Boolean(order.paymentDueAt) && new Date(order.paymentDueAt!).getTime() < Date.now();
   const messageSent = Boolean(order.messageSentAt);
   const currentDue = order.paymentDueAt ? order.paymentDueAt.slice(0, 10) : "";
   const dueChanged = dueDraft !== currentDue;
@@ -4973,11 +4978,12 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   const confirmQuickPayment = async () => {
     if (!canEdit) return;
     if (quickPaymentMode === "full") {
-      await onPayment(order.id, order.totalArs, dueDraft);
+      await onPayment(order.id, order.totalArs, dueDraft, order.totalUsd || 0);
       await onComplete(order.id);
-    } else if (paymentToAdd > 0) {
-      await onPayment(order.id, nextPaid, dueDraft);
+    } else if (paymentToAdd > 0 || usdToAdd > 0) {
+      await onPayment(order.id, nextPaid, dueDraft, nextPaidUsd);
       setPaymentDraft("");
+      setPaymentUsdDraft("");
     }
     setQuickPaymentOpen(false);
   };
@@ -4986,7 +4992,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
       <div className="order-row-main" role="button" tabIndex={0} onClick={onToggle} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onToggle(); } }}>
         <label className="order-select-cell" onClick={stopClick}><input type="checkbox" disabled={!canBatchSelect} checked={selected} onChange={onSelectedChange} /></label>
         <div className="order-summary-main"><div className="order-title-line"><h3>{order.customerName}</h3>{open ? <span className="order-work-badge active">Abierta</span> : focused ? <span className="order-work-badge">Ultima trabajada</span> : null}</div><p>{boardLabel} - {formatDate(order.createdAt)} - {channelLabel(order.channel)}</p></div>
-        <div className="order-summary-money"><MoneyStack ars={order.totalArs || null} usd={order.totalUsd || null} blueRate={blueRate} compact /><span>Pagado {formatArs(order.amountPaidArs || 0)}</span>{remaining > 0 ? <span>Resta {formatArs(remaining)}</span> : <span>Sin deuda</span>}</div>
+        <div className="order-summary-money"><MoneyStack ars={order.totalArs || null} usd={order.totalUsd || null} blueRate={blueRate} compact /><span>Pagado {formatArs(order.amountPaidArs || 0)}{(order.amountPaidUsd || 0) > 0 ? " + " : ""}{(order.amountPaidUsd || 0) > 0 ? formatUsd(order.amountPaidUsd) : ""}</span>{remaining > 0 || remainingUsd > 0 ? <span>Resta {remaining > 0 ? formatArs(remaining) : ""}{remaining > 0 && remainingUsd > 0 ? " + " : ""}{remainingUsd > 0 ? formatUsd(remainingUsd) : ""}</span> : <span>Sin deuda</span>}</div>
         <div className="order-row-check-wrap" onClick={stopClick}>
           <label className={`order-row-check ${messageSent ? "checked" : ""}`}><input type="checkbox" disabled={order.status === "cancelled" || isDelivered} checked={messageSent} onChange={(event) => onMessageSent(event.target.checked)} /><span>{messageSent ? "Enviado" : "Pendiente"}</span></label>
         </div>
@@ -5007,10 +5013,10 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
             <button className={quickPaymentMode === "partial" ? "active" : ""} onClick={() => setQuickPaymentMode("partial")}>Pago parcial</button>
           </div>
           <div className="quick-payment-fields">
-            {quickPaymentMode === "partial" ? <label>Monto recibido<input type="number" min={0} value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} placeholder="Monto a sumar" /></label> : <div className="quick-full-total"><span>Total a cobrar</span><MoneyStack ars={order.totalArs || null} usd={order.totalUsd || null} blueRate={blueRate} compact /></div>}
+            {quickPaymentMode === "partial" ? <><label>Pesos<input type="number" min={0} value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} placeholder="ARS a sumar" /></label>{(order.totalUsd || 0) > 0 ? <label>Dolares<input type="number" min={0} step={0.01} value={paymentUsdDraft} onChange={(event) => setPaymentUsdDraft(event.target.value)} placeholder="USD a sumar" /></label> : null}</> : <div className="quick-full-total"><span>Total a cobrar</span><MoneyStack ars={order.totalArs || null} usd={order.totalUsd || null} blueRate={blueRate} compact /></div>}
             <label>Fecha limite<input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>
           </div>
-          <button className="primary-action" disabled={quickPaymentMode === "partial" && paymentToAdd <= 0} onClick={() => void confirmQuickPayment()}><Icon name="check" />Confirmar {quickPaymentMode === "full" ? "pago completo" : "pago parcial"}</button>
+          <button className="primary-action" disabled={quickPaymentMode === "partial" && paymentToAdd <= 0 && usdToAdd <= 0} onClick={() => void confirmQuickPayment()}><Icon name="check" />Confirmar {quickPaymentMode === "full" ? "pago completo" : "pago parcial"}</button>
         </div>
       ) : null}
       {open ? (
@@ -5030,14 +5036,14 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
           </section>
           <div className="order-work-grid">
             <section className="order-work-panel order-payment-panel">
-              <div className="order-panel-heading"><h4>Pago</h4><div className="order-payment-badges"><span>Pagado <strong>{formatArs(order.amountPaidArs || 0)}</strong></span><span>Resta <strong>{formatArs(remaining)}</strong></span>{paymentToAdd > 0 ? <span>Quedaria <strong>{formatArs(nextRemaining)}</strong></span> : null}</div></div>
+              <div className="order-panel-heading"><h4>Pago</h4><div className="order-payment-badges"><span>Pagado <strong>{formatArs(order.amountPaidArs || 0)}{(order.amountPaidUsd || 0) > 0 ? " + " : ""}{(order.amountPaidUsd || 0) > 0 ? formatUsd(order.amountPaidUsd) : ""}</strong></span><span>Resta <strong>{formatArs(remaining)}{remainingUsd > 0 ? " + " : ""}{remainingUsd > 0 ? formatUsd(remainingUsd) : ""}</strong></span></div></div>
               <div className="order-payment-grid">
-                <label className="order-payment-field"><span>Seña / pago recibido</span><input type="number" min={0} placeholder="Monto a sumar" value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} /></label>
+                <label className="order-payment-field"><span>Seña / pago en pesos</span><input type="number" min={0} placeholder="ARS a sumar" value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} /></label>{(order.totalUsd || 0) > 0 ? <label className="order-payment-field"><span>Pago en dolares</span><input type="number" min={0} step={0.01} placeholder="USD a sumar" value={paymentUsdDraft} onChange={(event) => setPaymentUsdDraft(event.target.value)} /></label> : null}
                 <label className="order-payment-field"><span>Fecha limite de pago</span><input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>
               </div>
               <div className="order-panel-footer payment-actions">
                 <button className="secondary-action" disabled={!canEdit || !dueChanged} onClick={() => onPayment(order.id, order.amountPaidArs || 0, dueDraft)}><Icon name="check" />Fijar fecha</button>
-                <button className="primary-action" disabled={!canEdit || paymentToAdd <= 0} onClick={() => { onPayment(order.id, nextPaid, dueDraft); setPaymentDraft(""); }}><Icon name="check" />Registrar pago</button>
+                <button className="primary-action" disabled={!canEdit || (paymentToAdd <= 0 && usdToAdd <= 0)} onClick={() => { onPayment(order.id, nextPaid, dueDraft, nextPaidUsd); setPaymentDraft(""); setPaymentUsdDraft(""); }}><Icon name="check" />Registrar pago</button>
               </div>
             </section>
             <section className="order-work-panel order-note-box">
@@ -9533,10 +9539,10 @@ function fromBlueArs(valueArs: number | null | undefined, blueRate: BlueExchange
 }
 
 // What a customer still owes on an order. Paid/delivered orders count as settled even when amount_paid_ars was never set
-// (counter sales are created as paid with amount_paid_ars = 0). Dollar orders have no partial-payment tracking.
+// (counter sales are created as paid with amount_paid_ars = 0). Dollar orders track amount_paid_usd.
 function saleOwed(sale: SaleRecord) {
   if (sale.status === "cancelled" || sale.status === "paid" || sale.status === "delivered") return { ars: 0, usd: 0 };
-  return { ars: Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), usd: Math.max(0, sale.totalUsd || 0) };
+  return { ars: Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), usd: Math.max(0, (sale.totalUsd || 0) - (sale.amountPaidUsd || 0)) };
 }
 
 function isSaleOverdue(sale: SaleRecord, todayStart: Date) {

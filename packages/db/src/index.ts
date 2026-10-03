@@ -214,7 +214,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -610,6 +610,7 @@ export type SaleRecord = {
   totalArs: number;
   totalUsd: number;
   amountPaidArs: number;
+  amountPaidUsd: number;
   paymentDueAt?: string;
   internalNote: string;
   messageSentAt?: string;
@@ -5083,7 +5084,7 @@ export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser):
 
 export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?: string): Promise<{ sales: SaleRecord[] }> {
   const result = await db.query<Record<string, unknown>>(`
-    select s.id, s.created_by, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.payment_due_at, s.internal_note, s.message_sent_at,
+    select s.id, s.created_by, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.amount_paid_usd, s.payment_due_at, s.internal_note, s.message_sent_at,
       s.assigned_reseller_user_id, s.assigned_reseller_at, assigned_reseller.display_name as assigned_reseller_name,
       s.created_at, s.completed_at, si.id as sale_item_id, si.inventory_item_id, si.quantity,
       si.unit_price_ars, si.unit_price_usd, si.line_total_ars, si.line_total_usd, si.price_currency, si.packed_at, ii.sku, p.name,
@@ -5122,6 +5123,7 @@ export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?
       totalArs: Number(row.total_ars || 0),
       totalUsd: Number(row.total_usd || 0),
       amountPaidArs: Number(row.amount_paid_ars || 0),
+      amountPaidUsd: Number(row.amount_paid_usd || 0),
       paymentDueAt: toIsoDate(row.payment_due_at),
       internalNote: String(row.internal_note || ""),
       messageSentAt: row.message_sent_at ? String(row.message_sent_at) : undefined,
@@ -5282,7 +5284,7 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
       `, [crypto.randomUUID(), actor.businessId, line.inventoryItemId, -line.quantity, saleId, `movement-complete-${saleId}-${line.inventoryItemId}`, `Reserva cobrada a ${sale.customerName}`, actor.id]);
     }
     await settleOrderResellerAssignment(db, saleId, actor, "sale");
-    await db.query("update sales set status = 'paid', amount_paid_ars = total_ars, completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
+    await db.query("update sales set status = 'paid', amount_paid_ars = total_ars, amount_paid_usd = total_usd, completed_at = now() where id = $1 and business_id = $2", [saleId, actor.businessId]);
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, stockExceptions.length ? "sale.complete_stock_reconciled" : "sale.complete", "sale", saleId, sale, {
       status: "paid",
@@ -5605,16 +5607,18 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
   return updated;
 }
 
-export async function updateSalePayment(db: PGlite, saleId: string, amountPaidArs: number | undefined, actor: AuthenticatedUser, paymentDueAt?: string): Promise<SaleRecord> {
+export async function updateSalePayment(db: PGlite, saleId: string, amountPaidArs: number | undefined, actor: AuthenticatedUser, paymentDueAt?: string, amountPaidUsd?: number): Promise<SaleRecord> {
   const amount = amountPaidArs === undefined ? null : Math.max(0, Number(amountPaidArs) || 0);
+  const amountUsd = amountPaidUsd === undefined ? null : Math.max(0, Number(amountPaidUsd) || 0);
   await db.query(`
     update sales
     set
       amount_paid_ars = coalesce($1::numeric, amount_paid_ars),
-      payment_due_at = case when $2::text is null then payment_due_at else nullif($2, '')::date end
-    where id = $3 and business_id = $4
-  `, [amount, paymentDueAt === undefined ? null : paymentDueAt, saleId, actor.businessId]);
-  await writeAudit(db, actor, "sale.payment.update", "sale", saleId, null, { amountPaidArs: amount, paymentDueAt });
+      amount_paid_usd = coalesce($2::numeric, amount_paid_usd),
+      payment_due_at = case when $3::text is null then payment_due_at else nullif($3, '')::date end
+    where id = $4 and business_id = $5
+  `, [amount, amountUsd, paymentDueAt === undefined ? null : paymentDueAt, saleId, actor.businessId]);
+  await writeAudit(db, actor, "sale.payment.update", "sale", saleId, null, { amountPaidArs: amount, amountPaidUsd: amountUsd, paymentDueAt });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
   const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
@@ -5672,7 +5676,7 @@ export async function markSaleDelivered(db: PGlite, saleId: string, actor: Authe
 
 export async function mergeDuplicateCustomerOrders(db: PGlite, actor: AuthenticatedUser): Promise<{ merged: number; groups: Array<{ customerName: string; mergedOrders: number }> }> {
   const rows = await db.query<Record<string, unknown>>(`
-    select id, customer_name, channel, total_ars, total_usd, amount_paid_ars, payment_due_at, message_sent_at, created_at
+    select id, customer_name, channel, total_ars, total_usd, amount_paid_ars, amount_paid_usd, payment_due_at, message_sent_at, created_at
     from sales
     where business_id = $1
       and sale_type = 'reservation'
@@ -5696,6 +5700,7 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
       const totalArs = group.reduce((sum, row) => sum + Number(row.total_ars || 0), 0);
       const totalUsd = group.reduce((sum, row) => sum + Number(row.total_usd || 0), 0);
       const amountPaidArs = group.reduce((sum, row) => sum + Number(row.amount_paid_ars || 0), 0);
+      const amountPaidUsd = group.reduce((sum, row) => sum + Number(row.amount_paid_usd || 0), 0);
       const paymentDueAt = group.map((row) => toIsoDate(row.payment_due_at) || "").filter(Boolean).sort()[0] || "";
       const messageSentAt = group.map((row) => row.message_sent_at ? String(row.message_sent_at) : "").filter(Boolean).sort()[0] || "";
 
@@ -5714,11 +5719,12 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
         set total_ars = $1,
             total_usd = $2,
             amount_paid_ars = $3,
-            payment_due_at = nullif($4, '')::date,
-            message_sent_at = nullif($5, '')::timestamptz,
-            status = $6
-        where id = $7 and business_id = $8
-      `, [totalArs, totalUsd, amountPaidArs, paymentDueAt, messageSentAt, nextStatus, keeper.id, actor.businessId]);
+            amount_paid_usd = $4,
+            payment_due_at = nullif($5, '')::date,
+            message_sent_at = nullif($6, '')::timestamptz,
+            status = $7
+        where id = $8 and business_id = $9
+      `, [totalArs, totalUsd, amountPaidArs, amountPaidUsd, paymentDueAt, messageSentAt, nextStatus, keeper.id, actor.businessId]);
       await writeAudit(db, actor, "sale.merge_duplicates", "sale", String(keeper.id), { saleIds: allIds }, { keptSaleId: String(keeper.id), mergedSaleIds: duplicateIds });
       mergedGroups.push({ customerName: String(keeper.customer_name || ""), mergedOrders: duplicateIds.length });
     }
@@ -9245,24 +9251,26 @@ async function ensureOrderBoardBasics(db: PGlite, businessId: string) {
 
 async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: string) {
   const {mainBoardId, completedBoardId} = await ensureOrderBoardBasics(db,businessId);
-  const sale = await db.query<{status:string;total:number;packed:number;overdue:boolean|string;amountPaidArs:number;totalArs:number;totalUsd:number}>(`
+  const sale = await db.query<{status:string;total:number;packed:number;overdue:boolean|string;amountPaidArs:number;amountPaidUsd:number;totalArs:number;totalUsd:number}>(`
     select s.status,
       count(si.id)::integer as total,
       count(si.packed_at)::integer as packed,
       (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
       coalesce(s.amount_paid_ars,0)::numeric as "amountPaidArs",
+      coalesce(s.amount_paid_usd,0)::numeric as "amountPaidUsd",
       coalesce(s.total_ars,0)::numeric as "totalArs",
       coalesce(s.total_usd,0)::numeric as "totalUsd"
     from sales s
     left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
     where s.id=$1 and s.business_id=$2 and s.sale_type='reservation'
-    group by s.id,s.status,s.payment_due_at,s.amount_paid_ars,s.total_ars,s.total_usd
+    group by s.id,s.status,s.payment_due_at,s.amount_paid_ars,s.amount_paid_usd,s.total_ars,s.total_usd
   `, [saleId,businessId]);
   const row = sale.rows[0];
   if (!row) return "";
   const allPacked = Number(row.total || 0) > 0 && Number(row.total || 0) === Number(row.packed || 0);
   const overdue = row.overdue === true || row.overdue === "true" || row.overdue === "t";
   const debtArs = Math.max(0, Number(row.totalArs || 0) - Number(row.amountPaidArs || 0));
+  const debtUsd = Math.max(0, Number(row.totalUsd || 0) - Number(row.amountPaidUsd || 0));
   let boardId = mainBoardId;
   let columnName = "Pendientes de embalar";
   if (row.status === "delivered") {
@@ -9275,7 +9283,7 @@ async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: strin
     columnName = "A entregar";
   } else if (row.status === "paid") {
     columnName = "Pagadas";
-  } else if (overdue && (debtArs > 0 || Number(row.totalUsd || 0) > 0)) {
+  } else if (overdue && (debtArs > 0 || debtUsd > 0)) {
     columnName = "Vencidas";
   } else if (allPacked || row.status === "packed") {
     columnName = "Embaladas";
@@ -9317,11 +9325,11 @@ async function syncOrderBoardRules(db: PGlite, businessId: string) {
         count(si.packed_at)::integer as packed,
         (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
         greatest(0, coalesce(s.total_ars,0) - coalesce(s.amount_paid_ars,0)) as debt_ars,
-        coalesce(s.total_usd,0) as debt_usd
+        greatest(0, coalesce(s.total_usd,0) - coalesce(s.amount_paid_usd,0)) as debt_usd
       from sales s
       left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
       where s.business_id=$1 and s.sale_type='reservation'
-      group by s.id,s.status,s.payment_due_at,s.total_ars,s.amount_paid_ars,s.total_usd
+      group by s.id,s.status,s.payment_due_at,s.total_ars,s.amount_paid_ars,s.amount_paid_usd,s.total_usd
     ),
     targets as (
       select sale_id,
