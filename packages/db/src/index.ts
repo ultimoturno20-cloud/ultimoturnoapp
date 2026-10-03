@@ -214,7 +214,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -554,11 +554,39 @@ export type CommerceLineInput = {
   unitPriceArs: number;
 };
 
+export const DEFAULT_PAYMENT_DUE_DAYS = 7;
+const ARGENTINA_TZ = "America/Argentina/Buenos_Aires";
+
+export function calendarDateInArgentina(at = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: ARGENTINA_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+}
+
+export function addCalendarDays(isoDate: string, days: number): string {
+  const parts = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days)).toISOString().slice(0, 10);
+}
+
+export function defaultPaymentDueDate(from = new Date(), days = DEFAULT_PAYMENT_DUE_DAYS): string {
+  return addCalendarDays(calendarDateInArgentina(from), days);
+}
+
+export function toIsoDate(value: unknown): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const match = String(value).match(/^([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+  return match ? match[1] : undefined;
+}
+
+function resolvePaymentDueAt(input?: string | null): string {
+  return String(input || "").trim() || defaultPaymentDueDate();
+}
+
 export type CreateSaleInput = {
   customerName: string;
   saleType: "sale" | "reservation";
   channel: string;
   lines: CommerceLineInput[];
+  paymentDueAt?: string;
 };
 
 export type UpdateReservationSaleLinesInput = {
@@ -5043,7 +5071,7 @@ export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?
       totalArs: Number(row.total_ars || 0),
       totalUsd: Number(row.total_usd || 0),
       amountPaidArs: Number(row.amount_paid_ars || 0),
-      paymentDueAt: row.payment_due_at ? String(row.payment_due_at) : undefined,
+      paymentDueAt: toIsoDate(row.payment_due_at),
       internalNote: String(row.internal_note || ""),
       messageSentAt: row.message_sent_at ? String(row.message_sent_at) : undefined,
       createdAt: String(row.created_at),
@@ -5101,6 +5129,7 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
   if (!lines.length) throw new Error("Agrega al menos una carta al carrito");
   const saleId = crypto.randomUUID();
   const status = input.saleType === "reservation" ? "pending" : "paid";
+  const paymentDueAt = input.saleType === "reservation" ? resolvePaymentDueAt(input.paymentDueAt) : "";
   let totalArs = 0;
   const stockById = new Map<string, DbStockRow>();
   const canManageAll = !actor.roles || actor.roles.includes("admin");
@@ -5115,9 +5144,9 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
 
   await inventoryTransaction(db, async (db) => {
     await db.query(`
-      insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, created_by, completed_at)
-      values ($1, $2, $3, $4, $5, $6, $7, 0, $8, case when $5 = 'paid' then now() else null end)
-    `, [saleId, actor.businessId, input.customerName.trim() || "Venta sin nombre", input.saleType, status, input.channel.trim() || "mostrador", totalArs, actor.id]);
+      insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, payment_due_at, created_by, completed_at)
+      values ($1, $2, $3, $4, $5, $6, $7, 0, nullif($8, '')::date, $9, case when $5 = 'paid' then now() else null end)
+    `, [saleId, actor.businessId, input.customerName.trim() || "Venta sin nombre", input.saleType, status, input.channel.trim() || "mostrador", totalArs, paymentDueAt, actor.id]);
 
     for (const line of lines) {
       const item = stockById.get(line.inventoryItemId)!;
@@ -5616,7 +5645,7 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
       const totalArs = group.reduce((sum, row) => sum + Number(row.total_ars || 0), 0);
       const totalUsd = group.reduce((sum, row) => sum + Number(row.total_usd || 0), 0);
       const amountPaidArs = group.reduce((sum, row) => sum + Number(row.amount_paid_ars || 0), 0);
-      const paymentDueAt = group.map((row) => row.payment_due_at ? String(row.payment_due_at).slice(0, 10) : "").filter(Boolean).sort()[0] || "";
+      const paymentDueAt = group.map((row) => toIsoDate(row.payment_due_at) || "").filter(Boolean).sort()[0] || "";
       const messageSentAt = group.map((row) => row.message_sent_at ? String(row.message_sent_at) : "").filter(Boolean).sort()[0] || "";
 
       await db.query("update sale_items set sale_id = $1 where business_id = $2 and sale_id = any($3::uuid[])", [keeper.id, actor.businessId, duplicateIds]);
@@ -6100,7 +6129,7 @@ export async function publishClaimPlan(db: PGlite, planId: string, actor: Authen
 
 export async function listClaimsWorkspace(db: PGlite, businessId = demoBusinessId): Promise<ClaimsWorkspace> {
   const active = await db.query<Record<string, unknown>>(`
-    select id, name, status, source_note, created_at, closed_at, closed_sale_ids
+    select id, name, status, source_note, payment_due_at, created_at, closed_at, closed_sale_ids
     from claim_sessions
     where business_id = $1 and status = 'open'
     order by created_at desc
@@ -6148,7 +6177,7 @@ export async function createClaimSession(db: PGlite, input: ClaimCreateInput, ac
   await db.query(`
       insert into claim_sessions (id, business_id, name, source_note, payment_due_at, created_by)
     values ($1, $2, $3, $4, nullif($5, '')::date, $6)
-  `, [claimId, actor.businessId, name, input.sourceNote?.trim() || "", input.paymentDueAt?.trim() || "", actor.id]);
+  `, [claimId, actor.businessId, name, input.sourceNote?.trim() || "", resolvePaymentDueAt(input.paymentDueAt), actor.id]);
   await writeAudit(db, actor, "claim.create", "claim", claimId, null, { name, sourceNote: input.sourceNote || "" });
   return listClaimsWorkspace(db, actor.businessId);
 }
@@ -6478,7 +6507,7 @@ export async function closeActiveClaim(db: PGlite, actor: AuthenticatedUser): Pr
       await connection.query(`
         insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, payment_due_at, created_by)
         values ($1, $2, $3, 'reservation', 'pending', 'claim', $4, $5, nullif($6, '')::date, $7)
-      `, [saleId, actor.businessId, buyerOrder.buyer, buyerOrder.totalArs, buyerOrder.totalUsd, claim.paymentDueAt || "", actor.id]);
+      `, [saleId, actor.businessId, buyerOrder.buyer, buyerOrder.totalArs, buyerOrder.totalUsd, resolvePaymentDueAt(claim.paymentDueAt), actor.id]);
       let lineIndex = 1;
       for (const line of buyerOrder.lines.filter((item): item is ClaimOrderPlanCardLine => item.kind === "card")) {
         const inventoryItemId = await reserveInventoryForClaimCard(connection, claim.id, line.card, saleId, buyerOrder.buyer, line.quantity, actor);
@@ -7867,7 +7896,7 @@ function toClaimSession(row: Record<string, unknown>): ClaimSession {
     name: String(row.name || ""),
     status: String(row.status || "open") as ClaimSession["status"],
     sourceNote: String(row.source_note || ""),
-    paymentDueAt: row.payment_due_at ? String(row.payment_due_at) : undefined,
+    paymentDueAt: toIsoDate(row.payment_due_at),
     createdAt: String(row.created_at),
     closedAt: row.closed_at ? String(row.closed_at) : undefined,
     closedSaleIds: parseStringArray(row.closed_sale_ids)
