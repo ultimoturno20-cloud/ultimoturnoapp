@@ -4504,6 +4504,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const [dragId,setDragId] = useState("");
   const [over,setOver] = useState("");
   const [destination,setDestination] = useState("");
+  const [mobileColumnId,setMobileColumnId] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const load = () => { setError(""); void api<OrderWorkspace>("/order-boards").then(setWorkspace).catch(e=>setError(String(e.message || e))); };
   useEffect(load,[]);
@@ -4514,6 +4515,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const mainBoard = workspace?.boards.find(b=>normalize(b.name)===normalize("Embalaje"));
   const selectedBoard = workspace?.boards.find(b=>b.id===boardId) || mainBoard || workspace?.boards[0];
   const columns = workspace?.columns.filter(c=>c.boardId===selectedBoard?.id) || [];
+  const activeMobileColumnId = columns.some(column => column.id === mobileColumnId) ? mobileColumnId : columns[0]?.id || "";
   const defaultColumn = workspace?.columns.find(c=>c.boardId===(mainBoard || workspace?.boards[0])?.id)?.id;
   const cardMap = new Map(workspace?.cards.map(c=>[c.saleId,c]));
   const columnOf = (id:string) => cardMap.get(id)?.columnId || defaultColumn;
@@ -4616,6 +4618,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
         const count=props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(board,s) && workspace.columns.some(c=>c.boardId===board.id && c.id===columnOf(s.id))).length;
         return <button key={board.id} className={selectedBoard?.id===board.id?"active":""} onClick={()=>setBoardId(board.id)} onDragEnter={e=>{e.preventDefault();}} onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";}} onDrop={e=>{if(first){drop(e,first.id);setBoardId(board.id);}}}>{board.name}<span>{count}</span></button>;
       })}<button onClick={()=>setEditor({action:"createBoard",name:""})}>+ Crear tablero</button></nav>
+      {columns.length ? <label className="trello-mobile-column"><span>Estado de las ordenes</span><select value={activeMobileColumnId} onChange={event=>setMobileColumnId(event.target.value)}>{columns.map(column=><option key={column.id} value={column.id}>{column.name} ({orders.filter(order=>columnOf(order.id)===column.id).length})</option>)}</select></label> : null}
       <div className="trello-work-summary"><span className={boardNoMessage ? "attention" : ""}><small>Contactar</small><strong>{boardNoMessage}</strong></span><span className={boardOverdue ? "danger" : ""}><small>Vencidas</small><strong>{boardOverdue}</strong></span><span><small>Cobrar</small><strong>{formatArs(boardDebtArs)}</strong></span><span><small>Embaladas</small><strong>{boardPacked}</strong></span><span className="ready"><small>Entregar</small><strong>{boardReady}</strong></span></div>
       <div className="trello-board-tools"><span>{selectedBoard?.name || "Ordenes"} · {columns.length} columna(s)</span>{selectedBoard && <><button className="secondary-action" onClick={()=>setEditor({action:"renameBoard",id:selectedBoard.id,name:selectedBoard.name})}>Renombrar tablero</button><button className="secondary-action" onClick={()=>setEditor({action:"createColumn",id:selectedBoard.id,name:""})}>+ Columna</button></>}</div>
       {editor && <form className="trello-name-form" onSubmit={async e=>{e.preventDefault();if(await change({action:editor.action,name:editor.name,...(editor.action==="renameColumn"?{columnId:editor.id!}:editor.id?{boardId:editor.id}:{})}))setEditor(null);}}><label>{editor.action==="createBoard"?"Nombre del nuevo tablero":editor.action==="createColumn"?"Nombre de la nueva columna":"Nuevo nombre"}<input autoFocus required maxLength={80} value={editor.name} onChange={e=>setEditor({...editor,name:e.target.value})}/></label><button className="primary-action" disabled={busy || !editor.name.trim()}>Guardar</button><button type="button" className="secondary-action" onClick={()=>setEditor(null)}>Cancelar</button></form>}
@@ -4625,7 +4628,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
     {!workspace && !error && <p>Cargando tableros...</p>}
     <div className="trello-board" aria-label={selectedBoard?.name}>{columns.map(column=>{
       const cards=orders.filter(s=>columnOf(s.id)===column.id).sort(compareOrderCards);
-      return <section key={column.id} className={`trello-column ${over===column.id?"drag-over":""}`} aria-label={column.name} onDragOver={e=>{if(!busy){e.preventDefault();setOver(column.id);}}} onDrop={e=>{if(!busy)drop(e,column.id);}}>
+      return <section key={column.id} className={`trello-column ${activeMobileColumnId===column.id?"mobile-active":""} ${over===column.id?"drag-over":""}`} aria-label={column.name} onDragOver={e=>{if(!busy){e.preventDefault();setOver(column.id);}}} onDrop={e=>{if(!busy)drop(e,column.id);}}>
         <header><h3>{column.name} <span>{cards.length}</span></h3><button aria-label={`Renombrar columna ${column.name}`} onClick={()=>setEditor({action:"renameColumn",id:column.id,name:column.name})}>···</button></header>
         <div className="trello-cards">{cards.map(order=>{
           const total=order.lines.reduce((n,l)=>n+l.quantity,0),packed=order.lines.reduce((n,l)=>n+(l.packed?l.quantity:0),0);

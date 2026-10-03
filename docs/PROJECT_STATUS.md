@@ -37,6 +37,10 @@ Actualizado: 2026-10-03
   Es material legado y no debe distribuirse como cliente de la plataforma
   Vercel/Supabase actual. La PWA es el cliente movil vigente de esta primera
   etapa.
+- En pantallas de hasta 700 px, Ordenes usa un flujo movil dedicado: navegacion
+  superior compacta, un selector para ver una sola columna/estado por vez,
+  tarjetas de ancho completo sin scroll horizontal y detalle de orden a pantalla
+  completa. El tablero de escritorio y su drag-and-drop no cambian.
 
 ### Acceso del portal de revendedores
 

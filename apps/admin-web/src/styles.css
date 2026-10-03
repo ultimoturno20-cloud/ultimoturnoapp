@@ -10680,6 +10680,412 @@ h2 {
   }
 }
 
+/* Orders use a single-column workflow on phones instead of a desktop board. */
+.trello-mobile-column {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .shell.orders-mode {
+    gap: 8px;
+    padding: 8px;
+    overflow-x: hidden;
+  }
+
+  .orders-mode .app-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    padding: 2px 0 6px;
+  }
+
+  .orders-mode .brand-lockup {
+    min-width: 0;
+  }
+
+  .orders-mode .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .orders-mode h1 {
+    font-size: 20px;
+  }
+
+  .orders-mode .subtitle,
+  .orders-mode .profile-badge,
+  .orders-mode .live-indicator {
+    display: none;
+  }
+
+  .orders-mode .header-actions {
+    width: auto;
+    margin-left: auto;
+  }
+
+  .orders-mode .header-refresh {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .orders-mode .header-refresh .ui-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .orders-mode .nav {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: calc(100vw - 16px);
+    padding: 0 0 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .orders-mode .nav::-webkit-scrollbar,
+  .orders-mode .trello-tabs::-webkit-scrollbar,
+  .orders-mode .trello-work-summary::-webkit-scrollbar {
+    display: none;
+  }
+
+  .orders-mode .nav > a,
+  .orders-mode .more-nav {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
+  .orders-mode .nav > a,
+  .orders-mode .more-nav summary {
+    min-height: 38px;
+    padding: 0 12px;
+  }
+
+  .orders-mode .more-nav[open] {
+    grid-column: auto;
+  }
+
+  .orders-mode .more-nav > div {
+    position: fixed;
+    right: 8px;
+    left: 8px;
+    z-index: 80;
+  }
+
+  .orders-mode .trello-orders {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .orders-mode .trello-toolbar {
+    position: static;
+    top: auto;
+    width: 100%;
+    min-width: 0;
+    margin: 0 0 8px;
+    padding: 10px;
+  }
+
+  .orders-mode .trello-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .orders-mode .trello-title-block,
+  .orders-mode .trello-search,
+  .orders-mode .trello-heading > .secondary-action {
+    grid-column: 1 / -1;
+  }
+
+  .orders-mode .trello-title-block {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+  }
+
+  .orders-mode .trello-title-block h2 {
+    font-size: 20px;
+  }
+
+  .orders-mode .trello-title-block span {
+    text-align: right;
+  }
+
+  .orders-mode .trello-search,
+  .orders-mode .trello-search input,
+  .orders-mode .trello-sort,
+  .orders-mode .trello-history,
+  .orders-mode .trello-heading > .secondary-action {
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  .orders-mode .trello-history {
+    justify-content: center;
+    border: 1px solid var(--border-soft);
+    border-radius: 7px;
+    background: #0d0d11;
+  }
+
+  .orders-mode .trello-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    width: 100%;
+    margin-top: 8px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .orders-mode .trello-tabs button {
+    flex: 0 0 auto;
+    min-height: 38px;
+  }
+
+  .orders-mode .trello-tabs button:last-child {
+    display: none;
+  }
+
+  .trello-mobile-column {
+    display: grid;
+    gap: 5px;
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .trello-mobile-column select {
+    width: 100%;
+    min-height: 46px;
+    border-color: rgba(245, 37, 70, .55);
+    background: #0d0d11;
+    font-size: 15px;
+  }
+
+  .orders-mode .trello-work-summary {
+    display: flex;
+    grid-template-columns: none;
+    gap: 6px;
+    width: 100%;
+    margin-top: 8px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .orders-mode .trello-work-summary span {
+    flex: 0 0 116px;
+    min-height: 40px;
+    padding: 6px 8px;
+  }
+
+  .orders-mode .trello-board-tools {
+    display: none;
+  }
+
+  .orders-mode .trello-save-status:empty {
+    display: none;
+  }
+
+  .orders-mode .trello-board {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 0 0 calc(18px + env(safe-area-inset-bottom));
+    overflow: visible;
+  }
+
+  .orders-mode .trello-column {
+    display: none;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    max-height: none;
+    padding: 8px;
+    border-radius: 8px;
+  }
+
+  .orders-mode .trello-column.mobile-active {
+    display: flex;
+  }
+
+  .orders-mode .trello-column > header {
+    margin-bottom: 7px;
+  }
+
+  .orders-mode .trello-column > header button {
+    display: none;
+  }
+
+  .orders-mode .trello-cards {
+    gap: 7px;
+    overflow: visible;
+  }
+
+  .orders-mode .trello-card {
+    gap: 7px;
+    min-height: 0;
+    padding: 11px;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+
+  .orders-mode .trello-card-top strong {
+    font-size: 16px;
+  }
+
+  .orders-mode .trello-card-preview {
+    -webkit-line-clamp: 1;
+  }
+
+  .orders-mode .trello-card-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .orders-mode .trello-card-meta span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .trello-order-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 0;
+    border-radius: 0;
+    background: #0b0b0e;
+  }
+
+  .trello-dialog-heading {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    min-height: 60px;
+    margin: 0 -10px;
+    padding: max(8px, env(safe-area-inset-top)) 10px 8px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(11, 11, 14, .98);
+  }
+
+  .trello-dialog-heading h2 {
+    min-width: 0;
+    font-size: 19px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .trello-dialog-heading button {
+    min-height: 40px;
+  }
+
+  .trello-move {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 7px;
+    padding: 10px 0;
+  }
+
+  .trello-move label {
+    min-width: 0;
+  }
+
+  .trello-move select,
+  .trello-move button {
+    min-height: 42px;
+  }
+
+  .trello-move > span {
+    grid-column: 1 / -1;
+  }
+
+  .trello-order-dialog .order-card.open,
+  .trello-order-dialog .order-detail,
+  .trello-order-dialog .order-work-panel,
+  .trello-order-dialog .order-items-panel,
+  .trello-order-dialog .order-actions-panel {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .trello-order-dialog .order-card.open .order-row-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "money" "message" "pack" "status" "actions";
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .trello-order-dialog .order-row-check-wrap,
+  .trello-order-dialog .order-pack-cell,
+  .trello-order-dialog .order-summary-meta,
+  .trello-order-dialog .order-row-actions {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .trello-order-dialog .order-row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+  }
+
+  .trello-order-dialog .order-row-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  .trello-order-dialog .order-detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "strip" "work" "items" "actions";
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .trello-order-dialog .order-lines {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trello-order-dialog .order-line {
+    min-width: 0;
+  }
+
+  .trello-order-dialog .order-detail-strip-actions,
+  .trello-order-dialog .order-panel-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .trello-order-dialog input,
+  .trello-order-dialog select,
+  .trello-order-dialog textarea,
+  .trello-order-dialog button {
+    max-width: 100%;
+  }
+}
+
 .access-card button {
   min-height: 46px;
 }
@@ -13612,4 +14018,59 @@ textarea {
   margin: 6px 0 0;
   font-size: 0.85rem;
   color: #b45309;
+}
+
+/* Final mobile order constraints: keep later legacy layers from restoring desktop sizes. */
+@media (max-width: 700px) {
+  .orders-mode .trello-board {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .orders-mode .trello-column {
+    display: none;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    max-height: none;
+    flex-basis: auto;
+  }
+
+  .orders-mode .trello-column.mobile-active {
+    display: flex;
+  }
+
+  .orders-mode .trello-cards {
+    overflow: visible;
+  }
+
+  .trello-order-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .trello-order-dialog .order-card.open .order-row-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "money" "message" "pack" "status" "actions";
+  }
+
+  .trello-order-dialog .order-detail,
+  .trello-order-dialog .order-lines,
+  .trello-order-dialog .order-work-grid,
+  .trello-order-dialog .order-payment-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
