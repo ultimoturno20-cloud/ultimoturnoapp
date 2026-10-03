@@ -13474,3 +13474,54 @@ textarea {
     min-width: 82px;
   }
 }
+
+.money-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.money-card {
+  display: grid;
+  gap: 6px;
+}
+
+.money-card > strong {
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.money-card > small,
+.money-card dd small {
+  color: var(--muted, #6b7280);
+}
+
+.money-card dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.money-card dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(127, 127, 127, 0.18);
+  padding-top: 6px;
+}
+
+.money-card dt,
+.money-card dd {
+  margin: 0;
+}
+
+.money-card dd {
+  text-align: right;
+  font-weight: 600;
+}
+
+.money-warning {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #b45309;
+}

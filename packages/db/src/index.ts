@@ -5002,7 +5002,7 @@ export async function resetInventoryStock(db: PGlite, actor: AuthenticatedUser):
   return { touchedSkus, unitsCleared, reservationsCleared };
 }
 
-export async function listSales(db: PGlite, businessId = demoBusinessId): Promise<{ sales: SaleRecord[] }> {
+export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?: string): Promise<{ sales: SaleRecord[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select s.id, s.created_by, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.payment_due_at, s.internal_note, s.message_sent_at,
       s.assigned_reseller_user_id, s.assigned_reseller_at, assigned_reseller.display_name as assigned_reseller_name,
@@ -5027,9 +5027,9 @@ export async function listSales(db: PGlite, businessId = demoBusinessId): Promis
     left join app_users assigned_reseller on assigned_reseller.id = s.assigned_reseller_user_id
     left join pricecharting_image_cache sale_pic on sale_pic.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
     left join card_index_entries sale_index on sale_index.pricecharting_id = substring(coalesce(si.sku_snapshot, '') from 8)
-    where s.business_id = $1
+    where s.business_id = $1 and ($2::uuid is null or s.id = $2::uuid)
     order by s.created_at desc, si.id
-  `, [businessId]);
+  `, [businessId, saleId || null]);
   const records = new Map<string, SaleRecord>();
   for (const row of result.rows) {
     const id = String(row.id);
@@ -5162,13 +5162,13 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
     await writeAudit(db, actor, input.saleType === "reservation" ? "sale.reserve" : "sale.create", "sale", saleId, null, { ...input, totalArs, status });
   });
   if (input.saleType === "reservation") await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  const created = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
+  const created = (await listSales(db, actor.businessId, saleId)).sales.find((sale) => sale.id === saleId);
   if (!created) throw new Error("No se pudo leer la operacion guardada");
   return created;
 }
 
 export async function completeReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
   const stockExceptions: Array<{ inventoryItemId: string; name: string; quantity: number; quantityOnHand: number; quantityReserved: number }> = [];
   await inventoryTransaction(db, async (db) => {
@@ -5210,7 +5210,7 @@ export async function completeReservationSale(db: PGlite, saleId: string, actor:
       stockExceptions
     });
   });
-  return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
+  return (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId)!;
 }
 
 async function settleOrderResellerAssignment(
@@ -5368,7 +5368,7 @@ export async function assignOrderToReseller(
     });
   });
 
-  const updated = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
+  const updated = (await listSales(db, actor.businessId, saleId)).sales.find((sale) => sale.id === saleId);
   if (!updated) throw new Error("No se pudo leer la orden asignada.");
   return updated;
 }
@@ -5520,7 +5520,7 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
     await writeAudit(connection, actor, "sale.lines.update", "sale", saleId, currentResult.rows, desiredLines);
   });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  const updated = (await listSales(db, actor.businessId)).sales.find((sale) => sale.id === saleId);
+  const updated = (await listSales(db, actor.businessId, saleId)).sales.find((sale) => sale.id === saleId);
   if (!updated) throw new Error("No se pudo leer la orden actualizada.");
   return updated;
 }
@@ -5536,7 +5536,7 @@ export async function updateSalePayment(db: PGlite, saleId: string, amountPaidAr
   `, [amount, paymentDueAt === undefined ? null : paymentDueAt, saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.payment.update", "sale", saleId, null, { amountPaidArs: amount, paymentDueAt });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
 }
@@ -5545,7 +5545,7 @@ export async function updateSaleInternalNote(db: PGlite, saleId: string, interna
   const note = String(internalNote || "").trim();
   await db.query("update sales set internal_note = $1 where id = $2 and business_id = $3", [note, saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.note.update", "sale", saleId, null, { internalNote: note });
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
 }
@@ -5553,7 +5553,7 @@ export async function updateSaleInternalNote(db: PGlite, saleId: string, interna
 export async function updateSaleMessageSent(db: PGlite, saleId: string, sent: boolean, actor: AuthenticatedUser): Promise<SaleRecord> {
   await db.query("update sales set message_sent_at = case when $1 then coalesce(message_sent_at, now()) else null end where id = $2 and business_id = $3", [sent, saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.message_sent.update", "sale", saleId, null, { messageSent: sent });
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
 }
@@ -5566,28 +5566,28 @@ export async function updateSaleItemPacked(db: PGlite, saleItemId: string, packe
   await syncSalePackedStatus(db, actor.businessId, saleId);
   await writeAudit(db, actor, "sale.item.pack", "sale_item", saleItemId, null, { packed });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  const sale = (await listSales(db, actor.businessId)).sales.find((item) => item.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((item) => item.id === saleId);
   if (!sale) throw new Error("La orden ya no existe.");
   return sale;
 }
 
 export async function markSalePacked(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed", "paid"].includes(sale.status)) throw new Error("La orden no esta pendiente.");
   await db.query("update sale_items set packed_at = coalesce(packed_at, now()) where sale_id = $1 and business_id = $2", [saleId, actor.businessId]);
   await db.query("update sales set status = case when status = 'paid' then status else 'packed' end where id = $1 and business_id = $2", [saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.pack", "sale", saleId, sale, { status: "packed" });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
+  return (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId)!;
 }
 
 export async function markSaleDelivered(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || sale.status !== "paid") throw new Error("La orden tiene que estar pagada antes de entregarla.");
   await db.query("update sales set status = 'delivered' where id = $1 and business_id = $2", [saleId, actor.businessId]);
   await writeAudit(db, actor, "sale.deliver", "sale", saleId, sale, { status: "delivered" });
   await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
-  return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
+  return (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId)!;
 }
 
 export async function mergeDuplicateCustomerOrders(db: PGlite, actor: AuthenticatedUser): Promise<{ merged: number; groups: Array<{ customerName: string; mergedOrders: number }> }> {
@@ -5647,7 +5647,7 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
 }
 
 export async function cancelReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
-  const sale = (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId);
+  const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
   await inventoryTransaction(db, async (db) => {
     for (const line of sale.lines) {
@@ -5664,7 +5664,7 @@ export async function cancelReservationSale(db: PGlite, saleId: string, actor: A
     await moveSaleToRuleColumn(db, actor.businessId, saleId, true);
     await writeAudit(db, actor, "sale.cancel", "sale", saleId, sale, { status: "cancelled" });
   });
-  return (await listSales(db, actor.businessId)).sales.find((row) => row.id === saleId)!;
+  return (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId)!;
 }
 
 export async function listPurchases(db: PGlite, businessId = demoBusinessId): Promise<{ purchases: PurchaseRecord[] }> {
@@ -9165,17 +9165,18 @@ async function ensureOrderBoardBasics(db: PGlite, businessId: string) {
 
 async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: string) {
   const {mainBoardId, completedBoardId} = await ensureOrderBoardBasics(db,businessId);
-  const sale = await db.query<{status:string;total:number;packed:number;overdue:boolean|string;amountPaidArs:number;totalArs:number}>(`
+  const sale = await db.query<{status:string;total:number;packed:number;overdue:boolean|string;amountPaidArs:number;totalArs:number;totalUsd:number}>(`
     select s.status,
       count(si.id)::integer as total,
       count(si.packed_at)::integer as packed,
       (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
       coalesce(s.amount_paid_ars,0)::numeric as "amountPaidArs",
-      coalesce(s.total_ars,0)::numeric as "totalArs"
+      coalesce(s.total_ars,0)::numeric as "totalArs",
+      coalesce(s.total_usd,0)::numeric as "totalUsd"
     from sales s
     left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
     where s.id=$1 and s.business_id=$2 and s.sale_type='reservation'
-    group by s.id,s.status,s.payment_due_at,s.amount_paid_ars,s.total_ars
+    group by s.id,s.status,s.payment_due_at,s.amount_paid_ars,s.total_ars,s.total_usd
   `, [saleId,businessId]);
   const row = sale.rows[0];
   if (!row) return "";
@@ -9194,7 +9195,7 @@ async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: strin
     columnName = "A entregar";
   } else if (row.status === "paid") {
     columnName = "Pagadas";
-  } else if (overdue && debtArs > 0) {
+  } else if (overdue && (debtArs > 0 || Number(row.totalUsd || 0) > 0)) {
     columnName = "Vencidas";
   } else if (allPacked || row.status === "packed") {
     columnName = "Embaladas";
@@ -9235,11 +9236,12 @@ async function syncOrderBoardRules(db: PGlite, businessId: string) {
         count(si.id)::integer as total,
         count(si.packed_at)::integer as packed,
         (s.payment_due_at is not null and s.payment_due_at < current_date) as overdue,
-        greatest(0, coalesce(s.total_ars,0) - coalesce(s.amount_paid_ars,0)) as debt_ars
+        greatest(0, coalesce(s.total_ars,0) - coalesce(s.amount_paid_ars,0)) as debt_ars,
+        coalesce(s.total_usd,0) as debt_usd
       from sales s
       left join sale_items si on si.sale_id=s.id and si.business_id=s.business_id
       where s.business_id=$1 and s.sale_type='reservation'
-      group by s.id,s.status,s.payment_due_at,s.total_ars,s.amount_paid_ars
+      group by s.id,s.status,s.payment_due_at,s.total_ars,s.amount_paid_ars,s.total_usd
     ),
     targets as (
       select sale_id,
@@ -9248,7 +9250,7 @@ async function syncOrderBoardRules(db: PGlite, businessId: string) {
           when status='cancelled' then $3::uuid
           when status='paid' and total > 0 and total = packed then $4::uuid
           when status='paid' then $5::uuid
-          when overdue and debt_ars > 0 then $6::uuid
+          when overdue and (debt_ars > 0 or debt_usd > 0) then $6::uuid
           when (total > 0 and total = packed) or status='packed' then $7::uuid
           else $8::uuid
         end as column_id

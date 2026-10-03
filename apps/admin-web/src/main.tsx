@@ -1054,6 +1054,7 @@ function App() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [orderResellers, setOrderResellers] = useState<Array<{ userId: string; displayName: string }>>([]);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [financeResellers, setFinanceResellers] = useState<ResellerDashboard[]>([]);
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
   const [mobileEntries, setMobileEntries] = useState<MobileInventoryEntry[]>([]);
   const [claims, setClaims] = useState<ClaimsWorkspace>(() => emptyClaimsWorkspace());
@@ -1207,8 +1208,8 @@ function App() {
         setSales(salesData.sales); setClaims(claimsData); setStock(stockData);
         setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
       } else if (targetView === "sales") {
-        const [salesData, purchasesData, stockData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
-        setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData);
+        const [salesData, purchasesData, stockData, resellerData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<{ resellers: ResellerDashboard[] }>("/resellers").catch(() => ({ resellers: [] as ResellerDashboard[] }))]);
+        setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData); setFinanceResellers(resellerData.resellers);
       } else if (targetView === "purchases") {
         const [purchasesData, stockData] = await Promise.all([api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         setPurchases(purchasesData.purchases); setStock(stockData);
@@ -2886,7 +2887,7 @@ function App() {
       {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
       {view === "orders" ? <OrdersView sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
-      {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} blueRate={blueRate} /> : null}
+      {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} /> : null}
       {view === "purchases" ? (
         <PurchasesView
           items={stock.items}
@@ -3091,8 +3092,10 @@ function Dashboard({
   const pendingOrders = activeReservations.filter((sale) => sale.status === "pending").length;
   const ordersWithoutMessage = activeReservations.filter((sale) => !sale.messageSentAt).length;
   const readyToDeliver = activeReservations.filter((sale) => sale.status === "paid").length;
-  const overdueOrders = activeReservations.filter((sale) => sale.paymentDueAt && new Date(sale.paymentDueAt) < todayStart && (sale.amountPaidArs || 0) < sale.totalArs);
-  const pendingDebt = activeReservations.reduce((sum, sale) => sum + Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), 0);
+  const overdueOrders = activeReservations.filter((sale) => isSaleOverdue(sale, todayStart));
+  const pendingDebt = activeReservations.reduce((sum, sale) => sum + saleOwed(sale).ars + toBlueArs(saleOwed(sale).usd, blueRate), 0);
+  const stockCards = moneySnapshot(items, [], [], blueRate).cards;
+  const availableValueArs = stockCards.freeArs + stockCards.resellersArs;
   const stockItemValueArs = (item: StockRow) => (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(1, item.availableQuantity);
   const featuredSets = {
     value: items.filter((item) => item.availableQuantity > 0).sort((left, right) => stockItemValueArs(right) - stockItemValueArs(left)).slice(0, 4),
@@ -3115,7 +3118,7 @@ function Dashboard({
         <Metric label="Unidades" value={summary.totalUnits} helper="stock total" />
         <Metric label="Reservadas" value={summary.reservedUnits} helper="no disponibles" />
         <Metric label="Disponibles" value={summary.availableUnits} helper="listas para vender" />
-        <Metric label="Valor stock" value={formatArs(summary.stockValueArs)} helper={`${formatUsd(fromBlueArs(summary.stockValueArs, blueRate))} blue`} />
+        <Metric label="Valor stock" value={formatArs(availableValueArs)} helper={`${formatUsd(fromBlueArs(availableValueArs, blueRate))} blue`} />
         <Metric label="Ventas semana" value={formatArs(weekSales)} helper={`${formatUsd(fromBlueArs(weekSales, blueRate))} blue`} />
         <Metric label="Ventas mes" value={formatArs(monthSales)} helper={`${formatUsd(fromBlueArs(monthSales, blueRate))} blue`} />
         <Metric label="Pendientes" value={pendingOrders + pendingReview} helper={`${pendingOrders} ordenes / ${pendingReview} importaciones`} />
@@ -5047,14 +5050,15 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   );
 }
 
-function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; blueRate: BlueExchangeRate }) {
+function SalesView({ sales, purchases, items, resellers, blueRate }: { sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; resellers: ResellerDashboard[]; blueRate: BlueExchangeRate }) {
   const paid = sales.filter((sale) => sale.status === "paid" || sale.status === "delivered");
-  const receivables = sales.filter((sale) => sale.status !== "cancelled" && Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)) > 0);
+  const snapshot = moneySnapshot(items, sales, resellers, blueRate);
+  const receivables = sales.filter((sale) => { const owed = saleOwed(sale); return owed.ars > 0 || owed.usd > 0; });
   const totalCollected = paid.reduce((sum, sale) => sum + (sale.amountPaidArs || sale.totalArs), 0);
-  const totalReceivable = receivables.reduce((sum, sale) => sum + Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), 0);
+  const totalReceivable = snapshot.owed.customersArs;
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const overdueReceivables = receivables.filter((sale) => sale.paymentDueAt && new Date(sale.paymentDueAt) < todayStart);
+  const overdueReceivables = receivables.filter((sale) => isSaleOverdue(sale, todayStart));
   const purchaseTotal = purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.totalArs, 0);
   const estimatedCash = totalCollected - purchaseTotal;
   const stockSaleValue = items.reduce((sum, item) => sum + (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(0, item.availableQuantity), 0);
@@ -5072,6 +5076,7 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
     .slice(0, 12);
   return (
     <section className="view sales-dashboard">
+      <MoneyOverview snapshot={snapshot} blueRate={blueRate} />
       <section className="panel cash-hero">
         <div>
           <p className="eyebrow">Caja</p>
@@ -5083,7 +5088,7 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
       <div className="cash-metrics">
         <Metric label="Balance operativo" value={formatArs(estimatedCash)} helper="cobros menos compras" />
         <Metric label="Cobrado total" value={formatArs(totalCollected)} helper={`${paid.length} venta(s) cobradas`} />
-        <Metric label="A cobrar" value={formatArs(totalReceivable)} helper={`${receivables.length} orden(es), ${overdueReceivables.length} vencida(s)`} />
+        <Metric label="A cobrar" value={formatArs(totalReceivable)} helper={`${snapshot.owed.customersUsd ? `+ ${formatUsd(snapshot.owed.customersUsd)} - ` : ""}${receivables.length} orden(es), ${overdueReceivables.length} vencida(s)`} />
         <Metric label="Compras registradas" value={formatArs(purchaseTotal)} helper="salida/compromiso cargado" />
         <Metric label="Stock disponible" value={formatArs(stockSaleValue)} helper={`${stockUnits.toLocaleString("es-AR")} unidad(es) fisicas`} />
         <Metric label="Reservado" value={formatArs(reservedSaleValue)} helper="valor de cartas separadas" />
@@ -5093,8 +5098,8 @@ function SalesView({ sales, purchases, items, blueRate }: { sales: SaleRecord[];
         <section className="panel cash-section">
           <div className="section-heading"><div><h2>Deudas a cobrar</h2><p>Ordenes abiertas con saldo pendiente.</p></div></div>
           {receivables.length ? <div className="cash-row-list">{receivables.slice(0, 10).map((sale) => {
-            const remaining = Math.max(0, sale.totalArs - (sale.amountPaidArs || 0));
-            return <article className="cash-row debt-row" key={sale.id}><div><strong>{sale.customerName}</strong><span>{sale.lines.reduce((sum, line) => sum + line.quantity, 0)} carta(s) - {channelLabel(sale.channel)}</span><small>{sale.paymentDueAt ? `Vence ${formatShortDate(sale.paymentDueAt)}` : "Sin fecha limite"}</small></div><MoneyStack ars={remaining} blueRate={blueRate} compact /></article>;
+            const remaining = saleOwed(sale);
+            return <article className="cash-row debt-row" key={sale.id}><div><strong>{sale.customerName}</strong><span>{sale.lines.reduce((sum, line) => sum + line.quantity, 0)} carta(s) - {channelLabel(sale.channel)}</span><small>{sale.paymentDueAt ? `Vence ${formatShortDate(sale.paymentDueAt)}` : "Sin fecha limite"}</small></div><MoneyStack ars={remaining.ars || null} usd={remaining.usd || null} blueRate={blueRate} compact /></article>;
           })}</div> : <EmptyState title="Sin deuda a cobrar" body="No hay ordenes pendientes con saldo." />}
         </section>
         <section className="panel cash-section">
@@ -9487,6 +9492,109 @@ function toBlueArs(valueUsd: number | null | undefined, blueRate: BlueExchangeRa
 function fromBlueArs(valueArs: number | null | undefined, blueRate: BlueExchangeRate) {
   if (!valueArs || valueArs <= 0 || blueRate.sell <= 0) return 0;
   return valueArs / blueRate.sell;
+}
+
+// What a customer still owes on an order. Paid/delivered orders count as settled even when amount_paid_ars was never set
+// (counter sales are created as paid with amount_paid_ars = 0). Dollar orders have no partial-payment tracking.
+function saleOwed(sale: SaleRecord) {
+  if (sale.status === "cancelled" || sale.status === "paid" || sale.status === "delivered") return { ars: 0, usd: 0 };
+  return { ars: Math.max(0, sale.totalArs - (sale.amountPaidArs || 0)), usd: Math.max(0, sale.totalUsd || 0) };
+}
+
+function isSaleOverdue(sale: SaleRecord, todayStart: Date) {
+  const owed = saleOwed(sale);
+  return Boolean(sale.paymentDueAt) && new Date(sale.paymentDueAt!) < todayStart && (owed.ars > 0 || owed.usd > 0);
+}
+
+type MoneySnapshot = {
+  cards: { totalArs: number; freeArs: number; reservedArs: number; resellersArs: number; units: number; unitsWithoutPrice: number; costArs: number; unitsWithCost: number; marketUsd: number; unitsWithMarket: number; owners: Array<{ name: string; totalArs: number; units: number }> };
+  owed: { totalArs: number; customersArs: number; customersUsd: number; customerOrders: number; overdueOrders: number; ordersWithoutDueDate: number; resellersArs: number; resellers: number };
+};
+
+function moneySnapshot(items: StockRow[], sales: SaleRecord[], resellers: ResellerDashboard[], blueRate: BlueExchangeRate): MoneySnapshot {
+  const cards: MoneySnapshot["cards"] = { totalArs: 0, freeArs: 0, reservedArs: 0, resellersArs: 0, units: 0, unitsWithoutPrice: 0, costArs: 0, unitsWithCost: 0, marketUsd: 0, unitsWithMarket: 0, owners: [] };
+  const owners = new Map<string, { name: string; totalArs: number; units: number }>();
+  for (const item of items) {
+    const units = Math.max(0, item.quantityOnHand);
+    if (!units) continue;
+    const unitArs = item.priceArs || toBlueArs(item.priceUsd, blueRate);
+    cards.units += units;
+    cards.totalArs += unitArs * units;
+    cards.freeArs += unitArs * Math.max(0, item.freeQuantity);
+    cards.reservedArs += unitArs * Math.max(0, item.quantityReserved);
+    cards.resellersArs += unitArs * Math.max(0, item.quantityAssigned);
+    if (!unitArs) cards.unitsWithoutPrice += units;
+    if (item.lastPurchaseArs) {
+      cards.costArs += item.lastPurchaseArs * units;
+      cards.unitsWithCost += units;
+    }
+    const marketUsd = item.priceReferences?.tcgplayer.marketPriceUsd ?? item.priceReferences?.tcgplayer.usd ?? item.priceReferences?.priceCharting.usd ?? null;
+    if (marketUsd) {
+      cards.marketUsd += marketUsd * units;
+      cards.unitsWithMarket += units;
+    }
+    const owner = owners.get(item.ownerName) || { name: item.ownerName, totalArs: 0, units: 0 };
+    owner.totalArs += unitArs * units;
+    owner.units += units;
+    owners.set(item.ownerName, owner);
+  }
+  cards.owners = [...owners.values()].sort((left, right) => right.totalArs - left.totalArs);
+  const owed: MoneySnapshot["owed"] = { totalArs: 0, customersArs: 0, customersUsd: 0, customerOrders: 0, overdueOrders: 0, ordersWithoutDueDate: 0, resellersArs: 0, resellers: 0 };
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  for (const sale of sales) {
+    const debt = saleOwed(sale);
+    if (!debt.ars && !debt.usd) continue;
+    owed.customerOrders += 1;
+    owed.customersArs += debt.ars;
+    owed.customersUsd += debt.usd;
+    if (isSaleOverdue(sale, todayStart)) owed.overdueOrders += 1;
+    if (!sale.paymentDueAt) owed.ordersWithoutDueDate += 1;
+  }
+  for (const reseller of resellers) {
+    if (reseller.summary.outstandingArs <= 0) continue;
+    owed.resellersArs += reseller.summary.outstandingArs;
+    owed.resellers += 1;
+  }
+  owed.totalArs = owed.customersArs + toBlueArs(owed.customersUsd, blueRate) + owed.resellersArs;
+  return { cards, owed };
+}
+
+function percentOf(part: number, total: number) {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
+
+function MoneyOverview({ snapshot, blueRate }: { snapshot: MoneySnapshot; blueRate: BlueExchangeRate }) {
+  const { cards, owed } = snapshot;
+  return (
+    <section className="money-overview">
+      <article className="panel money-card">
+        <span className="eyebrow">Plata en cartas</span>
+        <strong>{formatArs(cards.totalArs)}</strong>
+        <small>{formatUsd(fromBlueArs(cards.totalArs, blueRate))} al blue - {cards.units.toLocaleString("es-AR")} cartas a precio de venta</small>
+        <dl>
+          <div><dt>Libres para vender</dt><dd>{formatArs(cards.freeArs)}</dd></div>
+          <div><dt>Separadas en ordenes</dt><dd>{formatArs(cards.reservedArs)}</dd></div>
+          <div><dt>En manos de revendedores</dt><dd>{formatArs(cards.resellersArs)}</dd></div>
+          <div><dt>Referencia de mercado</dt><dd>{formatUsd(cards.marketUsd)} <small>TCGplayer/PriceCharting, {percentOf(cards.unitsWithMarket, cards.units)}% de las cartas</small></dd></div>
+          <div><dt>Costo cargado</dt><dd>{cards.unitsWithCost ? <>{formatArs(cards.costArs)} <small>{percentOf(cards.unitsWithCost, cards.units)}% de las cartas</small></> : <small>Sin costos cargados: registra compras para ver ganancia</small>}</dd></div>
+        </dl>
+        {cards.unitsWithoutPrice ? <p className="money-warning">{cards.unitsWithoutPrice} carta(s) sin precio no suman.</p> : null}
+        {cards.owners.length > 1 ? <dl className="money-owners">{cards.owners.map((owner) => <div key={owner.name}><dt>{owner.name}</dt><dd>{formatArs(owner.totalArs)} <small>{owner.units.toLocaleString("es-AR")} cartas</small></dd></div>)}</dl> : null}
+      </article>
+      <article className="panel money-card owed">
+        <span className="eyebrow">Te deben</span>
+        <strong>{formatArs(owed.totalArs)}</strong>
+        <small>pesos + dolares al blue</small>
+        <dl>
+          <div><dt>Clientes</dt><dd>{formatArs(owed.customersArs)}{owed.customersUsd ? <> + {formatUsd(owed.customersUsd)}</> : null} <small>{owed.customerOrders} orden(es) abiertas</small></dd></div>
+          <div><dt>Revendedores por rendir</dt><dd>{formatArs(owed.resellersArs)} <small>{owed.resellers} revendedor(es)</small></dd></div>
+          <div><dt>Vencidas</dt><dd>{owed.overdueOrders} orden(es)</dd></div>
+        </dl>
+        {owed.ordersWithoutDueDate ? <p className="money-warning">{owed.ordersWithoutDueDate} orden(es) abiertas sin fecha de pago: nunca figuran como vencidas.</p> : null}
+      </article>
+    </section>
+  );
 }
 
 // Same rule as finishFromName() in packages/db: the finish tag in the card name wins.
