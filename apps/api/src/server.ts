@@ -4495,8 +4495,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname.match(/^\/sales\/[^/]+\/payment$/) && request.method === "PUT") {
       const saleId = url.pathname.split("/")[2];
-      const body = await readJson<{ amountPaidArs?: number; paymentDueAt?: string }>(request);
-      sendJson(response, 200, { sale: await updateSalePayment(db, saleId, body.amountPaidArs, user, body.paymentDueAt) });
+      const body = await readJson<{ amountPaidArs?: number; amountPaidUsd?: number; paymentDueAt?: string }>(request);
+      sendJson(response, 200, { sale: await updateSalePayment(db, saleId, body.amountPaidArs, user, body.paymentDueAt, body.amountPaidUsd) });
       return;
     }
 
