@@ -16,7 +16,8 @@ import {
   listStockForBusiness,
   markSaleDelivered,
   markSalePacked,
-  updateSaleItemPacked
+  updateSaleItemPacked,
+  updateSalePayment
 } from "./index.js";
 
 test("order boards apply operational rules and preserve custom manual columns", async () => {
@@ -114,6 +115,26 @@ test("order boards apply operational rules and preserve custom manual columns", 
     const reopened = await getOrderBoards(db, user.businessId);
     assert.equal(reopened.columns.find((column) => column.id === customColumn.id)?.name, "En correo");
     assert.equal(reopened.cards.find((card) => card.saleId === sale.id)?.columnId, columnId("Completas", "Entregadas", reopened));
+  } finally {
+    await db.close();
+  }
+});
+
+test("unpaid USD orders past their due date go to Vencidas", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "ut-boards-usd-"));
+  const db = await createOperationalDatabase({ dataDir });
+  try {
+    const user = await getDefaultOperationalUser(db);
+    const item = await addInventoryStock(db, { name: "USD Test", expansion: "Test", language: "EN", condition: "NM", finish: "normal", quantityOnHand: 2, priceArs: 100 }, user);
+    const sale = await createSale(db, { customerName: "Cliente USD", saleType: "reservation", channel: "claim", lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 100 }] }, user);
+    // Claim orders priced in dollars carry no peso balance.
+    await db.query("update sales set total_ars = 0, total_usd = 25, payment_due_at = current_date - 1 where id = $1", [sale.id]);
+    const updated = await updateSalePayment(db, sale.id, undefined, user);
+    assert.equal(updated.id, sale.id);
+    assert.equal((await listSales(db, user.businessId, sale.id)).sales.length, 1);
+    const workspace = await getOrderBoards(db, user.businessId);
+    const column = workspace.columns.find((item) => item.id === workspace.cards.find((card) => card.saleId === sale.id)?.columnId);
+    assert.equal(column?.name, "Vencidas");
   } finally {
     await db.close();
   }
