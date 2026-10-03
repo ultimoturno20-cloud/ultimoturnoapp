@@ -17,6 +17,7 @@ import {
   archiveActiveClaim,
   applyInventorySnapshot,
   addInventoryStock,
+  setInventoryPurchaseCosts,
   inventoryTransaction,
   cancelReservationSale,
   claimPriceChartingImageQueue,
@@ -4351,6 +4352,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/inventory/intake" && request.method === "POST") {
       const body = await readJson<UpsertInventoryInput>(request);
       sendJson(response, 200, { item: await addInventoryStock(db, { ...body, ownerUserId: user.roles?.includes("admin") ? body.ownerUserId : user.id }, user) });
+      return;
+    }
+
+    if (url.pathname === "/inventory/costs" && request.method === "POST") {
+      const body = await readJson<Parameters<typeof setInventoryPurchaseCosts>[1]>(request);
+      sendJson(response, 200, await setInventoryPurchaseCosts(db, body, user));
       return;
     }
 

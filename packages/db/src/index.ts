@@ -4875,6 +4875,57 @@ export async function upsertInventoryItem(
   return created;
 }
 
+export async function setInventoryPurchaseCosts(db: PGlite, input: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ inventoryItemId?: string; sku?: string; purchaseCost: number; purchaseCurrency?: string }> }, actor: AuthenticatedUser): Promise<{ updated: number; skipped: number }> {
+  const canManageAll = !actor.roles || actor.roles.includes("admin");
+  if (!canManageAll) throw new Error("Solo un admin puede cargar costos masivos.");
+  const rows = (input.rows || []).map((row) => ({
+    inventoryItemId: String(row.inventoryItemId || "").trim(),
+    sku: String(row.sku || "").trim(),
+    purchaseCost: Number(row.purchaseCost),
+    purchaseCurrency: String(row.purchaseCurrency || "ARS").trim().toUpperCase() === "USD" ? "USD" : "ARS"
+  }));
+  if (rows.length) {
+    let updated = 0;
+    let skipped = 0;
+    await inventoryTransaction(db, async (connection) => {
+      for (const row of rows) {
+        if (!Number.isFinite(row.purchaseCost) || row.purchaseCost < 0) throw new Error("El costo de compra no es valido");
+        if (!row.inventoryItemId && !row.sku) { skipped += 1; continue; }
+        const result = await connection.query<{ id: string }>(`
+          update inventory_items
+          set purchase_cost = $1, purchase_currency = $2, updated_at = now()
+          where business_id = $3
+            and ($4 = '' or id::text = $4)
+            and ($5 = '' or lower(sku) = lower($5))
+          returning id
+        `, [row.purchaseCost, row.purchaseCurrency, actor.businessId, row.inventoryItemId, row.sku]);
+        if (result.rows[0]) updated += 1;
+        else skipped += 1;
+      }
+      await writeAudit(connection, actor, "inventory.costs.import", "inventory_item", actor.businessId, null, { updated, skipped, rows: rows.length });
+    });
+    return { updated, skipped };
+  }
+  const percent = Number(input.percentOfSale);
+  if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("El porcentaje tiene que estar entre 1 y 100");
+  const onlyMissing = input.onlyMissing !== false;
+  const result = await db.query<{ id: string }>(`
+    update inventory_items ii
+    set purchase_cost = round(cp.price_ars * $1 / 100.0, 2),
+        purchase_currency = 'ARS',
+        updated_at = now()
+    from current_prices cp
+    where cp.inventory_item_id = ii.id
+      and ii.business_id = $2
+      and ii.quantity_on_hand > 0
+      and coalesce(cp.price_ars, 0) > 0
+      and ($3::boolean = false or ii.purchase_cost is null)
+    returning ii.id
+  `, [percent, actor.businessId, onlyMissing]);
+  await writeAudit(db, actor, "inventory.costs.percent", "inventory_item", actor.businessId, null, { percent, onlyMissing, updated: result.rows.length });
+  return { updated: result.rows.length, skipped: 0 };
+}
+
 export async function updateInventoryItemTags(
   db: PGlite,
   inventoryItemId: string,
