@@ -47,6 +47,10 @@ Actualizado: 2026-10-03
   catalogos de una columna y una barra fija que abre el carrito a pantalla
   completa; pedidos, ventas, stock propio y stock global conservan todos sus
   controles en formato tactil.
+- Inicio, Inventario, Caja y Claims comparten una capa movil operativa: la
+  navegacion permanece en una sola fila desplazable, las metricas se consultan
+  como tiras horizontales, los formularios priorizan controles tactiles y las
+  cartas/filas se compactan sin ocultar acciones ni informacion comercial.
 
 ### Acceso del portal de revendedores
 

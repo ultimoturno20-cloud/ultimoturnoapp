@@ -14822,3 +14822,643 @@ textarea {
     min-height: 44px;
   }
 }
+
+/* Phone-first layout for the remaining operational workspaces. */
+@media (max-width: 700px) {
+  .shell:not(.stock-intake-mode) {
+    gap: 7px;
+    padding: 7px 7px calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .shell:not(.stock-intake-mode) .app-header {
+    min-height: 46px;
+    padding: 2px 2px 6px;
+  }
+
+  .shell:not(.stock-intake-mode) .brand-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .shell:not(.stock-intake-mode) .brand-lockup h1 {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .shell:not(.stock-intake-mode) .brand-lockup p {
+    display: none;
+  }
+
+  .shell:not(.stock-intake-mode) .header-actions {
+    gap: 5px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .shell:not(.stock-intake-mode) .header-actions::-webkit-scrollbar,
+  .shell:not(.stock-intake-mode) .nav::-webkit-scrollbar,
+  .dashboard-view > .metrics::-webkit-scrollbar,
+  .cash-metrics::-webkit-scrollbar,
+  .money-overview::-webkit-scrollbar,
+  .claims-metrics::-webkit-scrollbar {
+    display: none;
+  }
+
+  .shell:not(.stock-intake-mode) .header-actions > * {
+    flex: 0 0 auto;
+  }
+
+  .shell:not(.stock-intake-mode) .nav {
+    position: sticky;
+    top: 0;
+    z-index: 42;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 5px;
+    margin-inline: -7px;
+    padding: 6px 7px;
+    overflow-x: auto;
+    border-block: 1px solid var(--border-soft);
+    background: rgba(8, 8, 11, .97);
+    scrollbar-width: none;
+  }
+
+  .shell:not(.stock-intake-mode) .nav > a,
+  .shell:not(.stock-intake-mode) .more-nav {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 104px;
+  }
+
+  .shell:not(.stock-intake-mode) .nav > a,
+  .shell:not(.stock-intake-mode) .more-nav > summary {
+    min-height: 40px;
+    padding: 7px 12px;
+    white-space: nowrap;
+  }
+
+  .shell:not(.stock-intake-mode) .more-nav[open] {
+    position: fixed;
+    inset: auto 7px 7px;
+    z-index: 90;
+    display: grid;
+    width: auto;
+    max-height: min(70dvh, 520px);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    background: #15151a;
+    box-shadow: 0 18px 50px #000b;
+  }
+
+  .shell:not(.stock-intake-mode) .more-nav[open] summary {
+    width: 100%;
+  }
+
+  .shell:not(.stock-intake-mode) .more-nav > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 0;
+    padding: 0;
+  }
+
+  .shell:not(.stock-intake-mode) .operations-dock {
+    display: flex;
+    gap: 6px;
+    margin-inline: -7px;
+    padding-inline: 7px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .shell:not(.stock-intake-mode) .operation-action {
+    flex: 0 0 170px;
+    min-height: 58px;
+  }
+
+  .view,
+  .panel {
+    min-width: 0;
+  }
+
+  .panel {
+    padding: 11px;
+  }
+
+  .section-heading {
+    gap: 8px;
+  }
+
+  .section-heading h2,
+  .section-heading h3 {
+    font-size: 16px;
+  }
+
+  .section-heading p {
+    font-size: 12px;
+  }
+
+  /* Inicio */
+  .dashboard-view {
+    gap: 8px;
+  }
+
+  .dashboard-view > .metrics,
+  .cash-metrics,
+  .claims-metrics,
+  .money-overview {
+    display: flex;
+    gap: 7px;
+    margin-inline: -7px;
+    padding: 0 7px 3px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .dashboard-view > .metrics > .metric,
+  .cash-metrics > .metric,
+  .claims-metrics > .metric {
+    flex: 0 0 148px;
+    min-width: 148px;
+    min-height: 92px;
+    padding: 11px;
+    scroll-snap-align: start;
+  }
+
+  .dashboard-view > .metrics .metric strong,
+  .cash-metrics .metric strong,
+  .claims-metrics .metric strong {
+    font-size: 20px;
+  }
+
+  .business-chart-panel {
+    padding: 11px;
+  }
+
+  .business-chart-panel > .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .business-chart-panel > .section-heading p {
+    display: none;
+  }
+
+  .dashboard-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .dashboard-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .daily-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .daily-action-card {
+    min-height: 92px;
+    padding: 10px;
+  }
+
+  .daily-action-card strong {
+    font-size: 21px;
+  }
+
+  .daily-action-card small {
+    font-size: 10px;
+  }
+
+  .quality-panel {
+    display: flex;
+    gap: 6px;
+    margin-inline: -4px;
+    padding: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .quality-panel > * {
+    flex: 0 0 132px;
+    min-width: 132px;
+  }
+
+  .dashboard-grid {
+    gap: 8px;
+  }
+
+  .dashboard-feature-tabs {
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .dashboard-feature-tabs button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .dashboard-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .dashboard-product-card {
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    gap: 2px 9px;
+    min-height: 88px;
+    padding: 8px;
+    text-align: left;
+  }
+
+  .dashboard-product-card .dashboard-card-art,
+  .dashboard-product-card > img {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: 58px;
+    height: 80px;
+  }
+
+  .dashboard-product-card > strong,
+  .dashboard-product-card > span,
+  .dashboard-product-card > small {
+    grid-column: 2;
+  }
+
+  .dashboard-product-card > b,
+  .dashboard-product-card > .money-stack {
+    grid-column: 3;
+    text-align: right;
+  }
+
+  .dashboard-product-card > b {
+    grid-row: 1;
+  }
+
+  .dashboard-product-card > .money-stack {
+    grid-row: 2 / 4;
+    align-self: end;
+  }
+
+  .dashboard-side {
+    max-height: none;
+  }
+
+  /* Inventario */
+  .compact-inventory-toolbar {
+    position: sticky;
+    top: 53px;
+    z-index: 30;
+    margin-inline: 0;
+    padding: 7px;
+    border-color: #34343d;
+    background: rgba(17, 17, 20, .98);
+  }
+
+  .inventory-command-row {
+    grid-template-columns: minmax(0, 1fr) 42px 42px;
+    gap: 5px;
+  }
+
+  .inventory-command-row .inventory-search {
+    grid-column: 1 / -1;
+  }
+
+  .inventory-command-row .sort-control {
+    grid-column: 1;
+  }
+
+  .inventory-command-row .primary-action {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .inventory-command-row .primary-action svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .inventory-quick-filter-bar {
+    margin-top: 6px;
+    padding-bottom: 2px;
+  }
+
+  .inventory-quick-filter-bar .availability-filter-row button,
+  .inventory-quick-filter-bar .language-group-row button,
+  .inventory-quick-select select,
+  .inventory-quick-filter-bar .filter-toggle {
+    min-height: 38px;
+  }
+
+  .inventory-filter-options {
+    max-height: calc(100dvh - 190px);
+    overflow-y: auto;
+  }
+
+  .inventory-advanced-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-advanced-actions .clear-action {
+    margin-left: 0;
+  }
+
+  .compact-inventory-toolbar .advanced-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-browse-workspace .inventory-card-grid,
+  .inventory-browse-workspace .inventory-card-grid.compact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .inventory-card {
+    min-height: 0;
+  }
+
+  .inventory-card-main {
+    grid-template-columns: 78px minmax(0, 1fr);
+    min-height: 112px;
+    padding: 8px;
+  }
+
+  .inventory-card-image-wrap,
+  .inventory-card-image {
+    width: 78px;
+    min-width: 78px;
+    height: 108px;
+  }
+
+  .inventory-card-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px 40px;
+  }
+
+  .inventory-card-actions button {
+    min-height: 40px;
+  }
+
+  .inventory-selection-tools .secondary-action {
+    min-height: 40px;
+    font-size: 11px;
+  }
+
+  .inventory-batch-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Caja */
+  .sales-dashboard {
+    gap: 8px;
+  }
+
+  .money-overview > .money-card {
+    flex: 0 0 min(82vw, 300px);
+    min-width: min(82vw, 300px);
+    padding: 11px;
+    scroll-snap-align: start;
+  }
+
+  .money-card > strong {
+    font-size: 22px;
+  }
+
+  .money-card dl {
+    margin-top: 4px;
+  }
+
+  .cash-hero {
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .cash-hero h2 {
+    font-size: 19px;
+  }
+
+  .cash-hero p:not(.eyebrow) {
+    display: none;
+  }
+
+  .cash-hero-total {
+    min-width: 0;
+    padding: 10px;
+  }
+
+  .cash-hero-total strong {
+    font-size: 23px;
+  }
+
+  .cash-grid,
+  .sales-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .cash-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .cash-row .money-stack {
+    grid-column: 1 / -1;
+    justify-self: end;
+    text-align: right;
+  }
+
+  .sold-card-list {
+    gap: 6px;
+  }
+
+  .sold-card-row {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .sold-card-thumb {
+    width: 52px;
+    height: 72px;
+  }
+
+  .sold-card-row > div:last-child {
+    text-align: right;
+  }
+
+  /* Claims activos */
+  .claims-layout {
+    gap: 8px;
+  }
+
+  .claims-hero {
+    align-items: stretch;
+    gap: 9px;
+    padding: 11px;
+  }
+
+  .claims-hero-left h2 {
+    font-size: 20px;
+  }
+
+  .claims-hero-left p:not(.eyebrow) {
+    display: none;
+  }
+
+  .claims-hero-right {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  .claims-hero-right > * {
+    min-width: 0;
+  }
+
+  .claims-hero-right button,
+  .claims-hero-right input {
+    width: 100%;
+    min-height: 42px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .claims-hero-right button {
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .claims-hero-right .quality-warning,
+  .claims-hero-right .claim-create-form {
+    grid-column: 1 / -1;
+  }
+
+  .claim-create-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .claims-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .claim-loader,
+  .claim-review-panel,
+  .claims-side,
+  .claim-frees-panel,
+  .claim-history-panel {
+    padding: 10px;
+  }
+
+  .claim-loader-top,
+  .claim-loader-top .cache-search,
+  .claim-search-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .claim-search-field,
+  .claim-filter-field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .claim-pc-results {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 54dvh;
+  }
+
+  .claim-pc-row {
+    grid-template-columns: 50px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 72px;
+    padding: 7px;
+  }
+
+  .claim-pc-row img,
+  .claim-pc-row .image-placeholder {
+    width: 50px;
+    height: 68px;
+  }
+
+  .claim-section-block {
+    padding: 8px;
+  }
+
+  .claim-section-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .claim-section-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .claim-section-actions button {
+    min-height: 40px;
+  }
+
+  .claim-card-row {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .claim-card-media,
+  .claim-card-media img,
+  .claim-card-media .image-placeholder {
+    width: 58px;
+    height: 80px;
+  }
+
+  .claim-card-info {
+    min-width: 0;
+  }
+
+  .claim-card-editor,
+  .claim-card-actions,
+  .claim-buyer-slots {
+    grid-column: 1 / -1;
+  }
+
+  .claim-card-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .claim-card-editor .claim-editor-field--wide {
+    grid-column: 1 / -1;
+  }
+
+  .claim-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .claim-card-actions button {
+    min-height: 40px;
+  }
+
+  .claim-csv-actions,
+  .claim-free-form,
+  .claim-section-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
