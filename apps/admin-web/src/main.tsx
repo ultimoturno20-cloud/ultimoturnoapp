@@ -1173,8 +1173,22 @@ function App() {
     await refreshViewData(view);
   }
 
+  const [costSaving, setCostSaving] = useState(false);
   async function refreshStock() {
     setStock(await api<{ summary: StockSummary; items: StockRow[] }>("/stock"));
+  }
+
+  async function fillInventoryCosts(body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) {
+    setCostSaving(true);
+    try {
+      const result = await api<{ updated: number; skipped: number }>("/inventory/costs", { method: "POST", body });
+      await refreshStock();
+      showMessage(result.updated ? `Costos cargados: ${result.updated}.` : "No habia costos para cargar.");
+    } catch (nextError) {
+      showError(nextError);
+    } finally {
+      setCostSaving(false);
+    }
   }
 
   async function refreshViewData(targetView: View = view) {
@@ -2892,7 +2906,7 @@ function App() {
       {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
       {view === "orders" ? <OrdersView sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
-      {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} /> : null}
+      {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} costSaving={costSaving} onFillCosts={fillInventoryCosts} /> : null}
       {view === "purchases" ? (
         <PurchasesView
           items={stock.items}
@@ -5058,7 +5072,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   );
 }
 
-function SalesView({ sales, purchases, items, resellers, blueRate }: { sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; resellers: ResellerDashboard[]; blueRate: BlueExchangeRate }) {
+function SalesView({ sales, purchases, items, resellers, blueRate, costSaving, onFillCosts }: { sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; resellers: ResellerDashboard[]; blueRate: BlueExchangeRate; costSaving: boolean; onFillCosts: (body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) => Promise<void> }) {
   const paid = sales.filter((sale) => sale.status === "paid" || sale.status === "delivered");
   const snapshot = moneySnapshot(items, sales, resellers, blueRate);
   const receivables = sales.filter((sale) => { const owed = saleOwed(sale); return owed.ars > 0 || owed.usd > 0; });
@@ -5071,7 +5085,7 @@ function SalesView({ sales, purchases, items, resellers, blueRate }: { sales: Sa
   const estimatedCash = totalCollected - purchaseTotal;
   const stockSaleValue = items.reduce((sum, item) => sum + (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(0, item.availableQuantity), 0);
   const reservedSaleValue = items.reduce((sum, item) => sum + (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(0, item.quantityReserved), 0);
-  const stockCostValue = items.reduce((sum, item) => sum + (item.lastPurchaseArs || 0) * Math.max(0, item.quantityOnHand), 0);
+  const stockCostValue = items.reduce((sum, item) => sum + unitCostArs(item, blueRate) * Math.max(0, item.quantityOnHand), 0);
   const stockUnits = items.reduce((sum, item) => sum + item.quantityOnHand, 0);
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -5085,6 +5099,7 @@ function SalesView({ sales, purchases, items, resellers, blueRate }: { sales: Sa
   return (
     <section className="view sales-dashboard">
       <MoneyOverview snapshot={snapshot} blueRate={blueRate} />
+      <CostFillPanel missingUnits={items.filter((item) => item.quantityOnHand > 0 && !unitCostArs(item, blueRate)).reduce((sum, item) => sum + item.quantityOnHand, 0)} saving={costSaving} onPercent={(percent) => onFillCosts({ percentOfSale: percent, onlyMissing: true })} onCsv={(rows) => onFillCosts({ rows })} />
       <section className="panel cash-hero">
         <div>
           <p className="eyebrow">Caja</p>
@@ -5100,7 +5115,7 @@ function SalesView({ sales, purchases, items, resellers, blueRate }: { sales: Sa
         <Metric label="Compras registradas" value={formatArs(purchaseTotal)} helper="salida/compromiso cargado" />
         <Metric label="Stock disponible" value={formatArs(stockSaleValue)} helper={`${stockUnits.toLocaleString("es-AR")} unidad(es) fisicas`} />
         <Metric label="Reservado" value={formatArs(reservedSaleValue)} helper="valor de cartas separadas" />
-        <Metric label="Costo registrado" value={formatArs(stockCostValue)} helper="segun ultima compra cargada" />
+        <Metric label="Costo registrado" value={formatArs(stockCostValue)} helper="compra o costo cargado por carta" />
       </div>
       <div className="cash-grid">
         <section className="panel cash-section">
@@ -9534,6 +9549,74 @@ type MoneySnapshot = {
   owed: { totalArs: number; customersArs: number; customersUsd: number; customerOrders: number; overdueOrders: number; ordersWithoutDueDate: number; resellersArs: number; resellers: number };
 };
 
+function parseCostCsv(text: string) {
+  const lines = text.trim().split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+  const delim = lines[0].includes("\t") ? "\t" : ",";
+  const header = lines[0].toLowerCase();
+  const start = /sku|cost|costo/.test(header) ? 1 : 0;
+  const rows: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> = [];
+  for (const line of lines.slice(start)) {
+    const parts = line.split(delim).map((part) => part.trim().replace(/^"|"$/g, ""));
+    const sku = parts[0] || "";
+    const purchaseCost = Number(String(parts[1] || "").replace(",", "."));
+    const purchaseCurrency = String(parts[2] || "ARS").toUpperCase() === "USD" ? "USD" as const : "ARS" as const;
+    if (!sku || !Number.isFinite(purchaseCost) || purchaseCost < 0) continue;
+    rows.push({ sku, purchaseCost, purchaseCurrency });
+  }
+  return rows;
+}
+
+function unitCostArs(item: StockRow, blueRate: BlueExchangeRate) {
+  if (item.lastPurchaseArs && item.lastPurchaseArs > 0) return item.lastPurchaseArs;
+  if (item.purchaseCost && item.purchaseCost > 0) {
+    return item.purchaseCurrency === "USD" ? toBlueArs(item.purchaseCost, blueRate) : item.purchaseCost;
+  }
+  return 0;
+}
+
+function CostFillPanel(props: {
+  missingUnits: number;
+  saving: boolean;
+  onPercent: (percent: number) => Promise<void>;
+  onCsv: (rows: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }>) => Promise<void>;
+}) {
+  const [percent, setPercent] = useState("60");
+  const [csv, setCsv] = useState("");
+  const [error, setError] = useState("");
+  const applyPercent = async () => {
+    const value = Number(percent);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      setError("Usa un porcentaje entre 1 y 100.");
+      return;
+    }
+    setError("");
+    await props.onPercent(value);
+  };
+  const applyCsv = async () => {
+    const rows = parseCostCsv(csv);
+    if (!rows.length) {
+      setError("Pega filas sku,costo,moneda.");
+      return;
+    }
+    setError("");
+    await props.onCsv(rows);
+    setCsv("");
+  };
+  return (
+    <section className="panel cash-section">
+      <div className="section-heading"><div><h2>Cargar costos</h2><p>Completa costos vacios como porcentaje del precio de venta, o pega un CSV sku,costo,moneda.</p></div></div>
+      <div className="cart-controls">
+        <label>% del precio de venta<input type="number" min={1} max={100} value={percent} disabled={props.saving} onChange={(event) => setPercent(event.target.value)} /></label>
+        <button className="primary-action" disabled={props.saving || !props.missingUnits} onClick={() => void applyPercent()}><Icon name="check" />Completar {props.missingUnits.toLocaleString("es-AR")} carta(s) sin costo</button>
+      </div>
+      <label>CSV sku, costo, moneda<textarea value={csv} disabled={props.saving} onChange={(event) => setCsv(event.target.value)} placeholder="SKU-123,1200,ARS" rows={4} /></label>
+      <button className="secondary-action" disabled={props.saving || !csv.trim()} onClick={() => void applyCsv()}><Icon name="plus" />Importar CSV</button>
+      {error ? <p className="money-warning">{error}</p> : null}
+    </section>
+  );
+}
+
 function moneySnapshot(items: StockRow[], sales: SaleRecord[], resellers: ResellerDashboard[], blueRate: BlueExchangeRate): MoneySnapshot {
   const cards: MoneySnapshot["cards"] = { totalArs: 0, freeArs: 0, reservedArs: 0, resellersArs: 0, units: 0, unitsWithoutPrice: 0, costArs: 0, unitsWithCost: 0, marketUsd: 0, unitsWithMarket: 0, owners: [] };
   const owners = new Map<string, { name: string; totalArs: number; units: number }>();
@@ -9547,8 +9630,9 @@ function moneySnapshot(items: StockRow[], sales: SaleRecord[], resellers: Resell
     cards.reservedArs += unitArs * Math.max(0, item.quantityReserved);
     cards.resellersArs += unitArs * Math.max(0, item.quantityAssigned);
     if (!unitArs) cards.unitsWithoutPrice += units;
-    if (item.lastPurchaseArs) {
-      cards.costArs += item.lastPurchaseArs * units;
+    const costArs = unitCostArs(item, blueRate);
+    if (costArs) {
+      cards.costArs += costArs * units;
       cards.unitsWithCost += units;
     }
     const marketUsd = item.priceReferences?.tcgplayer.marketPriceUsd ?? item.priceReferences?.tcgplayer.usd ?? item.priceReferences?.priceCharting.usd ?? null;
@@ -9600,7 +9684,8 @@ function MoneyOverview({ snapshot, blueRate }: { snapshot: MoneySnapshot; blueRa
           <div><dt>Separadas en ordenes</dt><dd>{formatArs(cards.reservedArs)}</dd></div>
           <div><dt>En manos de revendedores</dt><dd>{formatArs(cards.resellersArs)}</dd></div>
           <div><dt>Referencia de mercado</dt><dd>{formatUsd(cards.marketUsd)} <small>TCGplayer/PriceCharting, {percentOf(cards.unitsWithMarket, cards.units)}% de las cartas</small></dd></div>
-          <div><dt>Costo cargado</dt><dd>{cards.unitsWithCost ? <>{formatArs(cards.costArs)} <small>{percentOf(cards.unitsWithCost, cards.units)}% de las cartas</small></> : <small>Sin costos cargados: registra compras para ver ganancia</small>}</dd></div>
+          <div><dt>Costo cargado</dt><dd>{cards.unitsWithCost ? <>{formatArs(cards.costArs)} <small>{percentOf(cards.unitsWithCost, cards.units)}% de las cartas</small></> : <small>Sin costos cargados</small>}</dd></div>
+          {cards.unitsWithCost ? <div><dt>Ganancia potencial</dt><dd>{formatArs(cards.totalArs - cards.costArs)} <small>venta menos costo</small></dd></div> : null}
         </dl>
         {cards.unitsWithoutPrice ? <p className="money-warning">{cards.unitsWithoutPrice} carta(s) sin precio no suman.</p> : null}
         {cards.owners.length > 1 ? <dl className="money-owners">{cards.owners.map((owner) => <div key={owner.name}><dt>{owner.name}</dt><dd>{formatArs(owner.totalArs)} <small>{owner.units.toLocaleString("es-AR")} cartas</small></dd></div>)}</dl> : null}
@@ -9758,7 +9843,7 @@ function canvasAssetUrls(value: string) {
 
 function exportInventoryCsv(items: StockRow[]) {
   downloadCsv("ultimoturno-inventario-vista.csv", [
-    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "freeQuantity", "quantityAssigned", "quantityReserved", "availableQuantityCentral", "priceArs", "priceUsd", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "tags", "priceChartingId", "priceChartingUrl", "imageUrl"],
+    ["sku", "name", "expansion", "number", "language", "condition", "finish", "gradingCompany", "grade", "gradingCert", "quantityOnHand", "freeQuantity", "quantityAssigned", "quantityReserved", "availableQuantityCentral", "priceArs", "priceUsd", "purchaseCost", "purchaseCurrency", "lastPurchaseArs", "lastPurchaseAt", "location", "intakeBatch", "inventoryStatus", "tags", "priceChartingId", "priceChartingUrl", "imageUrl"],
     ...items.map((item) => {
       const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
       return [
@@ -9779,6 +9864,8 @@ function exportInventoryCsv(items: StockRow[]) {
         item.availableQuantity,
         item.priceArs,
         item.priceUsd ?? "",
+        item.purchaseCost ?? "",
+        item.purchaseCurrency || "ARS",
         item.lastPurchaseArs ?? "",
         item.lastPurchaseAt || "",
         item.location,
