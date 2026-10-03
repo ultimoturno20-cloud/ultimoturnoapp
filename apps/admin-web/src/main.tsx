@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
+type DeferredInstallPrompt = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
 type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerPortalTab = "sell" | "orders" | "stock" | "global" | "sales";
 const viewPaths: Record<View, string> = {
@@ -10347,12 +10352,58 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function PwaRuntime() {
+  const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as DeferredInstallPrompt);
+    };
+    const handleInstalled = () => setInstallPrompt(null);
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  const install = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
+
+  if (!installPrompt && online) return null;
+  return (
+    <div className="pwa-runtime-actions" aria-live="polite">
+      {!online ? <div className="pwa-offline-status"><i />Sin conexion. Las operaciones esperan internet.</div> : null}
+      {installPrompt ? <button className="pwa-install-prompt" type="button" onClick={() => void install()}><Icon name="download" /><span><strong>Instalar UltimoTurno</strong><small>Abrir como app</small></span></button> : null}
+    </div>
+  );
+}
+
 function Root() {
   const resellerMode = window.location.pathname.startsWith("/portal-revendedor") || new URLSearchParams(window.location.search).get("revendedor") === "1" || window.location.hash === "#revendedor";
-  return resellerMode ? <ResellerPortal /> : <App />;
+  return <><PwaRuntime />{resellerMode ? <ResellerPortal /> : <App />}</>;
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<Root />);
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+  });
+}
 
 
 

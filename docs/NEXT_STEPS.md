@@ -1,11 +1,27 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-09-30
+Actualizado: 2026-10-03
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Pilotear la PWA en celulares reales
+
+- En Android, abrir `https://ultimoturno.app/inicio`, pulsar `Instalar
+  UltimoTurno` y confirmar que el icono abra la plataforma en pantalla completa.
+- En iPhone, usar Safari > Compartir > Agregar a inicio y confirmar que conserva
+  sesion y abre dentro del alcance de `ultimoturno.app`.
+- Probar los accesos rapidos a Inventario, Cargar stock, Ordenes y Revendedores.
+- Cortar temporalmente la conexion: la interfaz debe mostrar el estado offline,
+  pero ninguna venta, reserva ni modificacion de stock debe confirmarse ni quedar
+  encolada silenciosamente.
+- Volver a conectarse y comprobar que el sector visible sincronice datos sin
+  reinstalar la aplicacion.
+
+Senal de exito: la app se instala con el icono correcto, usa la misma sesion y
+datos de produccion, y nunca presenta una operacion offline como confirmada.
 
 ### Verificar asignacion directa y resumen de revendedores
 

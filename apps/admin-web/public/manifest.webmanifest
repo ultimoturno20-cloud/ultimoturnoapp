@@ -1,0 +1,61 @@
+{
+  "id": "/inicio",
+  "name": "UltimoTurno",
+  "short_name": "UltimoTurno",
+  "description": "Inventario, ventas, ordenes y consignacion de UltimoTurno.",
+  "lang": "es-AR",
+  "dir": "ltr",
+  "start_url": "/inicio?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#08080a",
+  "theme_color": "#08080a",
+  "categories": ["business", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/icons/app-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/app-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/app-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Inventario",
+      "short_name": "Inventario",
+      "url": "/inventario?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/app-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Cargar stock",
+      "short_name": "Cargar stock",
+      "url": "/inventario/cargar-stock?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/app-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ordenes",
+      "short_name": "Ordenes",
+      "url": "/ordenes?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/app-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Revendedores",
+      "short_name": "Revendedores",
+      "url": "/revendedores?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/app-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

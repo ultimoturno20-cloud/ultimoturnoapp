@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-09-30
+Actualizado: 2026-10-03
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -18,7 +18,25 @@ Actualizado: 2026-09-30
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
   solo de frontend y no modificaron la base de ordenes.
 
-## Trabajo completado del 17 al 29 de septiembre
+## Trabajo completado del 17 de septiembre al 3 de octubre
+
+### Aplicacion movil instalable
+
+- La plataforma productiva incorpora una PWA con manifest, iconos de
+  UltimoTurno, modo standalone y accesos rapidos a Inventario, Cargar stock,
+  Ordenes y Revendedores. Android/Chrome ofrece `Instalar UltimoTurno` y la app
+  queda disponible desde la pantalla de inicio sin barra del navegador.
+- El service worker guarda solamente la interfaz, el logo, los iconos y assets
+  versionados. Las rutas `/api/*`, las imagenes operativas y todas las
+  operaciones de stock, ventas y ordenes permanecen siempre online para evitar
+  mostrar o escribir informacion comercial desactualizada.
+- Si se pierde conexion, la interfaz puede abrir y muestra un aviso operativo;
+  no intenta encolar ventas silenciosamente ni confirma acciones hasta recuperar
+  internet.
+- `mobile-app/` conserva una app Expo anterior conectada al HUB de Apps Script.
+  Es material legado y no debe distribuirse como cliente de la plataforma
+  Vercel/Supabase actual. La PWA es el cliente movil vigente de esta primera
+  etapa.
 
 ### Acceso del portal de revendedores
 
