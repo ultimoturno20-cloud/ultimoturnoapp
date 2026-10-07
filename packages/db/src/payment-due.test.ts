@@ -5,13 +5,17 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   addCalendarDays,
+  addClaimFree,
   addInventoryStock,
+  closeActiveClaim,
   calendarDateInArgentina,
   createClaimSession,
   createOperationalDatabase,
   createSale,
   defaultPaymentDueDate,
   getDefaultOperationalUser,
+  listSales,
+  updateActiveClaimSettings,
   toIsoDate
 } from "./index.js";
 
@@ -68,6 +72,29 @@ test("new reservations default to payment due in 7 days and keep an explicit dat
     const claim = await createClaimSession(db, { name: "Claim plazo" }, user);
     assert.equal(dueDate(claim.activeClaim?.paymentDueAt), defaultPaymentDueDate());
     assert.equal(calendarDateInArgentina().length, 10);
+  } finally {
+    await db.close();
+  }
+});
+
+test("closed claims keep a manually selected payment due date on generated orders", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "ut-claim-payment-due-"));
+  const db = await createOperationalDatabase({ dataDir });
+  try {
+    const user = await getDefaultOperationalUser(db);
+    await createClaimSession(db, { name: "Claim con fecha manual" }, user);
+    await updateActiveClaimSettings(db, { paymentDueAt: "2026-12-24" }, user);
+    await addClaimFree(db, {
+      finalName: "Free de prueba",
+      buyer: "Cliente claim",
+      quantity: 1
+    }, user);
+
+    await closeActiveClaim(db, user);
+    const sales = await listSales(db, user.businessId);
+    assert.equal(sales.sales.length, 1);
+    assert.equal(sales.sales[0].customerName, "Cliente claim");
+    assert.equal(dueDate(sales.sales[0].paymentDueAt), "2026-12-24");
   } finally {
     await db.close();
   }
