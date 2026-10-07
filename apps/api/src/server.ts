@@ -193,7 +193,7 @@ async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: st
     });
 
   if (cached) stockReadCache.set(businessId, { ...cached, pending });
-  else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 }, items: [] }, pending });
+  else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 }, items: [] }, pending });
   return pending;
 }
 

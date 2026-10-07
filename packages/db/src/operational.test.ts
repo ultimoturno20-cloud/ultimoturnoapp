@@ -528,6 +528,41 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
+  it("keeps collection items valued but unavailable for sale", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-collection-stock-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    const item = await upsertInventoryItem(db, {
+      sku: "TEST-COLLECTION-151",
+      name: "Carpeta Master Set 151",
+      expansion: "Scarlet & Violet 151",
+      number: "MASTER",
+      language: "EN",
+      condition: "NM",
+      finish: "normal",
+      quantityOnHand: 1,
+      quantityReserved: 0,
+      priceArs: 1500000,
+      inventoryStatus: "not_for_sale",
+      tags: "coleccion, master set 151"
+    }, user);
+
+    const stock = await listStockForBusiness(db, user.businessId);
+    assert.equal(stock.items[0].availableQuantity, 0);
+    assert.equal(stock.items[0].freeQuantity, 0);
+    assert.equal(stock.summary.stockValueArs, 0);
+    assert.equal(stock.summary.collectionUnits, 1);
+    assert.equal(stock.summary.collectionValueArs, 1500000);
+    assert.equal(stock.summary.totalValueArs, 1500000);
+    await assert.rejects(createSale(db, {
+      customerName: "Cliente Test",
+      saleType: "reservation",
+      channel: "whatsapp",
+      lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 1500000 }]
+    }, user), /solo quedan 0 unidades disponibles/);
+    await db.close();
+  });
+
   it("edits pending order lines while keeping stock reservations and totals consistent", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-order-edit-"));
     const db = await createOperationalDatabase({ dataDir });

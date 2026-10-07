@@ -83,6 +83,9 @@ export type StockSummary = {
   reservedUnits: number;
   availableUnits: number;
   stockValueArs: number;
+  collectionUnits: number;
+  collectionValueArs: number;
+  totalValueArs: number;
 };
 
 export function availableQuantity(item: Pick<InventoryItem, "quantityOnHand" | "quantityReserved">): number {
@@ -97,8 +100,9 @@ export function summarizeStock(items: InventoryItem[]): StockSummary {
     summary.reservedUnits += item.quantityReserved;
     summary.availableUnits += available;
     summary.stockValueArs += available * (item.priceArs || 0);
+    summary.totalValueArs += available * (item.priceArs || 0);
     return summary;
-  }, { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 });
+  }, { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 });
 }
 
 export function assertReservationQuantity(item: InventoryItem, quantity: number): void {

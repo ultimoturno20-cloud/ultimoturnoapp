@@ -177,6 +177,9 @@ type StockSummary = {
   reservedUnits: number;
   availableUnits: number;
   stockValueArs: number;
+  collectionUnits: number;
+  collectionValueArs: number;
+  totalValueArs: number;
 };
 
 type ManagedUser = {
@@ -6642,7 +6645,8 @@ function AdminView(props: {
         <Metric label="Perfil" value={props.environment.dataProfile} helper={props.environment.allowExamples ? "permite ejemplos" : "datos reales"} />
         <Metric label="Dolar blue" value={formatArs(props.blueRate.sell)} helper={props.blueRate.fallback ? "fallback local" : props.blueRate.source} />
         <Metric label="Stock" value={props.stockSummary.totalUnits.toLocaleString("es-AR")} helper={`${props.stockSummary.totalSkus.toLocaleString("es-AR")} SKUs`} />
-        <Metric label="Valor stock" value={formatArs(props.stockSummary.stockValueArs)} helper={`${formatUsd(fromBlueArs(props.stockSummary.stockValueArs, props.blueRate))} blue`} />
+        <Metric label="Valor venta" value={formatArs(props.stockSummary.stockValueArs)} helper={`${formatUsd(fromBlueArs(props.stockSummary.stockValueArs, props.blueRate))} blue`} />
+        <Metric label="Valor total" value={formatArs(props.stockSummary.totalValueArs || props.stockSummary.stockValueArs)} helper={props.stockSummary.collectionValueArs ? `incluye coleccion ${formatArs(props.stockSummary.collectionValueArs)}` : "sin coleccion no venta"} />
         <Metric label="Alertas" value={totalIssues.toLocaleString("es-AR")} helper="catalogo/stock" />
       </section>
 
@@ -8728,16 +8732,22 @@ function formFromItem(item: StockRow): InventoryFormState {
 }
 
 function emptySummary(): StockSummary {
-  return { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 };
+  return { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 };
 }
 
 function summarizeStockRows(items: StockRow[]): StockSummary {
   return items.reduce<StockSummary>((summary, item) => {
+    const itemValueArs = item.quantityOnHand * item.priceArs;
     summary.totalSkus += 1;
     summary.totalUnits += item.quantityOnHand;
     summary.reservedUnits += item.quantityReserved;
     summary.availableUnits += item.availableQuantity;
     summary.stockValueArs += item.availableQuantity * item.priceArs;
+    if (item.inventoryStatus === "not_for_sale") {
+      summary.collectionUnits += item.quantityOnHand;
+      summary.collectionValueArs += itemValueArs;
+    }
+    summary.totalValueArs += item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
     return summary;
   }, emptySummary());
 }

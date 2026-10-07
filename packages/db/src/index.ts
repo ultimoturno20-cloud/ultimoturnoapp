@@ -78,6 +78,9 @@ export type DbStockSummary = {
   reservedUnits: number;
   availableUnits: number;
   stockValueArs: number;
+  collectionUnits: number;
+  collectionValueArs: number;
+  totalValueArs: number;
 };
 
 export type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
@@ -1419,7 +1422,9 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
     join card_products p on p.id = ii.product_id
     join card_variants v on v.id = ii.variant_id
     left join current_prices cp on cp.inventory_item_id = ii.id
-    where ii.business_id = $1 and ii.active = true and ii.quantity_on_hand - ii.quantity_reserved > 0
+    where ii.business_id = $1 and ii.active = true
+      and ii.inventory_status <> 'not_for_sale'
+      and ii.quantity_on_hand - ii.quantity_reserved > 0
     order by p.name, p.expansion, p.card_number, v.language, v.condition
   `, [businessId]) : { rows: [] };
   const globalStock: ResellerGlobalStockItem[] = globalStockRows.rows.map((row) => ({
@@ -1431,7 +1436,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
   const requestRows = await db.query<Record<string, unknown>>(`
     select rsr.id, rsr.reseller_user_id, rsr.inventory_item_id, rsr.quantity_requested,
       rsr.price_ars_snapshot, rsr.created_at, ii.sku,
-      greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved) end as available_quantity,
       p.name, p.expansion, p.card_number, p.image_url,
       v.language, v.condition, v.finish, coalesce(cp.price_ars, 0) as current_price_ars
     from reseller_stock_requests rsr
@@ -4053,9 +4058,9 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
-      greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
-      least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as assigned_quantity,
-      greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as free_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved) end as available_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as assigned_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as free_quantity,
       coalesce(cp.price_ars, 0) as price_ars,
       cp.price_usd,
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
@@ -4357,9 +4362,9 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
-      greatest(0, ii.quantity_on_hand - ii.quantity_reserved) as available_quantity,
-      least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as assigned_quantity,
-      greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer as free_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved) end as available_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as assigned_quantity,
+      case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as free_quantity,
       coalesce(cp.price_ars, 0) as price_ars,
       cp.price_usd,
       coalesce(pc_identifier.external_id, '') as pricecharting_id,
@@ -7850,13 +7855,19 @@ function toMobileInventoryEntry(row: Record<string, unknown>): MobileInventoryEn
 
 function summarizeDbStock(items: DbStockRow[]): DbStockSummary {
   return items.reduce<DbStockSummary>((summary, item) => {
+    const itemValueArs = item.quantityOnHand * item.priceArs;
     summary.totalSkus += 1;
     summary.totalUnits += item.quantityOnHand;
     summary.reservedUnits += item.quantityReserved;
     summary.availableUnits += item.availableQuantity;
     summary.stockValueArs += item.availableQuantity * item.priceArs;
+    if (item.inventoryStatus === "not_for_sale") {
+      summary.collectionUnits += item.quantityOnHand;
+      summary.collectionValueArs += itemValueArs;
+    }
+    summary.totalValueArs += item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
     return summary;
-  }, { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0 });
+  }, { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 });
 }
 
 async function listClaimCards(db: PGlite, claimId: string, businessId: string): Promise<ClaimCard[]> {
