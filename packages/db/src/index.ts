@@ -84,6 +84,7 @@ export type DbStockSummary = {
 };
 
 export type CollectionValuationEntry = {
+  id: string;
   priceChartingId: string;
   productName: string;
   expansionName: string;
@@ -91,25 +92,41 @@ export type CollectionValuationEntry = {
   languageGroup: string;
   priceUsd: number | null;
   quantity: number;
-  source: "base" | "manual";
+  source: "expansion" | "manual";
   note: string;
-  duplicateOfBase: boolean;
+  createdAt: string;
 };
 
+export type CollectionType = "collection" | "deck" | "sealed" | "other";
+
 export type CollectionValuation = {
-  key: string;
+  id: string;
   name: string;
+  collectionType: CollectionType;
   description: string;
-  baseExpansion: string;
-  languageGroup: string;
-  baseEntries: number;
+  sellable: boolean;
+  countsInValuation: boolean;
+  itemCount: number;
   manualEntries: number;
+  expansionEntries: number;
   pricedEntries: number;
   missingPriceEntries: number;
   totalUsd: number;
   totalArs: number;
+  countedUsd: number;
+  countedArs: number;
   lastImportedAt: string;
+  createdAt: string;
+  updatedAt: string;
   entries: CollectionValuationEntry[];
+};
+
+export type CollectionValuationSummary = {
+  collections: CollectionValuation[];
+  totalCollections: number;
+  countedCollections: number;
+  totalUsd: number;
+  totalArs: number;
 };
 
 export type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
@@ -246,7 +263,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0054_collection_manual_entries.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0054_collection_manual_entries.sql", "0055_collections.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -4072,17 +4089,20 @@ export async function getAuditLog(db: PGlite, businessId = demoBusinessId) {
   };
 }
 
-const defaultCollectionKey = "sv151-master-set";
-
-function isScarletViolet151Expansion(value: string): boolean {
-  const normalized = normalizeImportExpansionName(value);
-  return normalized === "scarlet violet 151"
-    || normalized === "scarlet and violet 151"
-    || (normalized.includes("151") && normalized.includes("scarlet"));
+function normalizeCollectionType(value: unknown): CollectionType {
+  return value === "deck" || value === "sealed" || value === "other" ? value : "collection";
 }
 
-function toCollectionEntry(row: Record<string, unknown>, source: "base" | "manual", duplicateOfBase = false): CollectionValuationEntry {
+function collectionExpansionVariants(expansionName: string): string[] {
+  const normalized = normalizeImportExpansionName(expansionName);
+  const withoutAnd = normalizeImportExpansionName(normalized.replace(/\band\b/g, " "));
+  const withAnd = normalizeImportExpansionName(normalized.replace(/\bscarlet\s+violet\b/g, "scarlet and violet"));
+  return [...new Set([normalized, withoutAnd, withAnd].filter(Boolean))];
+}
+
+function toCollectionEntry(row: Record<string, unknown>): CollectionValuationEntry {
   return {
+    id: String(row.id || ""),
     priceChartingId: String(row.pricecharting_id || ""),
     productName: String(row.product_name || ""),
     expansionName: String(row.expansion_name || ""),
@@ -4090,103 +4110,180 @@ function toCollectionEntry(row: Record<string, unknown>, source: "base" | "manua
     languageGroup: String(row.language_group || "english"),
     priceUsd: optionalNumber(row.loose_price_usd) ?? null,
     quantity: Math.max(1, Number(row.quantity || 1)),
-    source,
+    source: String(row.source || "manual") === "expansion" ? "expansion" : "manual",
     note: String(row.note || ""),
-    duplicateOfBase
+    createdAt: String(row.created_at || "")
   };
 }
 
-function buildCollectionValuation(entries: CollectionValuationEntry[], blueRateSell: number): CollectionValuation {
-  const counted = entries.filter((entry) => !entry.duplicateOfBase);
-  const totalUsd = counted.reduce((sum, entry) => sum + (entry.priceUsd || 0) * entry.quantity, 0);
-  const pricedEntries = counted.filter((entry) => entry.priceUsd !== null).length;
+function buildCollectionValuation(row: Record<string, unknown>, entries: CollectionValuationEntry[], blueRateSell: number): CollectionValuation {
+  const totalUsd = entries.reduce((sum, entry) => sum + (entry.priceUsd || 0) * entry.quantity, 0);
+  const totalArs = Math.round(totalUsd * blueRateSell);
+  const countsInValuation = Boolean(row.counts_in_valuation);
+  const pricedEntries = entries.filter((entry) => entry.priceUsd !== null).length;
+  const lastImportedAt = entries
+    .map((entry) => entry.createdAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
   return {
-    key: defaultCollectionKey,
-    name: "Master Set Scarlet & Violet 151",
-    description: "Base automatica: todas las filas inglesas de PriceCharting para Scarlet & Violet 151. Promos extra: agregadas manualmente por ID PriceCharting.",
-    baseExpansion: "Scarlet & Violet 151",
-    languageGroup: "english",
-    baseEntries: entries.filter((entry) => entry.source === "base").length,
+    id: String(row.id || ""),
+    name: String(row.name || ""),
+    collectionType: normalizeCollectionType(row.collection_type),
+    description: String(row.description || ""),
+    sellable: Boolean(row.sellable),
+    countsInValuation,
+    itemCount: entries.length,
     manualEntries: entries.filter((entry) => entry.source === "manual").length,
+    expansionEntries: entries.filter((entry) => entry.source === "expansion").length,
     pricedEntries,
-    missingPriceEntries: counted.length - pricedEntries,
+    missingPriceEntries: entries.length - pricedEntries,
     totalUsd: Math.round(totalUsd * 100) / 100,
-    totalArs: Math.round(totalUsd * blueRateSell),
-    lastImportedAt: "",
+    totalArs,
+    countedUsd: countsInValuation ? Math.round(totalUsd * 100) / 100 : 0,
+    countedArs: countsInValuation ? totalArs : 0,
+    lastImportedAt,
+    createdAt: String(row.created_at || ""),
+    updatedAt: String(row.updated_at || ""),
     entries
   };
 }
 
-export async function listCollectionValuations(db: PGlite, businessId: string, blueRateSell: number): Promise<{ collections: CollectionValuation[] }> {
-  const baseRows = await db.query<Record<string, unknown>>(`
-    select pricecharting_id, product_name, expansion_name, card_number, language_group, loose_price_usd, imported_at, 1 as quantity, '' as note
-    from pricecharting_cache_entries
-    where language_group = 'english'
-      and (
-        normalized_expansion in ('scarlet violet 151', 'scarlet and violet 151')
-        or (normalized_expansion like '%151%' and normalized_expansion like '%scarlet%')
-      )
-    order by regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '[^a-z0-9]+', '', 'g'), product_name
-  `);
-  const baseEntries = baseRows.rows
-    .filter((row) => isScarletViolet151Expansion(String(row.expansion_name || row.normalized_expansion || "")))
-    .map((row) => toCollectionEntry(row, "base"));
-  const baseIds = new Set(baseEntries.map((entry) => entry.priceChartingId));
-
-  const manualRows = await db.query<Record<string, unknown>>(`
-    select pce.pricecharting_id, pce.product_name, pce.expansion_name, pce.card_number,
-      pce.language_group, pce.loose_price_usd, pce.imported_at, cme.quantity, cme.note
-    from collection_manual_entries cme
-    join pricecharting_cache_entries pce on pce.pricecharting_id = cme.pricecharting_id
-    where cme.business_id = $1 and cme.collection_key = $2
-    order by cme.created_at desc
-  `, [businessId, defaultCollectionKey]);
-  const manualEntries = manualRows.rows.map((row) => toCollectionEntry(row, "manual", baseIds.has(String(row.pricecharting_id || ""))));
-  const collection = buildCollectionValuation([...baseEntries, ...manualEntries], blueRateSell);
-  const lastImportedAt = [...baseRows.rows, ...manualRows.rows]
-    .map((row) => row.imported_at ? String(row.imported_at) : "")
-    .filter(Boolean)
-    .sort()
-    .at(-1) || "";
-  return { collections: [{ ...collection, lastImportedAt }] };
+export async function listCollectionValuations(db: PGlite, businessId: string, blueRateSell: number): Promise<CollectionValuationSummary> {
+  const collectionRows = await db.query<Record<string, unknown>>(`
+    select id, name, collection_type, description, sellable, counts_in_valuation, created_at, updated_at
+    from collections
+    where business_id = $1
+    order by created_at desc
+  `, [businessId]);
+  const collections: CollectionValuation[] = [];
+  for (const collection of collectionRows.rows) {
+    const itemRows = await db.query<Record<string, unknown>>(`
+      select ci.id, ci.pricecharting_id, pce.product_name, pce.expansion_name, pce.card_number,
+        pce.language_group, pce.loose_price_usd, coalesce(pce.imported_at, ci.created_at) as created_at,
+        ci.quantity, ci.source, ci.note
+      from collection_items ci
+      join pricecharting_cache_entries pce on pce.pricecharting_id = ci.pricecharting_id
+      where ci.business_id = $1 and ci.collection_id = $2
+      order by case when ci.source = 'expansion' then 0 else 1 end,
+        regexp_replace(lower(split_part(coalesce(pce.card_number, ''), '/', 1)), '[^a-z0-9]+', '', 'g'),
+        pce.product_name
+    `, [businessId, String(collection.id)]);
+    collections.push(buildCollectionValuation(collection, itemRows.rows.map(toCollectionEntry), blueRateSell));
+  }
+  const totalUsd = Math.round(collections.reduce((sum, collection) => sum + collection.countedUsd, 0) * 100) / 100;
+  return {
+    collections,
+    totalCollections: collections.length,
+    countedCollections: collections.filter((collection) => collection.countsInValuation).length,
+    totalUsd,
+    totalArs: Math.round(totalUsd * blueRateSell)
+  };
 }
 
-export async function addCollectionManualEntry(
+export async function createCollection(
   db: PGlite,
-  input: { collectionKey?: string; priceChartingId: string; quantity?: number; note?: string },
+  input: { name: string; collectionType?: CollectionType; description?: string; sellable?: boolean; countsInValuation?: boolean },
+  actor: AuthenticatedUser
+): Promise<{ collection: { id: string } }> {
+  const name = String(input.name || "").trim();
+  if (!name) throw new Error("Falta el nombre de la coleccion.");
+  const id = crypto.randomUUID();
+  await db.query(`
+    insert into collections (id, business_id, name, collection_type, description, sellable, counts_in_valuation, created_by)
+    values ($1, $2, $3, $4, $5, $6, $7, $8)
+  `, [
+    id,
+    actor.businessId,
+    name,
+    normalizeCollectionType(input.collectionType),
+    String(input.description || "").trim(),
+    Boolean(input.sellable),
+    input.countsInValuation !== false,
+    actor.id
+  ]);
+  await writeAudit(db, actor, "collection.create", "collection", id, null, { name, collectionType: normalizeCollectionType(input.collectionType) });
+  return { collection: { id } };
+}
+
+async function assertCollectionForActor(db: PGlite, collectionId: string, actor: AuthenticatedUser): Promise<void> {
+  const result = await db.query<{ id: string }>("select id from collections where id = $1 and business_id = $2", [collectionId, actor.businessId]);
+  if (!result.rows[0]) throw new Error("Coleccion no encontrada.");
+}
+
+export async function addCollectionItem(
+  db: PGlite,
+  collectionId: string,
+  input: { priceChartingId: string; quantity?: number; note?: string; source?: "manual" | "expansion" },
   actor: AuthenticatedUser
 ): Promise<{ saved: boolean }> {
-  const collectionKey = String(input.collectionKey || defaultCollectionKey).trim() || defaultCollectionKey;
-  if (collectionKey !== defaultCollectionKey) throw new Error("Coleccion no soportada.");
+  await assertCollectionForActor(db, collectionId, actor);
   const priceChartingId = String(input.priceChartingId || "").trim();
   if (!priceChartingId) throw new Error("Falta el ID de PriceCharting.");
   const quantity = Math.max(1, Math.floor(Number(input.quantity || 1)));
   const note = String(input.note || "").trim();
+  const source = input.source === "expansion" ? "expansion" : "manual";
   const exists = await db.query<{ pricecharting_id: string }>("select pricecharting_id from pricecharting_cache_entries where pricecharting_id = $1 limit 1", [priceChartingId]);
   if (!exists.rows[0]) throw new Error("Ese ID de PriceCharting no existe en el cache.");
   await db.query(`
-    insert into collection_manual_entries (id, business_id, collection_key, pricecharting_id, quantity, note, created_by)
-    values ($1, $2, $3, $4, $5, $6, $7)
-    on conflict (business_id, collection_key, pricecharting_id)
-    do update set quantity = excluded.quantity, note = excluded.note
-  `, [crypto.randomUUID(), actor.businessId, collectionKey, priceChartingId, quantity, note, actor.id]);
-  await writeAudit(db, actor, "collection.manual_entry.upsert", "collection", collectionKey, null, { priceChartingId, quantity, note });
+    insert into collection_items (id, business_id, collection_id, pricecharting_id, quantity, source, note, created_by)
+    values ($1, $2, $3, $4, $5, $6, $7, $8)
+    on conflict (collection_id, pricecharting_id)
+    do update set quantity = excluded.quantity, source = collection_items.source, note = excluded.note
+  `, [crypto.randomUUID(), actor.businessId, collectionId, priceChartingId, quantity, source, note, actor.id]);
+  await db.query("update collections set updated_at = now() where id = $1 and business_id = $2", [collectionId, actor.businessId]);
+  await writeAudit(db, actor, "collection.item.upsert", "collection", collectionId, null, { priceChartingId, quantity, source, note });
   return { saved: true };
 }
 
-export async function deleteCollectionManualEntry(
+export async function addCollectionExpansionItems(
   db: PGlite,
-  collectionKey: string,
+  collectionId: string,
+  input: { expansionName: string; languageGroup?: LanguageGroup },
+  actor: AuthenticatedUser
+): Promise<{ inserted: number; candidates: number }> {
+  await assertCollectionForActor(db, collectionId, actor);
+  const expansionName = String(input.expansionName || "").trim();
+  if (!expansionName) throw new Error("Falta la expansion.");
+  const variants = collectionExpansionVariants(expansionName);
+  const languageGroup = input.languageGroup || "english";
+  const candidates = await db.query<{ pricecharting_id: string }>(`
+    select pricecharting_id
+    from pricecharting_cache_entries
+    where language_group = $1 and normalized_expansion in ($2, $3, $4)
+    order by regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '[^a-z0-9]+', '', 'g'), product_name
+  `, [languageGroup, variants[0] || "", variants[1] || variants[0] || "", variants[2] || variants[0] || ""]);
+  let inserted = 0;
+  await inventoryTransaction(db, async (tx) => {
+    for (const row of candidates.rows) {
+      const result = await tx.query<{ id: string }>(`
+        insert into collection_items (id, business_id, collection_id, pricecharting_id, quantity, source, note, created_by)
+        values ($1, $2, $3, $4, 1, 'expansion', $5, $6)
+        on conflict (collection_id, pricecharting_id) do nothing
+        returning id
+      `, [crypto.randomUUID(), actor.businessId, collectionId, row.pricecharting_id, expansionName, actor.id]);
+      if (result.rows[0]) inserted += 1;
+    }
+    await tx.query("update collections set updated_at = now() where id = $1 and business_id = $2", [collectionId, actor.businessId]);
+  });
+  await writeAudit(db, actor, "collection.expansion.import", "collection", collectionId, null, { expansionName, languageGroup, inserted, candidates: candidates.rows.length });
+  return { inserted, candidates: candidates.rows.length };
+}
+
+export async function deleteCollectionItem(
+  db: PGlite,
+  collectionId: string,
   priceChartingId: string,
   actor: AuthenticatedUser
 ): Promise<{ deleted: boolean }> {
-  if (collectionKey !== defaultCollectionKey) throw new Error("Coleccion no soportada.");
+  await assertCollectionForActor(db, collectionId, actor);
   const result = await db.query<{ id: string }>(`
-    delete from collection_manual_entries
-    where business_id = $1 and collection_key = $2 and pricecharting_id = $3
+    delete from collection_items
+    where business_id = $1 and collection_id = $2 and pricecharting_id = $3
     returning id
-  `, [actor.businessId, collectionKey, priceChartingId]);
-  await writeAudit(db, actor, "collection.manual_entry.delete", "collection", collectionKey, null, { priceChartingId });
+  `, [actor.businessId, collectionId, priceChartingId]);
+  await db.query("update collections set updated_at = now() where id = $1 and business_id = $2", [collectionId, actor.businessId]);
+  await writeAudit(db, actor, "collection.item.delete", "collection", collectionId, null, { priceChartingId });
   return { deleted: Boolean(result.rows[0]) };
 }
 

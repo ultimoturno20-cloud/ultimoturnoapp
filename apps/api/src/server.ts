@@ -12,7 +12,8 @@ import {
   assignResellerStock,
   adjustInventoryQuantity,
   addClaimFree,
-  addCollectionManualEntry,
+  addCollectionExpansionItems,
+  addCollectionItem,
   addPriceChartingCardsToClaim,
   approveCardIndexEntriesByConfidence,
   archiveActiveClaim,
@@ -38,7 +39,8 @@ import {
   createResellerSettlement,
   checkPostgresConnection,
   createOperationalDatabase,
-  deleteCollectionManualEntry,
+  createCollection,
+  deleteCollectionItem,
   deleteMobileInventoryEntry,
   deleteClaimPlanItem,
   deleteClaimCard,
@@ -4273,18 +4275,39 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
-    const collectionManualMatch = url.pathname.match(/^\/collections\/([^/]+)\/manual$/);
-    if (collectionManualMatch && request.method === "POST") {
+    if (url.pathname === "/collections" && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson<Parameters<typeof createCollection>[1]>(request);
+      const created = await createCollection(db, body, user);
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, { ...(await listCollectionValuations(db, user.businessId, blueRate.sell)), created });
+      return;
+    }
+
+    const collectionItemsMatch = url.pathname.match(/^\/collections\/([^/]+)\/items$/);
+    if (collectionItemsMatch && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
       const body = await readJson<{ priceChartingId?: string; quantity?: number; note?: string }>(request);
-      await addCollectionManualEntry(db, { collectionKey: decodeURIComponent(collectionManualMatch[1]), priceChartingId: body.priceChartingId || "", quantity: body.quantity, note: body.note }, user);
+      await addCollectionItem(db, decodeURIComponent(collectionItemsMatch[1]), { priceChartingId: body.priceChartingId || "", quantity: body.quantity, note: body.note }, user);
       const blueRate = await getBlueExchangeRate();
       sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
       return;
     }
 
-    const collectionManualDeleteMatch = url.pathname.match(/^\/collections\/([^/]+)\/manual\/([^/]+)$/);
-    if (collectionManualDeleteMatch && request.method === "DELETE") {
-      await deleteCollectionManualEntry(db, decodeURIComponent(collectionManualDeleteMatch[1]), decodeURIComponent(collectionManualDeleteMatch[2]), user);
+    const collectionImportMatch = url.pathname.match(/^\/collections\/([^/]+)\/import-expansion$/);
+    if (collectionImportMatch && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson<{ expansionName?: string; languageGroup?: "english" | "japanese" | "chinese" }>(request);
+      const result = await addCollectionExpansionItems(db, decodeURIComponent(collectionImportMatch[1]), { expansionName: body.expansionName || "", languageGroup: body.languageGroup || "english" }, user);
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, { ...(await listCollectionValuations(db, user.businessId, blueRate.sell)), result });
+      return;
+    }
+
+    const collectionItemDeleteMatch = url.pathname.match(/^\/collections\/([^/]+)\/items\/([^/]+)$/);
+    if (collectionItemDeleteMatch && request.method === "DELETE") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      await deleteCollectionItem(db, decodeURIComponent(collectionItemDeleteMatch[1]), decodeURIComponent(collectionItemDeleteMatch[2]), user);
       const blueRate = await getBlueExchangeRate();
       sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
       return;

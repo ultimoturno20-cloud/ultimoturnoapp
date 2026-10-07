@@ -743,6 +743,7 @@ type PriceChartingCacheStatus = {
 };
 
 type CollectionValuationEntry = {
+  id: string;
   priceChartingId: string;
   productName: string;
   expansionName: string;
@@ -750,25 +751,41 @@ type CollectionValuationEntry = {
   languageGroup: string;
   priceUsd: number | null;
   quantity: number;
-  source: "base" | "manual";
+  source: "expansion" | "manual";
   note: string;
-  duplicateOfBase: boolean;
+  createdAt: string;
 };
 
+type CollectionType = "collection" | "deck" | "sealed" | "other";
+
 type CollectionValuation = {
-  key: string;
+  id: string;
   name: string;
+  collectionType: CollectionType;
   description: string;
-  baseExpansion: string;
-  languageGroup: string;
-  baseEntries: number;
+  sellable: boolean;
+  countsInValuation: boolean;
+  itemCount: number;
   manualEntries: number;
+  expansionEntries: number;
   pricedEntries: number;
   missingPriceEntries: number;
   totalUsd: number;
   totalArs: number;
+  countedUsd: number;
+  countedArs: number;
   lastImportedAt: string;
+  createdAt: string;
+  updatedAt: string;
   entries: CollectionValuationEntry[];
+};
+
+type CollectionValuationSummary = {
+  collections: CollectionValuation[];
+  totalCollections: number;
+  countedCollections: number;
+  totalUsd: number;
+  totalArs: number;
 };
 
 type CoolstuffPriceQuote = {
@@ -6551,18 +6568,30 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
 
 function CollectionValuationsPanel() {
   const [collections, setCollections] = useState<CollectionValuation[]>([]);
+  const [summary, setSummary] = useState({ totalCollections: 0, countedCollections: 0, totalUsd: 0, totalArs: 0 });
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [createName, setCreateName] = useState("Master Set 151");
+  const [createType, setCreateType] = useState<CollectionType>("collection");
+  const [createDescription, setCreateDescription] = useState("Set base Scarlet & Violet 151 con promos agregadas a mano.");
+  const [expansionName, setExpansionName] = useState("Scarlet & Violet 151");
   const [manualId, setManualId] = useState("");
   const [manualNote, setManualNote] = useState("");
   const [manualQuantity, setManualQuantity] = useState("1");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<PriceChartingCacheEntry[]>([]);
-  const collection = collections[0];
+  const [entryLimit, setEntryLimit] = useState(80);
+  const collection = collections.find((item) => item.id === selectedId) || collections[0];
+  const setCollectionPayload = (payload: CollectionValuationSummary, preferredId = selectedId) => {
+    setCollections(payload.collections);
+    setSummary({ totalCollections: payload.totalCollections, countedCollections: payload.countedCollections, totalUsd: payload.totalUsd, totalArs: payload.totalArs });
+    if (payload.collections.length && (!preferredId || !payload.collections.some((item) => item.id === preferredId))) setSelectedId(payload.collections[0].id);
+  };
   const load = async () => {
     setLoading(true);
     try {
-      setCollections((await api<{ collections: CollectionValuation[] }>("/collections")).collections);
+      setCollectionPayload(await api<CollectionValuationSummary>("/collections"));
       setFeedback("");
     } catch (error) {
       setFeedback(errorMessage(error));
@@ -6571,18 +6600,51 @@ function CollectionValuationsPanel() {
     }
   };
   useEffect(() => { void load(); }, []);
+  const createCollection = async () => {
+    if (!createName.trim()) return;
+    setLoading(true);
+    try {
+      const result = await api<CollectionValuationSummary & { created: { collection: { id: string } } }>("/collections", {
+        method: "POST",
+        body: { name: createName.trim(), collectionType: createType, description: createDescription.trim(), sellable: false, countsInValuation: true }
+      });
+      setCollectionPayload(result, result.created.collection.id);
+      setSelectedId(result.created.collection.id);
+      setFeedback("Coleccion creada.");
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const importExpansion = async () => {
+    if (!collection || !expansionName.trim()) return;
+    setLoading(true);
+    try {
+      const result = await api<CollectionValuationSummary & { result: { inserted: number; candidates: number } }>(`/collections/${collection.id}/import-expansion`, {
+        method: "POST",
+        body: { expansionName: expansionName.trim(), languageGroup: "english" }
+      });
+      setCollectionPayload(result, collection.id);
+      setFeedback(`${result.result.inserted} carta(s) agregadas de ${result.result.candidates} candidata(s).`);
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
   const addManual = async (priceChartingId = manualId, note = manualNote) => {
     if (!collection || !priceChartingId.trim()) return;
     setLoading(true);
     try {
-      const result = await api<{ collections: CollectionValuation[] }>(`/collections/${collection.key}/manual`, {
+      const result = await api<CollectionValuationSummary>(`/collections/${collection.id}/items`, {
         method: "POST",
         body: { priceChartingId: priceChartingId.trim(), quantity: Math.max(1, Number(manualQuantity) || 1), note }
       });
-      setCollections(result.collections);
+      setCollectionPayload(result, collection.id);
       setManualId("");
       setManualNote("");
-      setFeedback("Promo agregada a la valuacion.");
+      setFeedback("Item agregado a la coleccion.");
     } catch (error) {
       setFeedback(errorMessage(error));
     } finally {
@@ -6593,9 +6655,9 @@ function CollectionValuationsPanel() {
     if (!collection) return;
     setLoading(true);
     try {
-      const result = await api<{ collections: CollectionValuation[] }>(`/collections/${collection.key}/manual/${encodeURIComponent(entry.priceChartingId)}`, { method: "DELETE" });
-      setCollections(result.collections);
-      setFeedback("Promo quitada de la valuacion.");
+      const result = await api<CollectionValuationSummary>(`/collections/${collection.id}/items/${encodeURIComponent(entry.priceChartingId)}`, { method: "DELETE" });
+      setCollectionPayload(result, collection.id);
+      setFeedback("Item quitado de la coleccion.");
     } catch (error) {
       setFeedback(errorMessage(error));
     } finally {
@@ -6615,46 +6677,66 @@ function CollectionValuationsPanel() {
       setLoading(false);
     }
   };
-  const manualEntries = collection?.entries.filter((entry) => entry.source === "manual") || [];
+  const visibleEntries = collection?.entries.slice(0, entryLimit) || [];
   return <section className="panel collection-valuation-panel">
     <div className="section-heading compact-heading">
       <div>
         <p className="eyebrow">Colecciones</p>
-        <h3>{collection?.name || "Master Set Scarlet & Violet 151"}</h3>
-        <p>{collection?.description || "Valuacion automatica con PriceCharting y promos manuales."}</p>
+        <h3>{collection?.name || "Carpetas, mazos y piezas no vendibles"}</h3>
+        <p>{collection?.description || "Valuacion por PriceCharting fuera del stock vendible."}</p>
       </div>
       <button className="secondary-action" disabled={loading} onClick={() => void load()}><Icon name="refresh" />Actualizar</button>
     </div>
+    <div className="metrics admin-metrics">
+      <Metric label="Valor colecciones" value={formatArs(summary.totalArs)} helper={`${formatUsd(summary.totalUsd)} contables`} />
+      <Metric label="Colecciones" value={summary.totalCollections.toLocaleString("es-AR")} helper={`${summary.countedCollections.toLocaleString("es-AR")} suman al total`} />
+      <Metric label="Seleccion" value={collection ? formatArs(collection.totalArs) : "Sin coleccion"} helper={collection ? `${collection.itemCount.toLocaleString("es-AR")} items` : "crea una para empezar"} />
+      <Metric label="Actualizado" value={collection?.lastImportedAt ? formatShortDate(collection.lastImportedAt) : "Sin cache"} helper={collection?.collectionType || "coleccion"} />
+    </div>
+    <div className="admin-button-row">
+      <input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="Nombre de coleccion" />
+      <select value={createType} onChange={(event) => setCreateType(event.target.value as CollectionType)}><option value="collection">Coleccion</option><option value="deck">Mazo</option><option value="sealed">Sellado</option><option value="other">Otro</option></select>
+      <input value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Descripcion opcional" />
+      <button className="primary-action" disabled={loading || !createName.trim()} onClick={() => void createCollection()}><Icon name="plus" />Crear</button>
+    </div>
+    {collections.length ? <div className="admin-button-row">
+      <select value={collection?.id || ""} onChange={(event) => { setSelectedId(event.target.value); setEntryLimit(80); }}>
+        {collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+      <input value={expansionName} onChange={(event) => setExpansionName(event.target.value)} placeholder="Expansion PriceCharting" />
+      <button className="secondary-action" disabled={loading || !collection || !expansionName.trim()} onClick={() => void importExpansion()}><Icon name="import" />Importar expansion</button>
+    </div> : null}
     {collection ? <div className="metrics admin-metrics">
-      <Metric label="Valor carpeta" value={formatArs(collection.totalArs)} helper={`${formatUsd(collection.totalUsd)} PriceCharting`} />
-      <Metric label="Base 151" value={collection.baseEntries.toLocaleString("es-AR")} helper={`${collection.pricedEntries.toLocaleString("es-AR")} con precio`} />
-      <Metric label="Promos manuales" value={collection.manualEntries.toLocaleString("es-AR")} helper={collection.missingPriceEntries ? `${collection.missingPriceEntries} sin precio` : "todas valuadas"} />
-      <Metric label="Actualizado" value={collection.lastImportedAt ? formatShortDate(collection.lastImportedAt) : "Sin cache"} helper={collection.languageGroup} />
+      <Metric label="Valor" value={formatArs(collection.totalArs)} helper={`${formatUsd(collection.totalUsd)} PriceCharting`} />
+      <Metric label="Base expansion" value={collection.expansionEntries.toLocaleString("es-AR")} helper="importada desde cache" />
+      <Metric label="Manual" value={collection.manualEntries.toLocaleString("es-AR")} helper={collection.missingPriceEntries ? `${collection.missingPriceEntries} sin precio` : "precios listos"} />
+      <Metric label="Estado" value={collection.sellable ? "Vendible" : "No venta"} helper={collection.countsInValuation ? "cuenta en valuacion" : "fuera del total"} />
     </div> : null}
     <div className="admin-button-row">
       <input value={manualId} onChange={(event) => setManualId(event.target.value)} placeholder="PriceCharting ID de promo" />
       <input value={manualQuantity} onChange={(event) => setManualQuantity(event.target.value)} type="number" min={1} />
       <input value={manualNote} onChange={(event) => setManualNote(event.target.value)} placeholder="Nota opcional" />
-      <button className="primary-action" disabled={loading || !manualId.trim()} onClick={() => void addManual()}><Icon name="plus" />Agregar promo</button>
+      <button className="primary-action" disabled={loading || !collection || !manualId.trim()} onClick={() => void addManual()}><Icon name="plus" />Agregar item</button>
     </div>
     <div className="admin-button-row">
-      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar promo en PriceCharting" onKeyDown={(event) => { if (event.key === "Enter") void searchPromos(); }} />
+      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar carta o promo en PriceCharting" onKeyDown={(event) => { if (event.key === "Enter") void searchPromos(); }} />
       <button className="secondary-action" disabled={loading || search.trim().length < 2} onClick={() => void searchPromos()}><Icon name="search" />Buscar</button>
     </div>
     {searchResults.length ? <div className="managed-user-list">
       {searchResults.map((entry) => <div key={entry.priceChartingId}>
         <span><strong>{entry.productName}</strong><small>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""} / PC {entry.priceChartingId}</small></span>
         <b>{formatUsd(entry.loosePriceUsd || entry.priceChartingPriceUsd || 0)}</b>
-        <button className="secondary-action" disabled={loading} onClick={() => void addManual(entry.priceChartingId, "promo manual")}>Agregar</button>
+        <button className="secondary-action" disabled={loading || !collection} onClick={() => void addManual(entry.priceChartingId, "manual")}>Agregar</button>
       </div>)}
     </div> : null}
-    {manualEntries.length ? <div className="managed-user-list">
-      {manualEntries.map((entry) => <div key={entry.priceChartingId}>
-        <span><strong>{entry.productName}</strong><small>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""} / PC {entry.priceChartingId}{entry.duplicateOfBase ? " / ya esta en base" : ""}</small></span>
+    {visibleEntries.length ? <div className="managed-user-list">
+      {visibleEntries.map((entry) => <div key={entry.priceChartingId}>
+        <span><strong>{entry.productName}</strong><small>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""} / PC {entry.priceChartingId} / {entry.source === "expansion" ? "base" : "manual"}</small></span>
         <b>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}</b>
         <button className="secondary-action" disabled={loading} onClick={() => void removeManual(entry)}>Quitar</button>
       </div>)}
-    </div> : <p className="muted">Todavia no hay promos manuales agregadas.</p>}
+      {collection && entryLimit < collection.entries.length ? <button className="secondary-action" type="button" onClick={() => setEntryLimit((limit) => limit + 80)}>Mostrar mas</button> : null}
+    </div> : <p className="muted">Todavia no hay items en esta coleccion.</p>}
     {feedback ? <p className="muted" role="status">{feedback}</p> : null}
   </section>;
 }

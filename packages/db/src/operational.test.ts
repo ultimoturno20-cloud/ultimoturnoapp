@@ -5,7 +5,8 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   adjustInventoryQuantity,
-  addCollectionManualEntry,
+  addCollectionExpansionItems,
+  addCollectionItem,
   addPriceChartingCardsToClaim,
   claimPriceChartingImageQueue,
   closeActiveClaim,
@@ -15,6 +16,7 @@ import {
   createClaimSection,
   createPurchase,
   createSale,
+  createCollection,
   createOperationalDatabase,
   ensurePriceChartingImageQueueForActiveClaim,
   ensurePriceChartingImageQueueForAll,
@@ -61,7 +63,7 @@ import {
   getPriceHistory,
   importPriceHistory,
   listPriceChanges,
-  deleteCollectionManualEntry,
+  deleteCollectionItem,
   recordPriceHistorySnapshot
 } from "./index.js";
 
@@ -566,7 +568,7 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
-  it("values the Scarlet & Violet 151 master set with manual promo additions", async () => {
+  it("values editable collections with expansion imports and manual promo additions", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-collection-valuation-"));
     const db = await createOperationalDatabase({ dataDir });
     const user = await getDefaultOperationalUser(db);
@@ -630,27 +632,45 @@ describe("operational inventory database", () => {
       }]
     });
 
+    const created = await createCollection(db, {
+      name: "Master Set 151",
+      collectionType: "collection",
+      description: "Set base con promos manuales",
+      sellable: false,
+      countsInValuation: true
+    }, user);
+    const collectionId = created.collection.id;
+    const imported = await addCollectionExpansionItems(db, collectionId, { expansionName: "Scarlet & Violet 151", languageGroup: "english" }, user);
+    assert.equal(imported.inserted, 2);
+    assert.equal(imported.candidates, 2);
+
     let valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.baseEntries, 2);
+    assert.equal(valuation.name, "Master Set 151");
+    assert.equal(valuation.sellable, false);
+    assert.equal(valuation.countsInValuation, true);
+    assert.equal(valuation.expansionEntries, 2);
     assert.equal(valuation.manualEntries, 0);
     assert.equal(valuation.totalUsd, 5);
     assert.equal(valuation.totalArs, 5000);
 
-    await addCollectionManualEntry(db, { priceChartingId: "sv151-upc-promo-mew", quantity: 1, note: "UPC" }, user);
+    await addCollectionItem(db, collectionId, { priceChartingId: "sv151-upc-promo-mew", quantity: 1, note: "UPC" }, user);
     valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
+    assert.equal(valuation.itemCount, 3);
     assert.equal(valuation.manualEntries, 1);
     assert.equal(valuation.totalUsd, 15);
 
-    await addCollectionManualEntry(db, { priceChartingId: "sv151-bulbasaur-1", quantity: 1, note: "ya incluido" }, user);
+    await addCollectionItem(db, collectionId, { priceChartingId: "sv151-bulbasaur-1", quantity: 1, note: "ya incluido" }, user);
     valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.manualEntries, 2);
-    assert.equal(valuation.entries.find((entry) => entry.priceChartingId === "sv151-bulbasaur-1" && entry.source === "manual")?.duplicateOfBase, true);
+    assert.equal(valuation.itemCount, 3);
+    assert.equal(valuation.manualEntries, 1);
+    assert.equal(valuation.entries.find((entry) => entry.priceChartingId === "sv151-bulbasaur-1")?.source, "expansion");
     assert.equal(valuation.totalUsd, 15);
 
-    await deleteCollectionManualEntry(db, "sv151-master-set", "sv151-upc-promo-mew", user);
+    await deleteCollectionItem(db, collectionId, "sv151-upc-promo-mew", user);
     valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.manualEntries, 1);
+    assert.equal(valuation.manualEntries, 0);
     assert.equal(valuation.totalUsd, 5);
+    assert.equal((await listCollectionValuations(db, user.businessId, 1000)).totalUsd, 5);
     await db.close();
   });
 
