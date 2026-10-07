@@ -1,11 +1,31 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-03
+Actualizado: 2026-10-07
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Validar vencimientos, costos y pagos mixtos
+
+- En la proxima orden y el proximo claim reales, sin crear datos ficticios,
+  confirmar que ambos propongan vencimiento a 7 dias y que una fecha elegida
+  manualmente se conserve.
+- En Caja, completar una muestra pequena de cartas sin costo usando un porcentaje
+  del precio de venta. Revisar el costo unitario, costo total y ganancia potencial
+  antes de aplicar la herramienta sobre todo el inventario.
+- Importar un CSV pequeno con `sku,costo,moneda`, incluyendo una fila ARS y otra
+  USD. Confirmar que los SKU inexistentes se informen como omitidos y no alteren
+  otras cartas.
+- En una orden con total USD, registrar primero un pago parcial en dolares y luego
+  otro en pesos. Verificar `Pagado`, `Resta`, Caja y el movimiento automático de
+  columna sin marcarla como saldada antes de tiempo.
+- Completar y, en un caso separado, fusionar ordenes duplicadas con pagos USD;
+  confirmar que `amountPaidUsd` no se pierda y que la deuda final coincida.
+
+Senal de exito: vencimientos y costos quedan trazables, y una cobranza combinada
+ARS/USD nunca convierte, duplica ni descarta importes.
 
 ### Pilotear la PWA en celulares reales
 
@@ -344,22 +364,24 @@ Storage.
 Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
 recrees durante pruebas. No pongas secretos en Git.
 
-Commit de produccion confirmado: `ad609e5`. Revisar igualmente `git log -1` y
+Base funcional de produccion confirmada: `3b06aa7`. Revisar igualmente
+`git log -1` y
 `/api/public-status` antes de editar, porque puede existir un despliegue mas
 nuevo.
 
-Trabajo reciente: carga de stock en pagina completa, busqueda de catalogo mas
-rapida, imagenes con fallback/proxy seguro, tarjetas de inventario normalizadas,
-mejoras de claim y sistema de revendedores en consignacion. El revendedor tiene
-usuario propio, stock asignado sin exclusividad, ventas, rendiciones, pedidos,
-stock global de solo lectura y estados independientes de preparacion y cobro.
+Trabajo reciente: PWA instalable, vistas moviles dedicadas para Ordenes y
+Revendedores, capa movil para Inicio/Inventario/Caja/Claims, carga de stock en
+pagina completa, busqueda de catalogo rapida, mejoras de claim y sistema de
+revendedores en consignacion. Tambien se agregaron vencimientos automaticos a 7
+dias, carga masiva de costos por porcentaje o CSV y pagos parciales separados en
+ARS/USD.
 UltimoTurno siempre conserva prioridad sobre el stock y la venta del revendedor
 revalida disponibilidad antes de descontar.
 
 La carga de stock tiene una version compacta para pantallas de hasta 620 px:
 sin cabecera/navegacion global, filtros horizontales, campo y lupa en una fila,
 resultados densos y espacio inferior para teclado/barra del navegador. Esta
-version esta online desde `ad609e5`; falta validarla durante una carga real con
+version esta online; falta validarla durante una carga real con
 los telefonos de los operadores.
 
 La navegacion principal y el portal usan URLs reales por sector. La pantalla
@@ -368,10 +390,10 @@ de formularios, carrito, filtros o scroll. El boton superior actualiza solo el
 sector actual. Antes de cambiar esto, revisar la implementacion de History API,
 los mapas de rutas y `vercel.json`.
 
-Objetivo inmediato: validar la carga movil y la sincronizacion con dos sesiones
-en produccion, y luego pilotear revendedores con pocas cartas reales para
-comprobar prioridad central, venta, anulacion, devolucion, rendicion, pedidos y
-estados. Luego continuar cobertura de imagenes y validacion de CSV reales.
+Objetivo inmediato: validar vencimientos, carga de costos y pagos mixtos con una
+muestra pequena; despues validar la PWA/carga movil y la sincronizacion con dos
+sesiones. Luego pilotear revendedores con pocas cartas reales y continuar
+cobertura de imagenes y validacion de CSV reales.
 ```
 
 ---

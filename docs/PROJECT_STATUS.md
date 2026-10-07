@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-03
+Actualizado: 2026-10-07
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -18,7 +18,7 @@ Actualizado: 2026-10-03
 - Las ordenes tambien son datos reales. Las mejoras visuales recientes fueron
   solo de frontend y no modificaron la base de ordenes.
 
-## Trabajo completado del 17 de septiembre al 3 de octubre
+## Trabajo completado del 17 de septiembre al 7 de octubre
 
 ### Aplicacion movil instalable
 
@@ -51,6 +51,27 @@ Actualizado: 2026-10-03
   navegacion permanece en una sola fila desplazable, las metricas se consultan
   como tiras horizontales, los formularios priorizan controles tactiles y las
   cartas/filas se compactan sin ocultar acciones ni informacion comercial.
+
+### Costos, vencimientos y pagos en dos monedas
+
+- Las ordenes nuevas y los claims nuevos usan por defecto una fecha limite de
+  pago a 7 dias. La fecha sigue siendo editable y la migracion
+  `0052_default_payment_due.sql` completo las ordenes abiertas que no tenian
+  vencimiento, respetando la zona horaria de Buenos Aires.
+- Caja incorpora una herramienta administrativa para completar costos faltantes
+  como porcentaje del precio de venta o importarlos con filas
+  `sku,costo,moneda`. Acepta ARS y USD, actualiza solo el negocio autenticado y
+  registra la operacion en auditoria.
+- Los resumenes financieros usan el costo cargado por carta o, si existe, el
+  costo de la ultima compra. Tambien muestran costo total y ganancia potencial;
+  la exportacion de Inventario incluye `purchaseCost` y `purchaseCurrency`.
+- Las ordenes mixtas o expresadas en USD admiten pagos parciales separados en
+  ARS y USD. La deuda restante, los indicadores del tablero, el pago completo y
+  la fusion de ordenes duplicadas conservan ambos importes sin convertirlos ni
+  perderlos.
+- La base productiva confirmada para estas funciones es `3b06aa7`. Las
+  migraciones mas recientes son `0052_default_payment_due.sql` y
+  `0053_sale_amount_paid_usd.sql`.
 
 ### Acceso del portal de revendedores
 
@@ -509,6 +530,16 @@ Actualizado: 2026-10-03
 ## Commits funcionales recientes
 
 ```text
+3b06aa7 Merge pull request #27 (pagos parciales en USD)
+8a8d9ce feat: record partial USD payments on orders
+9567b2d Merge pull request #26 (costos de inventario)
+89e6981 feat: load card costs from sale percent or CSV
+2120a75 Merge pull request #25 (vencimiento por defecto)
+a21de66 feat: default payment due date to 7 days
+39b5bdf Optimize core views for mobile
+81dfe9b Optimize reseller workflows for mobile
+155cbd0 Optimize order workflow for mobile
+16ac6fa Add installable UltimoTurno PWA
 08a2e0c perf: eliminar contador bloqueante del alta
 a2b98c3 perf: cargar cada sector bajo demanda
 ad609e5 Mejorar carga de stock en celular
@@ -567,6 +598,12 @@ OPENAI_CLAIM_MODEL=gpt-4o-mini
 Nunca copiar valores reales a Git, logs compartidos o documentacion.
 
 ## Verificacion y deploy
+
+Verificacion local del estado integrado `3b06aa7` realizada el 2026-10-07:
+lint OK, typecheck OK, build OK y `92/92` tests aprobados. Incluye pruebas
+especificas de vencimiento a 7 dias, costos por porcentaje/CSV y pagos parciales
+USD. `/api/public-status` confirmo la misma base funcional en produccion con
+PostgreSQL accesible.
 
 Antes de subir cambios:
 

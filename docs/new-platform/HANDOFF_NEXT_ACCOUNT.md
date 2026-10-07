@@ -1,6 +1,6 @@
 # Traspaso de contexto - UltimoTurno
 
-## Aviso vigente - 2026-09-26
+## Aviso vigente - 2026-10-07
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y
 prioridades actuales usar primero:
@@ -26,12 +26,13 @@ Estado Git y produccion al cerrar este traspaso:
 
 ```text
 Rama: main
-Commit desplegado: 08a2e0c perf: eliminar contador bloqueante del alta
+Base funcional desplegada y confirmada: 3b06aa7
 Produccion: https://ultimoturno.app/
 DB: Supabase/Postgres por transaction pooler
 Storage: Supabase Storage
 Perfil: PILOTO REAL
-Verificacion del ultimo cambio: lint, typecheck y build OK; PostgreSQL online accesible
+Verificacion: lint, typecheck y build OK; 92/92 tests; /api/public-status OK;
+PostgreSQL online accesible
 ```
 
 Cambios recientes resumidos:
@@ -53,6 +54,13 @@ Cambios recientes resumidos:
 - portal propio con carrito, comision, saldo, ventas y stock asignado;
 - pedidos sin reserva de stock, stock global de solo lectura y estados de
   preparacion/cobro.
+- PWA instalable y experiencias moviles dedicadas para Ordenes, Revendedores,
+  Inicio, Inventario, Caja y Claims;
+- vencimiento por defecto a 7 dias para nuevas ordenes y claims;
+- carga administrativa de costos por porcentaje del precio de venta o CSV
+  `sku,costo,moneda`, con costo total y ganancia potencial en Caja;
+- pagos parciales independientes en ARS y USD, incluidos deuda restante, pago
+  completo y fusion de ordenes duplicadas.
 
 Regla central de consignacion: asignar stock a un revendedor no lo quita de la
 venta general. UltimoTurno conserva prioridad. Al confirmar la venta del
@@ -61,15 +69,11 @@ revendedor se revalida stock real en transaccion y recien entonces se descuenta.
 Migraciones vigentes mas recientes:
 
 ```text
-0032_reseller_consignment.sql
-0033_reseller_orders.sql
-0034_reseller_order_workflow.sql
-0035_tcgplayer_price_fallback.sql
-0036_claim_planner.sql
-0037_fast_catalog_search.sql
-0038_coolstuff_price_cache.sql
-0039_catalog_search_number_index.sql
-0040_reuse_catalog_stock_images.sql
+0049_sales_reseller_assignment.sql
+0050_login_attempts.sql
+0051_price_history.sql
+0052_default_payment_due.sql
+0053_sale_amount_paid_usd.sql
 ```
 
 ## Prompt vigente para el proximo chat
@@ -85,8 +89,9 @@ Antes de responder o modificar archivos, lee:
 
 Luego revisa git status y confirma el commit actual. Produccion funciona en
 https://ultimoturno.app/ con Vercel, Supabase/Postgres y Supabase
-Storage. El ultimo commit de produccion confirmado al cerrar el chat anterior
-fue 08a2e0c.
+Storage. La base funcional de produccion confirmada al cerrar este traspaso fue
+`3b06aa7`; verificar igualmente `git log -1` y `/api/public-status` porque puede
+haber commits documentales o despliegues posteriores.
 
 Hay un claim activo, ordenes y stock reales: no los elimines, canceles ni
 recrees durante pruebas. No guardes secretos en Git.
@@ -101,11 +106,19 @@ La carga de stock movil esta adaptada para pantallas de hasta 620 px: oculta el
 chrome global, compacta filtros y resultados, mantiene campo y lupa en una fila
 y reserva espacio para el teclado y la barra inferior del navegador.
 
-Objetivo inmediato: validar `/inventario/cargar-stock` durante una carga real
-desde los telefonos de los operadores y comprobar sincronizacion entre dos
-sesiones. Luego pilotear el flujo con un revendedor y pocas cartas reales,
-validando prioridad central, venta, anulacion, devolucion, rendicion y estados
-de pedidos. Despues continuar con imagenes faltantes y CSV reales.
+La plataforma es una PWA instalable. Ordenes y Revendedores tienen flujos
+moviles dedicados; Inicio, Inventario, Caja y Claims tienen navegacion,
+metricas, tarjetas y formularios compactados para pantallas de hasta 700 px.
+
+Las ordenes y claims nuevos vencen por defecto a 7 dias. Caja puede completar
+costos faltantes por porcentaje o CSV `sku,costo,moneda`. Las ordenes admiten
+pagos parciales independientes en ARS y USD; no convertir ni mezclar monedas al
+calcular saldos.
+
+Objetivo inmediato: validar con una muestra pequena el vencimiento a 7 dias, la
+carga de costos y una cobranza parcial ARS/USD. Despues validar
+`/inventario/cargar-stock` desde telefonos y la sincronizacion entre dos
+sesiones; luego pilotear revendedores, imagenes faltantes y CSV reales.
 ```
 
 ---
