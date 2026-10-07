@@ -12,6 +12,7 @@ import {
   assignResellerStock,
   adjustInventoryQuantity,
   addClaimFree,
+  addCollectionManualEntry,
   addPriceChartingCardsToClaim,
   approveCardIndexEntriesByConfidence,
   archiveActiveClaim,
@@ -37,6 +38,7 @@ import {
   createResellerSettlement,
   checkPostgresConnection,
   createOperationalDatabase,
+  deleteCollectionManualEntry,
   deleteMobileInventoryEntry,
   deleteClaimPlanItem,
   deleteClaimCard,
@@ -65,6 +67,7 @@ import {
   listPurchases,
   listClaimPlans,
   listClaimsWorkspace,
+  listCollectionValuations,
   listCardIndex,
   listCoolstuffPriceTargets,
   listMobileInventoryEntries,
@@ -4261,6 +4264,29 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/auth/me") {
       sendJson(response, 200, { user, roles: user.roles || ["admin"], environment: { dataProfile, allowExamples } });
+      return;
+    }
+
+    if (url.pathname === "/collections" && request.method === "GET") {
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
+      return;
+    }
+
+    const collectionManualMatch = url.pathname.match(/^\/collections\/([^/]+)\/manual$/);
+    if (collectionManualMatch && request.method === "POST") {
+      const body = await readJson<{ priceChartingId?: string; quantity?: number; note?: string }>(request);
+      await addCollectionManualEntry(db, { collectionKey: decodeURIComponent(collectionManualMatch[1]), priceChartingId: body.priceChartingId || "", quantity: body.quantity, note: body.note }, user);
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
+      return;
+    }
+
+    const collectionManualDeleteMatch = url.pathname.match(/^\/collections\/([^/]+)\/manual\/([^/]+)$/);
+    if (collectionManualDeleteMatch && request.method === "DELETE") {
+      await deleteCollectionManualEntry(db, decodeURIComponent(collectionManualDeleteMatch[1]), decodeURIComponent(collectionManualDeleteMatch[2]), user);
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
       return;
     }
 

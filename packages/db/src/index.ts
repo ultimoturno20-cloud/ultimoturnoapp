@@ -83,6 +83,35 @@ export type DbStockSummary = {
   totalValueArs: number;
 };
 
+export type CollectionValuationEntry = {
+  priceChartingId: string;
+  productName: string;
+  expansionName: string;
+  cardNumber: string;
+  languageGroup: string;
+  priceUsd: number | null;
+  quantity: number;
+  source: "base" | "manual";
+  note: string;
+  duplicateOfBase: boolean;
+};
+
+export type CollectionValuation = {
+  key: string;
+  name: string;
+  description: string;
+  baseExpansion: string;
+  languageGroup: string;
+  baseEntries: number;
+  manualEntries: number;
+  pricedEntries: number;
+  missingPriceEntries: number;
+  totalUsd: number;
+  totalArs: number;
+  lastImportedAt: string;
+  entries: CollectionValuationEntry[];
+};
+
 export type InventoryPriceRepairScope = "floor" | "all" | "opportunities";
 
 export type InventoryPriceRepairCandidate = {
@@ -217,7 +246,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0054_collection_manual_entries.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -4041,6 +4070,124 @@ export async function getAuditLog(db: PGlite, businessId = demoBusinessId) {
       actorName: String(row.actor_name || "")
     }))
   };
+}
+
+const defaultCollectionKey = "sv151-master-set";
+
+function isScarletViolet151Expansion(value: string): boolean {
+  const normalized = normalizeImportExpansionName(value);
+  return normalized === "scarlet violet 151"
+    || normalized === "scarlet and violet 151"
+    || (normalized.includes("151") && normalized.includes("scarlet"));
+}
+
+function toCollectionEntry(row: Record<string, unknown>, source: "base" | "manual", duplicateOfBase = false): CollectionValuationEntry {
+  return {
+    priceChartingId: String(row.pricecharting_id || ""),
+    productName: String(row.product_name || ""),
+    expansionName: String(row.expansion_name || ""),
+    cardNumber: String(row.card_number || ""),
+    languageGroup: String(row.language_group || "english"),
+    priceUsd: optionalNumber(row.loose_price_usd) ?? null,
+    quantity: Math.max(1, Number(row.quantity || 1)),
+    source,
+    note: String(row.note || ""),
+    duplicateOfBase
+  };
+}
+
+function buildCollectionValuation(entries: CollectionValuationEntry[], blueRateSell: number): CollectionValuation {
+  const counted = entries.filter((entry) => !entry.duplicateOfBase);
+  const totalUsd = counted.reduce((sum, entry) => sum + (entry.priceUsd || 0) * entry.quantity, 0);
+  const pricedEntries = counted.filter((entry) => entry.priceUsd !== null).length;
+  return {
+    key: defaultCollectionKey,
+    name: "Master Set Scarlet & Violet 151",
+    description: "Base automatica: todas las filas inglesas de PriceCharting para Scarlet & Violet 151. Promos extra: agregadas manualmente por ID PriceCharting.",
+    baseExpansion: "Scarlet & Violet 151",
+    languageGroup: "english",
+    baseEntries: entries.filter((entry) => entry.source === "base").length,
+    manualEntries: entries.filter((entry) => entry.source === "manual").length,
+    pricedEntries,
+    missingPriceEntries: counted.length - pricedEntries,
+    totalUsd: Math.round(totalUsd * 100) / 100,
+    totalArs: Math.round(totalUsd * blueRateSell),
+    lastImportedAt: "",
+    entries
+  };
+}
+
+export async function listCollectionValuations(db: PGlite, businessId: string, blueRateSell: number): Promise<{ collections: CollectionValuation[] }> {
+  const baseRows = await db.query<Record<string, unknown>>(`
+    select pricecharting_id, product_name, expansion_name, card_number, language_group, loose_price_usd, imported_at, 1 as quantity, '' as note
+    from pricecharting_cache_entries
+    where language_group = 'english'
+      and (
+        normalized_expansion in ('scarlet violet 151', 'scarlet and violet 151')
+        or (normalized_expansion like '%151%' and normalized_expansion like '%scarlet%')
+      )
+    order by regexp_replace(lower(split_part(coalesce(card_number, ''), '/', 1)), '[^a-z0-9]+', '', 'g'), product_name
+  `);
+  const baseEntries = baseRows.rows
+    .filter((row) => isScarletViolet151Expansion(String(row.expansion_name || row.normalized_expansion || "")))
+    .map((row) => toCollectionEntry(row, "base"));
+  const baseIds = new Set(baseEntries.map((entry) => entry.priceChartingId));
+
+  const manualRows = await db.query<Record<string, unknown>>(`
+    select pce.pricecharting_id, pce.product_name, pce.expansion_name, pce.card_number,
+      pce.language_group, pce.loose_price_usd, pce.imported_at, cme.quantity, cme.note
+    from collection_manual_entries cme
+    join pricecharting_cache_entries pce on pce.pricecharting_id = cme.pricecharting_id
+    where cme.business_id = $1 and cme.collection_key = $2
+    order by cme.created_at desc
+  `, [businessId, defaultCollectionKey]);
+  const manualEntries = manualRows.rows.map((row) => toCollectionEntry(row, "manual", baseIds.has(String(row.pricecharting_id || ""))));
+  const collection = buildCollectionValuation([...baseEntries, ...manualEntries], blueRateSell);
+  const lastImportedAt = [...baseRows.rows, ...manualRows.rows]
+    .map((row) => row.imported_at ? String(row.imported_at) : "")
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+  return { collections: [{ ...collection, lastImportedAt }] };
+}
+
+export async function addCollectionManualEntry(
+  db: PGlite,
+  input: { collectionKey?: string; priceChartingId: string; quantity?: number; note?: string },
+  actor: AuthenticatedUser
+): Promise<{ saved: boolean }> {
+  const collectionKey = String(input.collectionKey || defaultCollectionKey).trim() || defaultCollectionKey;
+  if (collectionKey !== defaultCollectionKey) throw new Error("Coleccion no soportada.");
+  const priceChartingId = String(input.priceChartingId || "").trim();
+  if (!priceChartingId) throw new Error("Falta el ID de PriceCharting.");
+  const quantity = Math.max(1, Math.floor(Number(input.quantity || 1)));
+  const note = String(input.note || "").trim();
+  const exists = await db.query<{ pricecharting_id: string }>("select pricecharting_id from pricecharting_cache_entries where pricecharting_id = $1 limit 1", [priceChartingId]);
+  if (!exists.rows[0]) throw new Error("Ese ID de PriceCharting no existe en el cache.");
+  await db.query(`
+    insert into collection_manual_entries (id, business_id, collection_key, pricecharting_id, quantity, note, created_by)
+    values ($1, $2, $3, $4, $5, $6, $7)
+    on conflict (business_id, collection_key, pricecharting_id)
+    do update set quantity = excluded.quantity, note = excluded.note
+  `, [crypto.randomUUID(), actor.businessId, collectionKey, priceChartingId, quantity, note, actor.id]);
+  await writeAudit(db, actor, "collection.manual_entry.upsert", "collection", collectionKey, null, { priceChartingId, quantity, note });
+  return { saved: true };
+}
+
+export async function deleteCollectionManualEntry(
+  db: PGlite,
+  collectionKey: string,
+  priceChartingId: string,
+  actor: AuthenticatedUser
+): Promise<{ deleted: boolean }> {
+  if (collectionKey !== defaultCollectionKey) throw new Error("Coleccion no soportada.");
+  const result = await db.query<{ id: string }>(`
+    delete from collection_manual_entries
+    where business_id = $1 and collection_key = $2 and pricecharting_id = $3
+    returning id
+  `, [actor.businessId, collectionKey, priceChartingId]);
+  await writeAudit(db, actor, "collection.manual_entry.delete", "collection", collectionKey, null, { priceChartingId });
+  return { deleted: Boolean(result.rows[0]) };
 }
 
 export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {

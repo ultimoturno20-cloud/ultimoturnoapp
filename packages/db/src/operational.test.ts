@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   adjustInventoryQuantity,
+  addCollectionManualEntry,
   addPriceChartingCardsToClaim,
   claimPriceChartingImageQueue,
   closeActiveClaim,
@@ -29,6 +30,7 @@ import {
   loadExampleInventory,
   listMovements,
   listClaimsWorkspace,
+  listCollectionValuations,
   listCoolstuffPriceTargets,
   listPriceChartingCache,
   listUnifiedCatalogCards,
@@ -59,6 +61,7 @@ import {
   getPriceHistory,
   importPriceHistory,
   listPriceChanges,
+  deleteCollectionManualEntry,
   recordPriceHistorySnapshot
 } from "./index.js";
 
@@ -560,6 +563,94 @@ describe("operational inventory database", () => {
       channel: "whatsapp",
       lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 1500000 }]
     }, user), /solo quedan 0 unidades disponibles/);
+    await db.close();
+  });
+
+  it("values the Scarlet & Violet 151 master set with manual promo additions", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-collection-valuation-"));
+    const db = await createOperationalDatabase({ dataDir });
+    const user = await getDefaultOperationalUser(db);
+    await replacePriceChartingCache(db, {
+      category: "pokemon-cards",
+      sourceHash: "collection-151",
+      rowsReceived: 4,
+      rowsSkipped: 0,
+      rows: [{
+        priceChartingId: "sv151-bulbasaur-1",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1",
+        productName: "Bulbasaur",
+        normalizedName: "bulbasaur",
+        expansionName: "Scarlet & Violet 151",
+        normalizedExpansion: "scarlet violet 151",
+        cardNumber: "1/165",
+        loosePriceUsd: 2,
+        imageUrl: "",
+        languageGroup: "english",
+        searchKey: "bulbasaur scarlet violet 151 1"
+      }, {
+        priceChartingId: "sv151-bulbasaur-1-rh",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1-reverse-holo",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1-reverse-holo",
+        productName: "Bulbasaur [Reverse Holo]",
+        normalizedName: "bulbasaur reverse holo",
+        expansionName: "Scarlet & Violet 151",
+        normalizedExpansion: "scarlet violet 151",
+        cardNumber: "1/165",
+        loosePriceUsd: 3,
+        imageUrl: "",
+        languageGroup: "english",
+        searchKey: "bulbasaur reverse holo scarlet violet 151 1"
+      }, {
+        priceChartingId: "sv151-upc-promo-mew",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/mew-053",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/mew-053",
+        productName: "Mew ex [UPC Promo]",
+        normalizedName: "mew ex upc promo",
+        expansionName: "Pokemon Promo",
+        normalizedExpansion: "pokemon promo",
+        cardNumber: "053",
+        loosePriceUsd: 10,
+        imageUrl: "",
+        languageGroup: "english",
+        searchKey: "mew ex upc promo 053"
+      }, {
+        priceChartingId: "japanese-151-bulbasaur",
+        canonicalUrl: "https://www.pricecharting.com/game/pokemon-japanese-scarlet-&-violet-151/bulbasaur-1",
+        sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-scarlet-&-violet-151/bulbasaur-1",
+        productName: "Bulbasaur",
+        normalizedName: "bulbasaur",
+        expansionName: "Japanese Scarlet & Violet 151",
+        normalizedExpansion: "japanese scarlet violet 151",
+        cardNumber: "1",
+        loosePriceUsd: 4,
+        imageUrl: "",
+        languageGroup: "japanese",
+        searchKey: "bulbasaur japanese scarlet violet 151 1"
+      }]
+    });
+
+    let valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
+    assert.equal(valuation.baseEntries, 2);
+    assert.equal(valuation.manualEntries, 0);
+    assert.equal(valuation.totalUsd, 5);
+    assert.equal(valuation.totalArs, 5000);
+
+    await addCollectionManualEntry(db, { priceChartingId: "sv151-upc-promo-mew", quantity: 1, note: "UPC" }, user);
+    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
+    assert.equal(valuation.manualEntries, 1);
+    assert.equal(valuation.totalUsd, 15);
+
+    await addCollectionManualEntry(db, { priceChartingId: "sv151-bulbasaur-1", quantity: 1, note: "ya incluido" }, user);
+    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
+    assert.equal(valuation.manualEntries, 2);
+    assert.equal(valuation.entries.find((entry) => entry.priceChartingId === "sv151-bulbasaur-1" && entry.source === "manual")?.duplicateOfBase, true);
+    assert.equal(valuation.totalUsd, 15);
+
+    await deleteCollectionManualEntry(db, "sv151-master-set", "sv151-upc-promo-mew", user);
+    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
+    assert.equal(valuation.manualEntries, 1);
+    assert.equal(valuation.totalUsd, 5);
     await db.close();
   });
 

@@ -742,6 +742,35 @@ type PriceChartingCacheStatus = {
   };
 };
 
+type CollectionValuationEntry = {
+  priceChartingId: string;
+  productName: string;
+  expansionName: string;
+  cardNumber: string;
+  languageGroup: string;
+  priceUsd: number | null;
+  quantity: number;
+  source: "base" | "manual";
+  note: string;
+  duplicateOfBase: boolean;
+};
+
+type CollectionValuation = {
+  key: string;
+  name: string;
+  description: string;
+  baseExpansion: string;
+  languageGroup: string;
+  baseEntries: number;
+  manualEntries: number;
+  pricedEntries: number;
+  missingPriceEntries: number;
+  totalUsd: number;
+  totalArs: number;
+  lastImportedAt: string;
+  entries: CollectionValuationEntry[];
+};
+
 type CoolstuffPriceQuote = {
   priceChartingId: string;
   status: "matched" | "not_found" | "ambiguous" | "failed" | "missing";
@@ -6520,6 +6549,116 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
   </section>;
 }
 
+function CollectionValuationsPanel() {
+  const [collections, setCollections] = useState<CollectionValuation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [manualId, setManualId] = useState("");
+  const [manualNote, setManualNote] = useState("");
+  const [manualQuantity, setManualQuantity] = useState("1");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<PriceChartingCacheEntry[]>([]);
+  const collection = collections[0];
+  const load = async () => {
+    setLoading(true);
+    try {
+      setCollections((await api<{ collections: CollectionValuation[] }>("/collections")).collections);
+      setFeedback("");
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void load(); }, []);
+  const addManual = async (priceChartingId = manualId, note = manualNote) => {
+    if (!collection || !priceChartingId.trim()) return;
+    setLoading(true);
+    try {
+      const result = await api<{ collections: CollectionValuation[] }>(`/collections/${collection.key}/manual`, {
+        method: "POST",
+        body: { priceChartingId: priceChartingId.trim(), quantity: Math.max(1, Number(manualQuantity) || 1), note }
+      });
+      setCollections(result.collections);
+      setManualId("");
+      setManualNote("");
+      setFeedback("Promo agregada a la valuacion.");
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const removeManual = async (entry: CollectionValuationEntry) => {
+    if (!collection) return;
+    setLoading(true);
+    try {
+      const result = await api<{ collections: CollectionValuation[] }>(`/collections/${collection.key}/manual/${encodeURIComponent(entry.priceChartingId)}`, { method: "DELETE" });
+      setCollections(result.collections);
+      setFeedback("Promo quitada de la valuacion.");
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const searchPromos = async () => {
+    if (search.trim().length < 2) return;
+    setLoading(true);
+    try {
+      const result = await api<{ entries: PriceChartingCacheEntry[] }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=english&limit=12&includeStatus=false`);
+      setSearchResults(result.entries);
+      setFeedback(result.entries.length ? "" : "No encontre promos con esa busqueda.");
+    } catch (error) {
+      setFeedback(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const manualEntries = collection?.entries.filter((entry) => entry.source === "manual") || [];
+  return <section className="panel collection-valuation-panel">
+    <div className="section-heading compact-heading">
+      <div>
+        <p className="eyebrow">Colecciones</p>
+        <h3>{collection?.name || "Master Set Scarlet & Violet 151"}</h3>
+        <p>{collection?.description || "Valuacion automatica con PriceCharting y promos manuales."}</p>
+      </div>
+      <button className="secondary-action" disabled={loading} onClick={() => void load()}><Icon name="refresh" />Actualizar</button>
+    </div>
+    {collection ? <div className="metrics admin-metrics">
+      <Metric label="Valor carpeta" value={formatArs(collection.totalArs)} helper={`${formatUsd(collection.totalUsd)} PriceCharting`} />
+      <Metric label="Base 151" value={collection.baseEntries.toLocaleString("es-AR")} helper={`${collection.pricedEntries.toLocaleString("es-AR")} con precio`} />
+      <Metric label="Promos manuales" value={collection.manualEntries.toLocaleString("es-AR")} helper={collection.missingPriceEntries ? `${collection.missingPriceEntries} sin precio` : "todas valuadas"} />
+      <Metric label="Actualizado" value={collection.lastImportedAt ? formatShortDate(collection.lastImportedAt) : "Sin cache"} helper={collection.languageGroup} />
+    </div> : null}
+    <div className="admin-button-row">
+      <input value={manualId} onChange={(event) => setManualId(event.target.value)} placeholder="PriceCharting ID de promo" />
+      <input value={manualQuantity} onChange={(event) => setManualQuantity(event.target.value)} type="number" min={1} />
+      <input value={manualNote} onChange={(event) => setManualNote(event.target.value)} placeholder="Nota opcional" />
+      <button className="primary-action" disabled={loading || !manualId.trim()} onClick={() => void addManual()}><Icon name="plus" />Agregar promo</button>
+    </div>
+    <div className="admin-button-row">
+      <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar promo en PriceCharting" onKeyDown={(event) => { if (event.key === "Enter") void searchPromos(); }} />
+      <button className="secondary-action" disabled={loading || search.trim().length < 2} onClick={() => void searchPromos()}><Icon name="search" />Buscar</button>
+    </div>
+    {searchResults.length ? <div className="managed-user-list">
+      {searchResults.map((entry) => <div key={entry.priceChartingId}>
+        <span><strong>{entry.productName}</strong><small>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""} / PC {entry.priceChartingId}</small></span>
+        <b>{formatUsd(entry.loosePriceUsd || entry.priceChartingPriceUsd || 0)}</b>
+        <button className="secondary-action" disabled={loading} onClick={() => void addManual(entry.priceChartingId, "promo manual")}>Agregar</button>
+      </div>)}
+    </div> : null}
+    {manualEntries.length ? <div className="managed-user-list">
+      {manualEntries.map((entry) => <div key={entry.priceChartingId}>
+        <span><strong>{entry.productName}</strong><small>{entry.expansionName} {entry.cardNumber ? `#${entry.cardNumber}` : ""} / PC {entry.priceChartingId}{entry.duplicateOfBase ? " / ya esta en base" : ""}</small></span>
+        <b>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}</b>
+        <button className="secondary-action" disabled={loading} onClick={() => void removeManual(entry)}>Quitar</button>
+      </div>)}
+    </div> : <p className="muted">Todavia no hay promos manuales agregadas.</p>}
+    {feedback ? <p className="muted" role="status">{feedback}</p> : null}
+  </section>;
+}
+
 function AdminView(props: {
   environment: AppEnvironment;
   blueRate: BlueExchangeRate;
@@ -6640,6 +6779,8 @@ function AdminView(props: {
       </section>
 
       <UserManagementPanel users={props.users} onCreated={props.onUserCreated} />
+
+      <CollectionValuationsPanel />
 
       <section className="metrics admin-metrics">
         <Metric label="Perfil" value={props.environment.dataProfile} helper={props.environment.allowExamples ? "permite ejemplos" : "datos reales"} />
