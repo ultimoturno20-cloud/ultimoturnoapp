@@ -17,6 +17,11 @@ import {
   archiveActiveClaim,
   applyInventorySnapshot,
   addInventoryStock,
+  addInventoryFolder151Template,
+  getInventoryFolderContents,
+  saveInventoryFolderEntry,
+  removeInventoryFolderEntry,
+  revalueInventoryFolders,
   setInventoryPurchaseCosts,
   inventoryTransaction,
   cancelReservationSale,
@@ -195,6 +200,14 @@ async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: st
   if (cached) stockReadCache.set(businessId, { ...cached, pending });
   else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 }, items: [] }, pending });
   return pending;
+}
+
+async function finishInventoryChange(db: Awaited<typeof dbPromise>, item: DbStockRow): Promise<DbStockRow> {
+  if (!item.folder) return item;
+  stockReadCache.delete(item.businessId);
+  await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [item.businessId]);
+  const blueRate = await getBlueExchangeRate();
+  return { ...item, folder: { ...item.folder, valueArs: Math.round(item.folder.valueUsd * blueRate.sell * 100) / 100 } };
 }
 
 function parseStockSnapshot(payload: unknown, compressed?: string | null): StockReadResult | null {
@@ -3232,6 +3245,7 @@ function requestHasCronAccess(request: IncomingMessage) {
 }
 
 function stockOwnerRouteAllowed(pathname: string, method = "GET") {
+  if (/^\/inventory\/[^/]+\/contents(?:\/[^/]+)?$/.test(pathname) && ["GET", "POST", "PUT", "DELETE"].includes(method)) return true;
   if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
   if (method === "POST" && pathname === "/inventory/intake") return true;
   if (method === "POST" && /^\/resellers\/[^/]+\/assignments$/.test(pathname)) return true;
@@ -4265,7 +4279,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/stock" && request.method === "GET") {
-      sendRevalidatedJson(response, user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId));
+      const stock = user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId);
+      sendRevalidatedJson(response, revalueInventoryFolders(stock, (await getBlueExchangeRate()).sell));
       return;
     }
 
@@ -4351,7 +4366,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/inventory/intake" && request.method === "POST") {
       const body = await readJson<UpsertInventoryInput>(request);
-      sendJson(response, 200, { item: await addInventoryStock(db, { ...body, ownerUserId: user.roles?.includes("admin") ? body.ownerUserId : user.id }, user) });
+      sendJson(response, 200, { item: await finishInventoryChange(db, await addInventoryStock(db, { ...body, ownerUserId: user.roles?.includes("admin") ? body.ownerUserId : user.id }, user)) });
       return;
     }
 
@@ -4364,7 +4379,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/inventory" && request.method === "POST") {
       const body = await readJson<Parameters<typeof upsertInventoryItem>[1]>(request);
       const item = await upsertInventoryItem(db, body, user);
-      sendJson(response, 201, { item });
+      sendJson(response, 201, { item: await finishInventoryChange(db, item) });
       void ensurePriceChartingImageQueueForStock(db, user.businessId).catch((error) => {
         console.error("No se pudo actualizar la cola de imagenes de stock", error);
       });
@@ -4407,7 +4422,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname.match(/^\/inventory\/[^/]+\/tags$/) && request.method === "PUT") {
       const inventoryItemId = url.pathname.split("/")[2];
       const body = await readJson<{ tags?: string }>(request);
-      sendJson(response, 200, { item: await updateInventoryItemTags(db, inventoryItemId, body.tags || "", user) });
+      sendJson(response, 200, { item: await finishInventoryChange(db, await updateInventoryItemTags(db, inventoryItemId, body.tags || "", user)) });
       return;
     }
 
@@ -4418,10 +4433,37 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    const folderContentsMatch = url.pathname.match(/^\/inventory\/([^/]+)\/contents(?:\/([^/]+))?$/);
+    if (folderContentsMatch) {
+      const [, inventoryItemId, entryId] = folderContentsMatch;
+      let entries;
+      if (request.method === "GET" && !entryId) {
+        entries = await getInventoryFolderContents(db, inventoryItemId, user);
+      } else if (request.method === "POST" && entryId === "template-151") {
+        entries = await addInventoryFolder151Template(db, inventoryItemId, user);
+      } else if ((request.method === "POST" && !entryId) || (request.method === "PUT" && entryId)) {
+        const body = await readJson<{ priceChartingId?: string; quantity: number }>(request);
+        entries = await saveInventoryFolderEntry(db, inventoryItemId, { ...body, id: entryId, quantity: Number(body.quantity) }, user);
+      } else if (request.method === "DELETE" && entryId) {
+        entries = await removeInventoryFolderEntry(db, inventoryItemId, entryId, user);
+      } else {
+        sendJson(response, 405, { error: "Operacion de carpeta no disponible." });
+        return;
+      }
+      if (request.method !== "GET") {
+        stockReadCache.delete(user.businessId);
+        await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [user.businessId]);
+      }
+      const item = await getInventoryItem(db, inventoryItemId, user.businessId);
+      const blueRate = await getBlueExchangeRate();
+      sendJson(response, 200, { entries, item: item ? { ...item, folder: item.folder ? { ...item.folder, valueArs: Math.round(item.folder.valueUsd * blueRate.sell * 100) / 100 } : undefined } : null });
+      return;
+    }
+
     if (url.pathname.startsWith("/inventory/") && request.method === "PUT") {
       const body = await readJson<Parameters<typeof upsertInventoryItem>[1]>(request);
       const item = await upsertInventoryItem(db, body, user);
-      sendJson(response, 200, { item });
+      sendJson(response, 200, { item: await finishInventoryChange(db, item) });
       void ensurePriceChartingImageQueueForStock(db, user.businessId).catch((error) => {
         console.error("No se pudo actualizar la cola de imagenes de stock", error);
       });
@@ -4430,7 +4472,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/inventory-adjustments" && request.method === "POST") {
       const body = await readJson<Parameters<typeof adjustInventoryQuantity>[1]>(request);
-      sendJson(response, 201, { item: await adjustInventoryQuantity(db, body, user) });
+      sendJson(response, 201, { item: await finishInventoryChange(db, await adjustInventoryQuantity(db, body, user)) });
       return;
     }
 

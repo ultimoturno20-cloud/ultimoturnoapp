@@ -115,6 +115,8 @@ type BlueExchangeRate = {
 };
 
 type StockRow = {
+  itemKind?: "standard" | "folder";
+  folder?: { totalCards: number; missingPrices: number; valueUsd: number; valueArs: number; updatedAt: string };
   purchaseCost: number | null;
   purchaseCurrency: string;
   id: string;
@@ -989,6 +991,7 @@ type ImageBatchResult = {
 };
 
 type InventoryFormState = {
+  itemKind: "standard" | "folder";
   ownerUserId: string;
   purchaseCost: number | null;
   purchaseCurrency: string;
@@ -1495,6 +1498,7 @@ function App() {
   }
 
   function startRestock(item: StockRow) {
+    if (item.itemKind === "folder") { startEdit(item); return; }
     setEditingId("");
     setProductReceipt("");
     setForm({ ...formFromItem(item), quantityOnHand: 1, quantityReserved: 0 });
@@ -1546,10 +1550,11 @@ function App() {
         return { summary: summarizeStockRows(items), items };
       });
       setSelectedId(result.item.id);
-      const receipt = editingId ? "Carta actualizada." : `${result.item.product.name}: +${form.quantityOnHand} unidad(es). Stock actual: ${result.item.quantityOnHand}.`;
+      const receipt = editingId ? "Item actualizado." : `${result.item.product.name}: +${form.quantityOnHand} unidad(es). Stock actual: ${result.item.quantityOnHand}.`;
       showMessage(receipt);
       setProductReceipt(receipt);
       if (editingId) { setEditingId(""); setProductModalOpen(false); }
+      else if (form.itemKind === "folder") { setForm(blankForm()); if (!restrictedStockOwner) setView("inventory"); }
       else { setForm({ ...blankForm(), ownerUserId: userRoles.includes("stock_owner") && !userRoles.includes("admin") ? userId : form.ownerUserId, quantityOnHand: 1 }); setProductModalOpen(false); }
       void refresh().catch(() => undefined);
     } catch (nextError) {
@@ -2893,6 +2898,9 @@ function App() {
           form={form}
           onChange={setForm}
           receipt={productReceipt}
+          recentFolder={restrictedStockOwner && productReceipt && selected?.itemKind === "folder" ? selected : undefined}
+          onFolderSaved={(saved) => setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; })}
+          onCreateNext={startCreate}
           onSubmit={saveProduct}
           onClose={restrictedStockOwner ? () => setView("resellers") : closeStockIntake}
           closeLabel={restrictedStockOwner ? "Asignar a revendedores" : "Volver al inventario"}
@@ -3457,7 +3465,7 @@ function InventoryView(props: {
 }) {
   const { items, allItems, selected, selectedMovements, options, filters } = props;
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sideTab, setSideTab] = useState<"detail" | "cart" | null>(null);
+  const [sideTab, setSideTab] = useState<"detail" | "contents" | "cart" | null>(null);
   const [intakeId, setIntakeId] = useState("");
   const [assignmentItemId, setAssignmentItemId] = useState("");
   const [assignmentResellerId, setAssignmentResellerId] = useState("");
@@ -3706,7 +3714,7 @@ function InventoryView(props: {
                 const itemTags = inventoryTags(item.tags).slice(0, 3);
                 return (
                   <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""} ${item.quantityReserved > 0 ? "has-reserved" : ""} ${item.quantityAssigned > 0 ? "has-assigned" : ""}`} key={item.id}>
-                    <button className="inventory-card-main" onClick={() => setIntakeId(item.id)}>
+                    <button className="inventory-card-main" onClick={() => item.itemKind === "folder" ? handleSelect(item) : setIntakeId(item.id)}>
                       <div className="inventory-card-image-wrap">
                         <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="inventory-card-image" fallbackClassName="inventory-card-image placeholder" />
                         <div className="inventory-unit-state-list">
@@ -3730,7 +3738,7 @@ function InventoryView(props: {
                       </div>
                     </button>
                     <div className={`inventory-card-actions ${item.product.imageUrl ? "" : "with-image-repair"}`}>
-                      <button className="primary-action" onClick={() => setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name="plus" />Stock</button>
+                      <button className="primary-action" onClick={() => item.itemKind === "folder" ? props.onEdit(item) : setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name={item.itemKind === "folder" ? "edit" : "plus"} />{item.itemKind === "folder" ? "Editar" : "Stock"}</button>
                       <button className="secondary-action" onClick={() => handleSelect(item)}>Detalles</button>
                       <button className="secondary-action" type="button" aria-label={`Asignar ${item.product.name} a un revendedor`} title="Asignar a revendedor" disabled={item.freeQuantity <= 0 || !props.resellers.length} onClick={() => openAssignment(item)}><Icon name="arrow-right" /></button>
                       <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
@@ -3745,12 +3753,14 @@ function InventoryView(props: {
           {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + inventoryPageSize)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
         </section>
 
-        {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"}`} role="dialog" aria-label={sideTab === "detail" ? "Detalles de la carta" : "Carrito"}>
+        {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"}`} role="dialog" aria-label={sideTab === "cart" ? "Carrito" : "Detalles del item"}>
           <button className="secondary-action drawer-close" onClick={() => setSideTab(null)}><Icon name="close" />Cerrar</button>
           <div className="side-tabs" role="tablist" aria-label="Panel de inventario">
             <button className={sideTab === "detail" ? "active" : ""} onClick={() => setSideTab("detail")}>Detalle</button>
+            {selected?.itemKind === "folder" ? <button className={sideTab === "contents" ? "active" : ""} onClick={() => setSideTab("contents")}>Contenido</button> : null}
             <button className={sideTab === "cart" ? "active" : ""} onClick={() => setSideTab("cart")}>Carrito <span>{props.cart.length}</span></button>
           </div>
+          {sideTab === "contents" && selected?.itemKind === "folder" ? <InventoryFolderContents key={selected.id} item={selected} blueRate={props.blueRate} onSaved={props.onStockSaved} /> : null}
           {sideTab === "detail" ? <div className="stock-side">
           <section className="panel detail-panel compact-detail-panel">
             {selected ? (
@@ -3765,6 +3775,7 @@ function InventoryView(props: {
                   </div>
                 )}
                 <div className="detail-title"><h3>{selected.product.name}</h3><span>{selected.sku}</span></div>
+                {selected.folder ? <div className="folder-value"><span>Valor del contenido</span><strong>{formatUsd(selected.folder.valueUsd)}</strong><span>{formatArs(toBlueArs(selected.folder.valueUsd, props.blueRate))}</span><small>{selected.folder.totalCards} cartas{selected.folder.missingPrices ? ` · ${selected.folder.missingPrices} sin precio · valor parcial` : ""}</small><button type="button" className="secondary-action" onClick={() => setSideTab("contents")}><Icon name="inventory" />Contenido</button></div> : null}
                 <section className="inventory-tags-panel">
                   <div className="inventory-tags-head">
                     <strong>Categorias</strong>
@@ -3831,7 +3842,7 @@ function InventoryView(props: {
                       <span>{identifier.source}</span>
                       <strong>{identifier.externalId}</strong>
                     </a>
-                  )) : <div className="quality-warning"><span>Sin identificadores externos</span><strong>Revisar PriceCharting</strong></div>}
+                  )) : selected.itemKind !== "folder" ? <div className="quality-warning"><span>Sin identificadores externos</span><strong>Revisar PriceCharting</strong></div> : null}
                   {!selected.product.imageUrl ? <div className="quality-warning"><span>Sin imagen</span><strong>Prioridad de cache</strong></div> : null}
                   {!selected.priceArs ? <div className="quality-warning"><span>Precio cero</span><strong>Revisar antes de vender</strong></div> : null}
                 </div>
@@ -3865,7 +3876,7 @@ function InventoryView(props: {
             </section>
           ) : null}
           {selected ? <section className="panel compact-history"><h3>Ultimos movimientos</h3>{selectedMovements.length ? selectedMovements.slice(0, 4).map((movement) => <div className="compact-activity-row" key={movement.id}><strong>{movementLabel(movement.type)} {formatDelta(movement.quantityDelta)}</strong><span>{formatDate(movement.createdAt)}</span><small>{movement.note || "Sin nota"}</small></div>) : <p className="muted">Sin movimientos para esta carta.</p>}</section> : null}
-          </div> : <CartPanel
+          </div> : sideTab === "cart" ? <CartPanel
             compact
             items={allItems}
             cart={props.cart}
@@ -3878,11 +3889,104 @@ function InventoryView(props: {
             onChannelChange={props.onSaleChannelChange}
             onSubmit={props.onSubmitCart}
             blueRate={props.blueRate}
-          />}
+          /> : null}
         </aside> : null}
       </div>
     </section>
   );
+}
+
+type FolderEntry = {
+  id: string; priceChartingId: string; name: string; expansion: string; number: string; finish: string;
+  quantity: number; priceUsd: number | null; imageUrl: string; updatedAt: string;
+};
+
+function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; blueRate: BlueExchangeRate; onSaved: (item: StockRow) => void }) {
+  const [entries, setEntries] = useState<FolderEntry[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PriceChartingCacheEntry[]>([]);
+  const [resolvingId, setResolvingId] = useState("");
+  const [busy, setBusy] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState("");
+  const [limit, setLimit] = useState(40);
+  const savedRef = useRef(onSaved);
+  savedRef.current = onSaved;
+  const editable = item.quantityOnHand === 1 && item.quantityReserved === 0 && item.quantityAssigned === 0;
+  const path = `/inventory/${item.id}/contents`;
+  const accept = (data: { entries: FolderEntry[]; item: StockRow }) => {
+    setEntries(data.entries);
+    savedRef.current(data.item);
+  };
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    void api<{ entries: FolderEntry[]; item: StockRow }>(path, { signal: controller.signal })
+      .then((data) => { setEntries(data.entries); savedRef.current(data.item); })
+      .catch((err) => { if (!controller.signal.aborted) setError(errorMessage(err)); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [path, item.folder?.updatedAt, item.folder?.valueUsd, item.folder?.totalCards]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setResults([]);
+    if (query.trim().length < 2) { setSearching(false); return () => controller.abort(); }
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      void api<{ entries: PriceChartingCacheEntry[] }>(`/catalog-cards?query=${encodeURIComponent(query)}&limit=30&includeStatus=false`, { signal: controller.signal })
+        .then((data) => { if (!controller.signal.aborted) setResults(data.entries.filter((entry) => !entry.priceChartingId.startsWith("tcgcsv-"))); })
+        .catch((err) => { if (!controller.signal.aborted) setError(errorMessage(err)); })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false); });
+    }, 180);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query]);
+  async function change(suffix: string, method: "POST" | "PUT" | "DELETE", body?: unknown) {
+    if (busy || !editable) return;
+    setBusy(suffix || "add");
+    setError("");
+    try {
+      accept(await api<{ entries: FolderEntry[]; item: StockRow }>(path + suffix, { method, body }));
+      if (method !== "DELETE") { setResolvingId(""); setQuery(""); setResults([]); }
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setBusy(""); }
+  }
+  const totalUsd = entries.reduce((sum, entry) => sum + (entry.priceUsd ?? 0) * entry.quantity, 0);
+  const missing = entries.reduce((sum, entry) => sum + (entry.priceUsd === null ? entry.quantity : 0), 0);
+  const totalCards = entries.reduce((sum, entry) => sum + entry.quantity, 0);
+  return <section className="folder-contents">
+    <h3>{item.product.name}</h3>
+    <div className="folder-value"><strong>{formatUsd(totalUsd)}</strong><span>{formatArs(toBlueArs(totalUsd, blueRate))}</span><small>{totalCards} cartas{missing ? ` · ${missing} sin precio · valor parcial` : ""}</small>{item.folder?.updatedAt ? <small>Precios: {formatDate(item.folder.updatedAt)}</small> : null}</div>
+    {!editable ? <p className="muted">Contenido bloqueado: carpeta reservada, asignada o vendida.</p> : null}
+    {error ? <p className="field-error" role="alert">{error}</p> : null}
+    <details className="folder-template"><summary>Plantilla de expansion</summary><button type="button" className="secondary-action" disabled={Boolean(busy) || !editable || loading} onClick={() => void change("/template-151", "POST")}><Icon name="plus" />{busy === "/template-151" ? "Agregando..." : "Master set 151 (EN)"}</button></details>
+    <div className="folder-search">
+      {resolvingId ? <div className="folder-resolving"><span>Vincular: {entries.find((entry) => entry.id === resolvingId)?.name}</span><button className="mini-icon-action" title="Cancelar vinculacion" aria-label="Cancelar vinculacion" onClick={() => { setResolvingId(""); setQuery(""); }}><Icon name="close" /></button></div> : null}
+      <label>{resolvingId ? "Referencia PriceCharting" : "Agregar carta o promo"}<input value={query} disabled={!editable || Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, expansion o numero" /></label>
+      {searching ? <small>Buscando...</small> : query.trim().length >= 2 && !results.length ? <small>Sin coincidencias PriceCharting</small> : null}
+      <div className="folder-search-results">{results.map((entry) => <button type="button" className="folder-search-result" disabled={Boolean(busy) || !editable} key={entry.priceChartingId} onClick={() => void change(resolvingId ? `/${resolvingId}` : "", resolvingId ? "PUT" : "POST", { priceChartingId: entry.priceChartingId, quantity: resolvingId ? entries.find((row) => row.id === resolvingId)?.quantity || 1 : 1 })}>
+        <CardArt src={entry.imageUrl} alt={entry.productName} label="" className="folder-card-art" fallbackClassName="folder-card-art image-placeholder" />
+        <span><strong>{entry.productName}</strong><small>{entry.expansionName} #{entry.cardNumber} · {entry.finish || "normal"}</small><small>{entry.loosePriceUsd === null ? "Sin precio" : formatUsd(entry.loosePriceUsd)}</small></span><Icon name="plus" />
+      </button>)}</div>
+    </div>
+    {loading ? <p className="muted">Cargando contenido...</p> : !entries.length ? <p className="muted">Carpeta vacia</p> : <div className="folder-entry-list">{entries.slice(0, limit).map((entry) => <InventoryFolderEntryRow key={entry.id} entry={entry} disabled={Boolean(busy) || !editable} onSave={(quantity) => void change(`/${entry.id}`, "PUT", { quantity })} onRemove={() => void change(`/${entry.id}`, "DELETE")} onLink={() => { setResolvingId(entry.id); setQuery(`${entry.name} ${entry.number}`); }} />)}</div>}
+    {entries.length > limit ? <button type="button" className="secondary-action" onClick={() => setLimit((current) => current + 40)}>Ver mas ({Math.min(limit, entries.length)} de {entries.length})</button> : null}
+  </section>;
+}
+
+function InventoryFolderEntryRow({ entry, disabled, onSave, onRemove, onLink }: { entry: FolderEntry; disabled: boolean; onSave: (quantity: number) => void; onRemove: () => void; onLink: () => void }) {
+  const [quantity, setQuantity] = useState(String(entry.quantity));
+  useEffect(() => { setQuantity(String(entry.quantity)); }, [entry.quantity]);
+  const valid = Number.isInteger(Number(quantity)) && Number(quantity) > 0;
+  return <div className="folder-entry">
+    <div className="folder-entry-copy"><strong>{entry.name}</strong><small>{entry.expansion}{entry.number ? ` #${entry.number}` : ""} · {finishLabel(entry.finish)}</small><span>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}{!entry.priceChartingId ? " · Sin vincular" : ""}</span></div>
+    <div className="folder-entry-actions">
+      <input type="number" min={1} step={1} aria-label={`Cantidad de ${entry.name} ${entry.finish}`} value={quantity} disabled={disabled} onChange={(event) => setQuantity(event.target.value)} />
+      <button className="mini-icon-action" disabled={disabled || !valid || Number(quantity) === entry.quantity} title="Guardar cantidad" aria-label="Guardar cantidad" onClick={() => onSave(Number(quantity))}><Icon name="check" /></button>
+      <button className="mini-icon-action" disabled={disabled} title="Vincular referencia PriceCharting" aria-label={`Vincular ${entry.name}`} onClick={onLink}><Icon name="search" /></button>
+      <button className="mini-icon-action" disabled={disabled} title="Quitar del contenido" aria-label={`Quitar ${entry.name}`} onClick={onRemove}><Icon name="close" /></button>
+    </div>
+  </div>;
 }
 
 function CartPanel(props: {
@@ -4088,7 +4192,7 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
         <header className="modal-header">
-          <div><span className="eyebrow">Inventario</span><h2 id="product-modal-title">{editing ? "Editar carta" : "Agregar stock"}</h2><p>{editing ? "Actualiza la informacion y guarda los cambios." : "Busca la carta, indica la cantidad y guarda. Podes completar el costo despues."}</p></div>
+          <div><span className="eyebrow">Inventario</span><h2 id="product-modal-title">{editing ? form.itemKind === "folder" ? "Editar carpeta" : "Editar carta" : "Agregar stock"}</h2><p>{editing ? "Actualiza la informacion y guarda los cambios." : "Busca la carta, indica la cantidad y guarda. Podes completar el costo despues."}</p></div>
           <button className="modal-close" aria-label="Cerrar formulario" title="Cerrar" onClick={onClose}><Icon name="close" /></button>
         </header>
         {receipt ? <p className="intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
@@ -4098,8 +4202,11 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
   );
 }
 
-function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, closeLabel, blueRate, saving, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
+function StockIntakeView({ receipt, recentFolder, onFolderSaved, onCreateNext, form, onChange, onSubmit, onClose, closeLabel, blueRate, saving, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
   receipt: string;
+  recentFolder?: StockRow;
+  onFolderSaved: (item: StockRow) => void;
+  onCreateNext: () => void;
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -4127,7 +4234,7 @@ function StockIntakeView({ receipt, form, onChange, onSubmit, onClose, closeLabe
         <button className="secondary-action stock-intake-back" type="button" onClick={onClose} aria-label={closeLabel || "Volver al inventario"} title={closeLabel || "Volver al inventario"}><Icon name="close" /><span>{closeLabel || "Volver al inventario"}</span></button>
       </header>
       {receipt ? <p className="intake-feedback stock-intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
-      <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />
+      {recentFolder ? <div className="folder-intake-workspace"><button type="button" className="secondary-action" onClick={onCreateNext}><Icon name="plus" />Agregar stock</button><InventoryFolderContents item={recentFolder} blueRate={blueRate} onSaved={onFolderSaved} /></div> : <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />}
     </section>
   );
 }
@@ -4288,6 +4395,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     const priceUsd = entry.priceChartingPriceUsd ?? entry.loosePriceUsd ?? entry.tcgplayerPriceUsd ?? null;
     const priceChartingUrl = entry.priceChartingUrl || entry.canonicalUrl;
     set({
+      itemKind: "standard",
       sku: "",
       name: entry.productName,
       expansion: entry.expansionName,
@@ -4305,6 +4413,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   const startManualItem = (preset: Partial<InventoryFormState> = {}) => {
     set({
       ...form,
+      itemKind: preset.itemKind ?? "standard",
       sku: preset.sku ?? "",
       name: preset.name ?? "",
       expansion: preset.expansion ?? "Producto",
@@ -4325,7 +4434,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       quantityOnHand: preset.quantityOnHand ?? Math.max(1, form.quantityOnHand || 1),
       quantityReserved: preset.quantityReserved ?? 0,
       priceArs: preset.priceArs ?? form.priceArs,
-      priceUsd: preset.priceUsd ?? form.priceUsd,
+      priceUsd: preset.priceUsd === undefined ? form.priceUsd : preset.priceUsd,
       purchaseCost: preset.purchaseCost ?? form.purchaseCost,
       purchaseCurrency: preset.purchaseCurrency ?? form.purchaseCurrency,
       notes: preset.notes ?? form.notes
@@ -4340,7 +4449,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
         <aside className="inventory-edit-preview">
           <CardArt src={form.imageUrl} alt={form.name || "Carta"} label={form.name || "Sin nombre"} className="inventory-edit-art" fallbackClassName="inventory-edit-art image-placeholder" />
           <div className="inventory-edit-preview-copy">
-            <span className="eyebrow">{isGraded ? "Graded" : "RAW"}</span>
+            <span className="eyebrow">{form.itemKind === "folder" ? "Carpeta" : isGraded ? "Graded" : "RAW"}</span>
             <h3>{form.name || "Sin nombre"}</h3>
             <p>{form.expansion || "Sin expansion"} {form.number ? `#${form.number}` : ""}</p>
             <div className="inventory-edit-badges">
@@ -4377,23 +4486,22 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             <div className="catalog-picker-manual-actions">
               <button type="button" className="secondary-action" onClick={() => startManualItem({ name: "Item manual", expansion: "Producto", quantityOnHand: 1 })}><Icon name="plus" />Crear item manual</button>
               <button type="button" className="secondary-action" onClick={() => startManualItem({
-                sku: "MASTER-SET-151",
-                name: "MASTER SET 151",
-                expansion: "Scarlet & Violet 151",
-                number: "MASTER",
+                itemKind: "folder",
+                name: "Nueva carpeta",
+                expansion: "Coleccion",
                 language: "EN",
                 condition: "NM",
-                finish: "sealed",
+                finish: "carpeta",
                 location: "Carpeta",
                 intakeBatch: "Carpeta",
                 inventoryStatus: "not_for_sale",
-                tags: "master set 151, no venta",
+                tags: "coleccion",
                 quantityOnHand: 1,
                 quantityReserved: 0,
                 priceArs: 0,
                 priceUsd: null,
-                notes: "Master set 151 cargado como item de stock no venta."
-              })}><Icon name="plus" />Master Set 151</button>
+                notes: ""
+              })}><Icon name="inventory" />Crear carpeta</button>
             </div>
             {pickerEntries.length ? <div className="catalog-picker-results">
               {pickerEntries.map((entry) => <button type="button" className={`catalog-picker-row ${form.priceChartingId === entry.priceChartingId ? "selected" : ""}`} key={entry.priceChartingId} onClick={() => selectCatalogCard(entry)}>
@@ -4415,18 +4523,18 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
             {pickerSearching && pickerEntries.length ? <span className="catalog-picker-syncing">Actualizando resultados...</span> : null}
           </section> : null}
           {!editing && !catalogPickerOpen ? <section className="selected-catalog-card">
-            <div><span className="eyebrow">Carta elegida</span><strong>{form.name}</strong><span>{form.expansion}{form.number ? ` #${form.number}` : ""}</span></div>
-            <button className="secondary-action" type="button" onClick={() => setCatalogPickerOpen(true)}><Icon name="search" />Cambiar carta</button>
+            <div><span className="eyebrow">{form.itemKind === "folder" ? "Carpeta" : "Carta elegida"}</span><strong>{form.name}</strong><span>{form.expansion}{form.number ? ` #${form.number}` : ""}</span></div>
+            <button className="secondary-action" type="button" onClick={() => setCatalogPickerOpen(true)}><Icon name="search" />Cambiar item</button>
           </section> : null}
           {!choosingCatalogCard ? <>
           {!editing ? <section className="edit-section quick-stock-fields">
             <div className="edit-section-heading"><h3>Agregar existencias</h3><span>El costo es opcional</span></div>
             <div className="edit-field-grid">
               {canChooseOwner ? <label>Propietario<select value={form.ownerUserId} onChange={(event) => set({ ownerUserId: event.target.value })}><option value="">UltimoTurno</option>{ownerOptions.map((owner) => <option value={owner.id} key={owner.id}>{owner.displayName}</option>)}</select></label> : null}
-              <label>Cantidad a agregar<input autoFocus required type="number" min={1} step={1} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
+              <label>{form.itemKind === "folder" ? "Cantidad" : "Cantidad a agregar"}<input autoFocus required type="number" min={1} max={form.itemKind === "folder" ? 1 : undefined} readOnly={form.itemKind === "folder"} step={1} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
               <label>Precio de venta ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} placeholder="Opcional" /></label>
               <label>Precio de venta USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} placeholder="Opcional" /></label>
-              <div className="price-helper recommended-price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
+              {form.itemKind !== "folder" ? <><div className="price-helper recommended-price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
               <div className={`price-helper coolstuff-price-helper ${coolstuffQuote?.status === "matched" ? "matched" : ""}`}>
                 <span>CoolStuff {form.condition || "NM"} / {finishLabel(form.finish || "normal")}</span>
                 {coolstuffLoading ? <strong>Consultando...</strong> : coolstuffQuote?.status === "matched" && coolstuffQuote.priceUsd ? <>
@@ -4437,7 +4545,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                   <div className="price-helper-actions"><button type="button" className="secondary-action" disabled={coolstuffLoading} onClick={() => void lookupCoolstuffPrice()}>Consultar</button>{coolstuffQuote?.searchUrl ? <a className="secondary-action" href={coolstuffQuote.searchUrl} target="_blank" rel="noreferrer">Buscar</a> : null}</div>
                 </>}
                 {coolstuffError ? <small>{coolstuffError}</small> : null}
-              </div>
+              </div></> : null}
               <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
               <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
               {!fullPage ? <>
@@ -4450,16 +4558,16 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
           </section> : null}
           {showDetails ? <>
           <section className="edit-section">
-            <div className="edit-section-heading"><h3>Identidad</h3><span>Que carta es</span></div>
+            <div className="edit-section-heading"><h3>Identidad</h3><span>{form.itemKind === "folder" ? "Carpeta" : "Que carta es"}</span></div>
             <div className="edit-field-grid">
               <label>Nombre<input required value={form.name} onChange={(event) => set({ name: event.target.value, finish: finishFromName(event.target.value) || form.finish })} /></label>
               <label>Expansion<input required value={form.expansion} onChange={(event) => set({ expansion: event.target.value })} /></label>
-              <label>Numero<input value={form.number} onChange={(event) => set({ number: event.target.value })} /></label>
+              {form.itemKind !== "folder" ? <label>Numero<input value={form.number} onChange={(event) => set({ number: event.target.value })} /></label> : null}
               <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
             </div>
           </section>
 
-          <section className="edit-section">
+          {form.itemKind !== "folder" ? <section className="edit-section">
             <div className="edit-section-heading"><h3>Presentacion</h3><span>Como la tenes fisicamente</span></div>
             <div className="edit-field-grid">
               <label>Presentacion<select value={isGraded ? "GRADED" : "RAW"} onChange={(event) => setPresentation(event.target.value as "RAW" | "GRADED")}><option value="RAW">RAW</option><option value="GRADED">Graded</option></select></label>
@@ -4472,13 +4580,13 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               ) : <label>Condicion<input required value={form.condition} onChange={(event) => set({ condition: event.target.value.toUpperCase() })} placeholder="NM, LP, MP..." /></label>}
               <label>Acabado<input required value={form.finish} onChange={(event) => set({ finish: event.target.value })} /></label>
             </div>
-          </section>
+          </section> : null}
 
           <section className="edit-section">
-            <div className="edit-section-heading"><h3>{fullPage && !editing ? "Organizacion" : "Stock y precio"}</h3><span>{available} disponible(s)</span></div>
+            <div className="edit-section-heading"><h3>{fullPage && !editing ? "Organizacion" : "Stock y precio"}</h3><span>{form.inventoryStatus === "not_for_sale" ? "No venta" : `${available} disponible(s)`}</span></div>
             <div className="edit-field-grid">
               {!fullPage || editing ? <>
-                <label>Total<input type="number" min={0} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
+                <label>Total<input type="number" min={0} max={form.itemKind === "folder" ? 1 : undefined} value={form.quantityOnHand} onChange={(event) => set({ quantityOnHand: Number(event.target.value) })} /></label>
                 <label>Reservadas<input type="number" min={0} value={form.quantityReserved} onChange={(event) => set({ quantityReserved: Number(event.target.value) })} /></label>
               </> : null}
               <label>Ubicacion<input value={form.location} onChange={(event) => set({ location: event.target.value })} /></label>
@@ -4489,7 +4597,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               {!fullPage || editing ? <>
                 <label>Precio USD<input type="number" min={0} step={0.01} value={form.priceUsd ?? ""} onChange={(event) => setSalePriceUsd(event.target.value)} /></label>
                 <label>Precio ARS<input type="number" min={minimumSalePriceArs} step={100} value={form.priceArs || ""} onChange={(event) => setSalePriceArs(event.target.value)} onBlur={() => form.priceArs ? set({ priceArs: roundRecommendedArs(form.priceArs), priceUsd: roundUsd(fromBlueArs(roundRecommendedArs(form.priceArs), blueRate)) }) : applyRecommendedPrice()} /></label>
-                <div className="price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div>
+                {form.itemKind !== "folder" ? <div className="price-helper"><span>Valor recomendado</span><strong>{formatArs(recommendedPriceArs)}</strong><button type="button" className="secondary-action" onClick={applyRecommendedPrice}>Usar recomendado</button></div> : null}
               </> : null}
             </div>
           </section>
@@ -4506,7 +4614,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
           </> : null}
         </div>
       </div>
-      <div className="modal-footer"><button type="button" className="secondary-action" disabled={saving} onClick={onCancel}><Icon name="close" />Cancelar</button><button className="primary-action" disabled={saving || choosingCatalogCard}><Icon name="check" />{saving ? "Guardando..." : choosingCatalogCard ? "Elegí una carta" : submitLabel}</button></div>
+      <div className="modal-footer"><button type="button" className="secondary-action" disabled={saving} onClick={onCancel}><Icon name="close" />Cancelar</button><button className="primary-action" disabled={saving || choosingCatalogCard}><Icon name="check" />{saving ? "Guardando..." : choosingCatalogCard ? "Elegí una carta" : form.itemKind === "folder" && !editing ? "Crear carpeta" : submitLabel}</button></div>
     </form>
   );
 }
@@ -8670,6 +8778,7 @@ async function api<T>(path: string, options: { token?: string; method?: string; 
 
 function blankForm(): InventoryFormState {
   return {
+    itemKind: "standard",
     ownerUserId: "",
     purchaseCost: null,
     purchaseCurrency: "ARS",
@@ -8755,6 +8864,7 @@ function readImportDraft(): { csvText: string; batch: ImportBatchState } {
 function formFromItem(item: StockRow): InventoryFormState {
   const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
   return {
+    itemKind: item.itemKind || "standard",
     ownerUserId: item.ownerUserId || "",
     purchaseCost: item.purchaseCost ?? null,
     purchaseCurrency: item.purchaseCurrency || "ARS",
@@ -8789,7 +8899,7 @@ function emptySummary(): StockSummary {
 
 function summarizeStockRows(items: StockRow[]): StockSummary {
   return items.reduce<StockSummary>((summary, item) => {
-    const itemValueArs = item.quantityOnHand * item.priceArs;
+    const itemValueArs = item.quantityOnHand * (item.folder?.valueArs ?? item.priceArs);
     summary.totalSkus += 1;
     summary.totalUnits += item.quantityOnHand;
     summary.reservedUnits += item.quantityReserved;
@@ -8799,7 +8909,7 @@ function summarizeStockRows(items: StockRow[]): StockSummary {
       summary.collectionUnits += item.quantityOnHand;
       summary.collectionValueArs += itemValueArs;
     }
-    summary.totalValueArs += item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
+    summary.totalValueArs += item.folder || item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
     return summary;
   }, emptySummary());
 }
@@ -9205,6 +9315,7 @@ function inventoryGradingLabel(item: StockRow): string {
 }
 
 function inventoryPresentationLabel(item: StockRow): string {
+  if (item.itemKind === "folder") return "Carpeta";
   return item.variant.gradingCompany || item.variant.grade ? "Graded" : "RAW";
 }
 
@@ -9252,6 +9363,13 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
   hasPrice: boolean;
 } {
   const references = item.priceReferences;
+  if (item.folder && (source === "pricecharting" || (source === "sale" && item.inventoryStatus === "not_for_sale"))) {
+    return {
+      label: "Valor del contenido", ars: toBlueArs(item.folder.valueUsd, blueRate), usd: item.folder.valueUsd,
+      helper: `${formatUsd(item.folder.valueUsd)} · ${item.folder.totalCards} cartas${item.folder.missingPrices ? ` · ${item.folder.missingPrices} sin precio` : ""}`,
+      hasPrice: item.folder.totalCards > 0
+    };
+  }
   if (source === "pricecharting") {
     const usd = references?.priceCharting.usd ?? null;
     return {
@@ -9795,6 +9913,7 @@ function recommendedSalePriceArs(priceUsd: number | null | undefined, blueRate: 
 }
 
 function normalizeInventorySalePrice(form: InventoryFormState, blueRate: BlueExchangeRate): InventoryFormState {
+  if (form.itemKind === "folder" && !form.priceArs && !form.priceUsd) return form;
   const currentArs = Number.isFinite(form.priceArs) ? form.priceArs : 0;
   const nextArs = currentArs > 0 ? roundRecommendedArs(currentArs) : recommendedSalePriceArs(form.priceUsd, blueRate);
   return {

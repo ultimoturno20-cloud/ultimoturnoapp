@@ -1,11 +1,25 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-07
+Actualizado: 2026-10-08
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Cargar carpetas reales
+
+- Crear la carpeta `MASTER SET 151` desde `Agregar stock > Crear carpeta`,
+  mantener `No venta` y abrir `Detalles > Contenido`.
+- Aplicar la plantilla 151 inglesa, revisar las referencias sin vincular
+  (incluidas energias) y agregar solamente las promos que contiene esa carpeta.
+- Cargar las otras carpetas con nombres y contenidos independientes.
+- Comparar una muestra de precios con PriceCharting y comprobar que el valor
+  cambie despues de la proxima sincronizacion del catalogo. Las pruebas del
+  desarrollo se realizaron exclusivamente en bases temporales/locales aisladas.
+- Si se decide vender una carpeta, fijar su precio de venta y cambiar el estado
+  a `Disponible`. La carpeta completa representa una unidad; las cartas internas
+  no se ofrecen como singles.
 
 ### Validar vencimientos, costos y pagos mixtos
 

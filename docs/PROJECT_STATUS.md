@@ -1,11 +1,28 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-07
+Actualizado: 2026-10-08
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
 ## Resumen vigente
+
+- Inventario permite crear carpetas como items unicos desde `Agregar stock > Crear carpeta`.
+  Cada carpeta tiene SKU y producto propios, cantidad fisica maxima de uno,
+  estado `No venta` inicial y precio de venta independiente de su valuacion.
+- `Detalles > Contenido` permite buscar cartas/promos en PriceCharting, agregar,
+  editar cantidades, vincular referencias pendientes y quitar entradas.
+  El contenido no crea ni consume unidades de singles.
+- La valuacion suma los ultimos precios sin graduar del cache PriceCharting;
+  se convierte con el dolar vigente y suma una sola vez al valor total.
+  Precios faltantes quedan visibles como valuacion parcial, con fecha de referencia.
+- La plantilla opcional `Master set 151 (EN)` carga 207 cartas numeradas,
+  153 reverse y ocho energias cosmos holo. No incorpora promos automaticamente;
+  las coincidencias ambiguas quedan sin vincular. La plantilla es idempotente.
+- El contenido queda bloqueado mientras la carpeta esta reservada, consignada
+  o vendida. Se conserva despues de la venta para consulta.
+- Migracion aditiva: `0056_inventory_folders.sql`. No elimina ni convierte
+  stock, ordenes, claims ni registros anteriores.
 
 - Workspace obligatorio: `D:\UltimoTurno\Stock`.
 - Produccion: `https://ultimoturno.app/` (alias tecnico: `https://ultimoturnoapp-api.vercel.app/`).

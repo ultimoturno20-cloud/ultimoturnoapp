@@ -1,5 +1,16 @@
 # Traspaso de contexto - UltimoTurno
 
+## Carpetas - 2026-10-08
+
+La creacion especifica de `Master Set 151` fue reemplazada por `Crear carpeta`
+dentro de Agregar stock. Cada carpeta es un item unico; su contenido y valuacion
+PriceCharting se editan desde Detalles > Contenido. La plantilla opcional de 151
+incluye 207 cartas, 153 reverse y ocho energias; las promos se agregan a mano.
+El valor se calcula con el cache actual y el dolar vigente sin modificar el precio
+de venta ni crear singles. La migracion aditiva es `0056_inventory_folders.sql`.
+No convertir ni recrear datos existentes para probar; usar bases temporales.
+Verificar siempre el nuevo commit mediante `git log -1` y `/api/public-status`.
+
 ## Aviso vigente - 2026-10-07
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y

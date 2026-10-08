@@ -5,8 +5,30 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import type { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
+import { masterSet151Contents } from "./folder-templates.js";
 
 const minimumSalePriceArs = 800;
+
+export type InventoryFolderValue = {
+  totalCards: number;
+  missingPrices: number;
+  valueUsd: number;
+  valueArs: number;
+  updatedAt: string;
+};
+
+export type InventoryFolderEntry = {
+  id: string;
+  priceChartingId: string;
+  name: string;
+  expansion: string;
+  number: string;
+  finish: string;
+  quantity: number;
+  priceUsd: number | null;
+  imageUrl: string;
+  updatedAt: string;
+};
 
 export type DatabaseCheck = {
   table: string;
@@ -14,6 +36,8 @@ export type DatabaseCheck = {
 };
 
 export type DbStockRow = {
+  itemKind?: "standard" | "folder";
+  folder?: InventoryFolderValue;
   purchaseCost: number | null;
   purchaseCurrency: string;
   id: string;
@@ -217,7 +241,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -465,6 +489,7 @@ export type ResellerDashboard = {
 };
 
 export type UpsertInventoryInput = {
+  itemKind?: "standard" | "folder";
   ownerUserId?: string;
   productId?: string;
   variantId?: string;
@@ -2089,6 +2114,7 @@ export async function replacePriceChartingCache(db: PGlite, input: {
           -- TCGCSV-seeded rows and cards referenced by stock carry catalog links (cascade to card_index_entries).
           and existing.pricecharting_id not like 'tcgcsv-%'
           and not exists (select 1 from external_identifiers ei where ei.external_id = existing.pricecharting_id)
+          and not exists (select 1 from inventory_folder_entries fe where fe.pricecharting_id = existing.pricecharting_id)
       `, [JSON.stringify(uniqueRows.map((row) => row.priceChartingId))]);
     }
     await db.query("update pricecharting_cache_runs set completed_at = clock_timestamp() where id = $1", [runId]);
@@ -4202,6 +4228,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
   `, [demoBusinessId]);
 
   const items = result.rows.map((row) => toStockRow(row));
+  await attachInventoryFolderValues(db, demoBusinessId, items);
   return { summary: summarizeDbStock(items), items };
 }
 
@@ -4505,7 +4532,145 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
     order by p.name, v.language, v.condition
   `, [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
+  await attachInventoryFolderValues(db, businessId, items);
   return { summary: summarizeDbStock(items), items };
+}
+
+async function attachInventoryFolderValues(db: PGlite, businessId: string, items: DbStockRow[]) {
+  const result = await db.query<Record<string, unknown>>(`
+    select ii.id, coalesce(sum(fe.quantity), 0)::integer as total_cards,
+      coalesce(sum(fe.quantity) filter (where fe.id is not null and pce.loose_price_usd is null), 0)::integer as missing_prices,
+      coalesce(sum(fe.quantity * pce.loose_price_usd), 0) as value_usd,
+      min(pce.imported_at) as updated_at
+    from inventory_items ii
+    left join inventory_folder_entries fe on fe.inventory_item_id = ii.id and fe.business_id = ii.business_id
+    left join pricecharting_cache_entries pce on pce.pricecharting_id = fe.pricecharting_id
+    where ii.business_id = $1 and ii.item_kind = 'folder'
+    group by ii.id
+  `, [businessId]);
+  const values = new Map(result.rows.map((row) => [String(row.id), {
+    totalCards: Number(row.total_cards), missingPrices: Number(row.missing_prices),
+    valueUsd: Number(row.value_usd), valueArs: 0, updatedAt: String(row.updated_at || "")
+  }]));
+  for (const item of items) {
+    item.itemKind = values.has(item.id) ? "folder" : "standard";
+    if (values.has(item.id)) item.folder = values.get(item.id);
+  }
+  const rate = Number(process.env.ULTIMOTURNO_BLUE_RATE_ARS || 1540);
+  for (const item of items) if (item.folder) item.folder.valueArs = Math.round(item.folder.valueUsd * rate * 100) / 100;
+}
+
+export function revalueInventoryFolders(stock: { items: DbStockRow[]; summary: DbStockSummary }, rate: number) {
+  const items = stock.items.map((item) => item.folder ? {
+    ...item, folder: { ...item.folder, valueArs: Math.round(item.folder.valueUsd * rate * 100) / 100 }
+  } : item);
+  // Keep the USD reference separate from the manually chosen sale price.
+  return { items, summary: summarizeDbStock(items) };
+}
+
+async function assertInventoryFolder(db: PGlite, inventoryItemId: string, actor: AuthenticatedUser, editing = false) {
+  const result = await db.query<{ item_kind: string; owner_user_id: string; quantity_reserved: number; quantity_on_hand: number }>(
+    `select item_kind, owner_user_id, quantity_reserved, quantity_on_hand from inventory_items where id = $1 and business_id = $2 ${editing ? "for update" : ""}`,
+    [inventoryItemId, actor.businessId]
+  );
+  const item = result.rows[0];
+  if (!item || item.item_kind !== "folder") throw new Error("No se encontro la carpeta.");
+  if (actor.roles && !actor.roles.includes("admin") && item.owner_user_id !== actor.id) throw new Error("No podes modificar stock de otro propietario.");
+  if (editing) {
+    if (item.quantity_reserved || !item.quantity_on_hand) throw new Error("La carpeta esta reservada o vendida; su contenido no se puede cambiar.");
+    const assigned = await db.query("select 1 from reseller_stock_assignments where inventory_item_id = $1 and business_id = $2 and quantity_assigned > quantity_sold + quantity_returned limit 1", [inventoryItemId, actor.businessId]);
+    if (assigned.rows.length) throw new Error("La carpeta esta asignada; su contenido no se puede cambiar.");
+  }
+}
+
+export async function getInventoryFolderContents(db: PGlite, inventoryItemId: string, actor: AuthenticatedUser): Promise<InventoryFolderEntry[]> {
+  await assertInventoryFolder(db, inventoryItemId, actor);
+  const result = await db.query<Record<string, unknown>>(`
+    select fe.*, pce.loose_price_usd, pce.image_url, pce.imported_at
+    from inventory_folder_entries fe
+    left join pricecharting_cache_entries pce on pce.pricecharting_id = fe.pricecharting_id
+    where fe.inventory_item_id = $1 and fe.business_id = $2
+    order by fe.expansion, length(fe.card_number), fe.card_number, fe.finish, fe.name, fe.id
+  `, [inventoryItemId, actor.businessId]);
+  return result.rows.map((row) => ({
+    id: String(row.id), priceChartingId: String(row.pricecharting_id || ""), name: String(row.name),
+    expansion: String(row.expansion), number: String(row.card_number), finish: String(row.finish), quantity: Number(row.quantity),
+    priceUsd: optionalNumber(row.loose_price_usd) ?? null, imageUrl: String(row.image_url || ""), updatedAt: String(row.imported_at || "")
+  }));
+}
+
+export async function saveInventoryFolderEntry(db: PGlite, inventoryItemId: string, input: { id?: string; priceChartingId?: string; quantity: number }, actor: AuthenticatedUser) {
+  if (!Number.isInteger(input.quantity) || input.quantity < 1) throw new Error("La cantidad de cartas debe ser un entero positivo.");
+  await inventoryTransaction(db, async (connection) => {
+    await assertInventoryFolder(connection, inventoryItemId, actor, true);
+    const before = input.id ? await connection.query<Record<string, unknown>>("select * from inventory_folder_entries where id = $1 and inventory_item_id = $2 and business_id = $3", [input.id, inventoryItemId, actor.businessId]) : null;
+    if (input.id && !before?.rows[0]) throw new Error("No se encontro la carta de la carpeta.");
+    const pcId = input.priceChartingId?.trim() || String(before?.rows[0]?.pricecharting_id || "");
+    const card = pcId ? await connection.query<Record<string, unknown>>("select * from pricecharting_cache_entries where pricecharting_id = $1", [pcId]) : null;
+    if (pcId && !card?.rows[0]) throw new Error("La carta no existe en el catalogo PriceCharting.");
+    if (!input.id && !card?.rows[0]) throw new Error("Elegi una carta del catalogo.");
+    const duplicate = pcId ? await connection.query<{ id: string }>("select id from inventory_folder_entries where inventory_item_id = $1 and business_id = $2 and pricecharting_id = $3 and ($4::uuid is null or id <> $4::uuid)", [inventoryItemId, actor.businessId, pcId, input.id || null]) : null;
+    if (duplicate?.rows[0]) throw new Error("Esta carta ya esta en la carpeta; edita su cantidad.");
+    const entryId = input.id || crypto.randomUUID();
+    const row = card?.rows[0] || before!.rows[0];
+    await connection.query(`
+      insert into inventory_folder_entries (id, business_id, inventory_item_id, entry_key, pricecharting_id, name, expansion, card_number, finish, quantity)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      on conflict (id) do update set pricecharting_id = excluded.pricecharting_id, name = excluded.name,
+        expansion = excluded.expansion, card_number = excluded.card_number, finish = excluded.finish, quantity = excluded.quantity
+    `, [entryId, actor.businessId, inventoryItemId, String(before?.rows[0]?.entry_key || `manual:${entryId}`), pcId || null,
+      String(row.product_name || row.name), String(row.expansion_name || row.expansion), String(row.card_number || ""),
+      pcId ? finishFromName(String(row.product_name)) || "normal" : String(row.finish), input.quantity]);
+    await writeAudit(connection, actor, "inventory.folder.entry.save", "inventory_item", inventoryItemId, before?.rows[0], { entryId, ...input });
+  });
+  return getInventoryFolderContents(db, inventoryItemId, actor);
+}
+
+export async function removeInventoryFolderEntry(db: PGlite, inventoryItemId: string, entryId: string, actor: AuthenticatedUser) {
+  await inventoryTransaction(db, async (connection) => {
+    await assertInventoryFolder(connection, inventoryItemId, actor, true);
+    const result = await connection.query("delete from inventory_folder_entries where id = $1 and inventory_item_id = $2 and business_id = $3 returning *", [entryId, inventoryItemId, actor.businessId]);
+    if (!result.rows.length) throw new Error("No se encontro la carta de la carpeta.");
+    await writeAudit(connection, actor, "inventory.folder.entry.remove", "inventory_item", inventoryItemId, result.rows[0], null);
+  });
+  return getInventoryFolderContents(db, inventoryItemId, actor);
+}
+
+export async function addInventoryFolder151Template(db: PGlite, inventoryItemId: string, actor: AuthenticatedUser) {
+  await inventoryTransaction(db, async (connection) => {
+    await assertInventoryFolder(connection, inventoryItemId, actor, true);
+    const catalog = await connection.query<Record<string, unknown>>(`
+      select pricecharting_id, product_name, card_number from pricecharting_cache_entries
+      where language_group = 'english' and normalized_expansion in ('pokemon scarlet violet 151', 'scarlet violet 151', 'pokemon 151', '151')
+        and pricecharting_id not like 'tcgcsv-%'
+    `);
+    const entries = masterSet151Contents().map((entry) => {
+      const matches = catalog.rows.filter((card) => {
+        const name = String(card.product_name);
+        const tags = [...name.matchAll(/\[([^\]]+)\]/g)].map((match) => match[1].toLowerCase());
+        const number = String(card.card_number).split("/")[0].replace(/^0+/, "");
+        if (entry.number) {
+          if (number !== entry.number) return false;
+          return entry.finish === "reverse holo"
+            ? tags.length === 1 && /^(reverse|reverse holo|reverse holofoil)$/.test(tags[0])
+            : tags.every((tag) => /^(holo|holofoil|normal)$/.test(tag));
+        }
+        const energyName = name.replace(/\[[^\]]+\]/g, "").replace(/^basic\s+/i, "").trim().toLowerCase();
+        return energyName === entry.name.toLowerCase() && tags.length === 1 && /^(holo|cosmos holo|cosmo holo)$/.test(tags[0]);
+      });
+      return { ...entry, id: crypto.randomUUID(), priceChartingId: matches.length === 1 ? String(matches[0].pricecharting_id) : null };
+    });
+    await connection.query(`
+      insert into inventory_folder_entries (id, business_id, inventory_item_id, entry_key, pricecharting_id, name, expansion, card_number, finish, quantity)
+      select source.id::uuid, $1::uuid, $2::uuid, source."entryKey", source."priceChartingId", source.name, source.expansion, source.number, source.finish, 1
+      from jsonb_to_recordset($3::jsonb) as source(id text, "entryKey" text, "priceChartingId" text, name text, expansion text, number text, finish text)
+      where not exists (select 1 from inventory_folder_entries fe where fe.inventory_item_id = $2 and fe.pricecharting_id = source."priceChartingId")
+      on conflict (inventory_item_id, entry_key) do update
+        set pricecharting_id = coalesce(inventory_folder_entries.pricecharting_id, excluded.pricecharting_id)
+    `, [actor.businessId, inventoryItemId, JSON.stringify(entries)]);
+    await writeAudit(connection, actor, "inventory.folder.template.151", "inventory_item", inventoryItemId, null, { template: "151", entries: entries.length });
+  });
+  return getInventoryFolderContents(db, inventoryItemId, actor);
 }
 
 export async function listProducts(db: PGlite) {
@@ -4732,11 +4897,15 @@ export async function inventoryTransaction<T>(db: PGlite, work: (connection: PGl
 export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput, actor: AuthenticatedUser): Promise<DbStockRow> {
   return inventoryTransaction(db, async (connection) => {
     if (!Number.isInteger(input.quantityOnHand) || input.quantityOnHand <= 0) throw new Error("Indica una cantidad mayor a cero.");
+    if (input.itemKind === "folder") {
+      return upsertInventoryItem(connection, { ...input, sku: `FOLDER-${crypto.randomUUID()}`, productId: undefined, variantId: undefined }, actor);
+    }
     const stock = await listStockForBusiness(connection, actor.businessId);
     const canManageAll = !actor.roles || actor.roles.includes("admin");
     const ownerUserId = canManageAll ? input.ownerUserId?.trim() || "" : actor.id;
     const same = (a: unknown, b: unknown) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
     const identityMatches = (item: DbStockRow) =>
+      item.itemKind !== "folder" &&
       same(item.product.name, input.name) && same(item.product.expansion, input.expansion) && same(item.product.number, input.number)
       && same(item.variant.language, input.language) && same(item.variant.condition, input.gradingCompany || input.grade ? "GRADED" : input.condition)
       && same(item.variant.finish, input.finish) && same(item.variant.gradingCompany, input.gradingCompany)
@@ -4771,8 +4940,11 @@ export async function upsertInventoryItem(
 ): Promise<DbStockRow> {
   if (!inventoryTransactions.has(db)) return inventoryTransaction(db, (connection) => upsertInventoryItem(connection, input, actor));
   validateInventoryInput(input);
-  const before = await findStockBySku(db, actor.businessId, input.sku?.trim() || buildSku(input));
+  const sku = input.sku?.trim() || (input.itemKind === "folder" ? `FOLDER-${crypto.randomUUID()}` : buildSku(input));
+  const before = await findStockBySku(db, actor.businessId, sku);
   const canManageAll = !actor.roles || actor.roles.includes("admin");
+  const itemKind = before?.itemKind === "folder" || input.itemKind === "folder" ? "folder" : "standard";
+  if (itemKind === "folder" && (input.quantityOnHand > 1 || input.productId || input.variantId)) throw new Error("Cada carpeta es un item unico con una sola unidad.");
   if (!canManageAll && before && before.ownerUserId !== actor.id) throw new Error("No podes modificar stock de otro propietario.");
   const ownerUserId = canManageAll ? input.ownerUserId?.trim() || "" : actor.id;
   if (ownerUserId) {
@@ -4788,7 +4960,6 @@ export async function upsertInventoryItem(
   const productId = before?.product.id || input.productId || crypto.randomUUID();
   const variantId = before?.variant.id || input.variantId || crypto.randomUUID();
   const itemId = before?.id || crypto.randomUUID();
-  const sku = input.sku?.trim() || buildSku(input);
   const gradingCompany = input.gradingCompany?.trim().toUpperCase() || null;
   const grade = input.grade?.trim().toUpperCase() || null;
   const gradingCert = input.gradingCert?.trim() || null;
@@ -4800,7 +4971,7 @@ export async function upsertInventoryItem(
   const inventoryStatus = normalizeInventoryStatus(input.inventoryStatus);
   const tags = input.tags === undefined ? before?.tags || "" : normalizeInventoryTags(input.tags);
   const quantityDelta = input.quantityOnHand - (before?.quantityOnHand || 0);
-  const salePriceArs = normalizeSalePriceArs(input.priceArs || 0);
+  const salePriceArs = itemKind === "folder" && !input.priceArs ? 0 : normalizeSalePriceArs(input.priceArs || 0);
 
   {
     if (before) {
@@ -4860,6 +5031,7 @@ export async function upsertInventoryItem(
     if (input.purchaseCost !== undefined) {
       await db.query("update inventory_items set purchase_cost = $1, purchase_currency = $2 where id = $3 and business_id = $4", [input.purchaseCost, input.purchaseCurrency || "ARS", itemId, actor.businessId]);
     }
+    await db.query("update inventory_items set item_kind = $1 where id = $2 and business_id = $3", [itemKind, itemId, actor.businessId]);
     await db.query(`
       insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
       values ($1, $2, $3, $4, true)
@@ -5018,6 +5190,7 @@ export async function adjustInventoryQuantity(
   const before = await getInventoryItem(db, input.inventoryItemId, actor.businessId);
   if (!before) throw new Error("No se encontro el item de inventario");
   const nextQuantity = before.quantityOnHand + input.quantityDelta;
+  if (before.itemKind === "folder" && nextQuantity > 1) throw new Error("Cada carpeta es un item unico con una sola unidad.");
   if (nextQuantity < before.quantityReserved) throw new Error("El ajuste dejaria menos stock que unidades reservadas");
 
   {
@@ -7853,9 +8026,9 @@ function toMobileInventoryEntry(row: Record<string, unknown>): MobileInventoryEn
   };
 }
 
-function summarizeDbStock(items: DbStockRow[]): DbStockSummary {
+export function summarizeDbStock(items: DbStockRow[]): DbStockSummary {
   return items.reduce<DbStockSummary>((summary, item) => {
-    const itemValueArs = item.quantityOnHand * item.priceArs;
+    const itemValueArs = item.quantityOnHand * (item.folder?.valueArs ?? item.priceArs);
     summary.totalSkus += 1;
     summary.totalUnits += item.quantityOnHand;
     summary.reservedUnits += item.quantityReserved;
@@ -7865,7 +8038,7 @@ function summarizeDbStock(items: DbStockRow[]): DbStockSummary {
       summary.collectionUnits += item.quantityOnHand;
       summary.collectionValueArs += itemValueArs;
     }
-    summary.totalValueArs += item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
+    summary.totalValueArs += item.folder || item.inventoryStatus === "not_for_sale" ? itemValueArs : item.availableQuantity * item.priceArs;
     return summary;
   }, { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 });
 }
