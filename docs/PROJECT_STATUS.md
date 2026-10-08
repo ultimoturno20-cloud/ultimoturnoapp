@@ -25,6 +25,13 @@ Actualizado: 2026-10-08
 - La valuacion suma los ultimos precios sin graduar del cache PriceCharting;
   se convierte con el dolar vigente y suma una sola vez al valor total.
   Precios faltantes quedan visibles como valuacion parcial, con fecha de referencia.
+- Inicio incluye `No venta` en `Valor stock`, ademas de stock libre/asignado,
+  y muestra su importe por separado. Caja incluye la coleccion en `Plata en cartas`
+  con desglose propio; conserva el reservado en su total fisico. Las carpetas se
+  valuan por contenido al dolar vigente, no por su precio de venta manual.
+  La ganancia potencial usa solamente venta/costo de items habilitados para venta,
+  sin tratar coleccion como ganancia. Carpetas incompletamente valuadas muestran
+  aviso con cantidad de cartas sin precio. El calculo tiene tests de frontend.
 - La plantilla opcional `Master set 151 (EN)` carga 207 cartas numeradas,
   153 reverse y ocho energias cosmos holo. No incorpora promos automaticamente;
   las coincidencias ambiguas quedan sin vincular. La plantilla es idempotente.

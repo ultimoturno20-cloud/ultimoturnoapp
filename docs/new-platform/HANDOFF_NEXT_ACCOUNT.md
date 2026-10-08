@@ -19,6 +19,13 @@ las ocho energias y promos sin imagen permanecen explicitamente sin imagen.
 No confundir referencias sin vincular con cartas fisicamente faltantes.
 Verificado en localhost con imagenes cargadas y viewports 1440, 390 y 320 px.
 
+Se corrigio la omision de carpetas en Inicio/Caja: `moneySnapshot` ahora usa
+`stockItemValues` de `apps/admin-web/src/stock-value.ts`. El contenido se valua
+al dolar vigente, suma una vez y se desglosa como `Coleccion / no venta`.
+Inicio conserva libres/asignadas y suma no venta; Caja agrega tambien reservadas.
+El precio manual solo se usa para venta/ganancia potencial, sin incluir coleccion.
+Tests monetarios en `apps/admin-web/tests/stock-value.test.ts`, incluidos en npm test.
+
 ## Aviso vigente - 2026-10-07
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y

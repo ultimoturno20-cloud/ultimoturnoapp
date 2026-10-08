@@ -21,6 +21,9 @@ Actualizado: 2026-10-08
 - Comparar una muestra de precios con PriceCharting y comprobar que el valor
   cambie despues de la proxima sincronizacion del catalogo. Las pruebas del
   desarrollo se realizaron exclusivamente en bases temporales/locales aisladas.
+- Comprobar `Valor stock` en Inicio y `Plata en cartas > Coleccion / no venta`
+  en Caja: las carpetas deben sumar su contenido una sola vez, incluso sin precio
+  de venta. Si el valor es parcial, completar referencias/precios pendientes.
 - Si se decide vender una carpeta, fijar su precio de venta y cambiar el estado
   a `Disponible`. La carpeta completa representa una unidad; las cartas internas
   no se ofrecen como singles.

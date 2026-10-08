@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { stockItemValues } from "./stock-value.js";
 import "./styles.css";
 
 type DeferredInstallPrompt = Event & {
@@ -3126,7 +3127,7 @@ function Dashboard({
   const overdueOrders = activeReservations.filter((sale) => isSaleOverdue(sale, todayStart));
   const pendingDebt = activeReservations.reduce((sum, sale) => sum + saleOwed(sale).ars + toBlueArs(saleOwed(sale).usd, blueRate), 0);
   const stockCards = moneySnapshot(items, [], [], blueRate).cards;
-  const availableValueArs = stockCards.freeArs + stockCards.resellersArs;
+  const stockValueArs = stockCards.freeArs + stockCards.resellersArs + stockCards.collectionArs;
   const stockItemValueArs = (item: StockRow) => (item.priceArs || toBlueArs(item.priceUsd, blueRate)) * Math.max(1, item.availableQuantity);
   const featuredSets = {
     value: items.filter((item) => item.availableQuantity > 0).sort((left, right) => stockItemValueArs(right) - stockItemValueArs(left)).slice(0, 4),
@@ -3149,7 +3150,7 @@ function Dashboard({
         <Metric label="Unidades" value={summary.totalUnits} helper="stock total" />
         <Metric label="Reservadas" value={summary.reservedUnits} helper="no disponibles" />
         <Metric label="Disponibles" value={summary.availableUnits} helper="listas para vender" />
-        <Metric label="Valor stock" value={formatArs(availableValueArs)} helper={`${formatUsd(fromBlueArs(availableValueArs, blueRate))} blue`} />
+        <Metric label="Valor stock" value={formatArs(stockValueArs)} helper={`${formatUsd(fromBlueArs(stockValueArs, blueRate))} blue${stockCards.collectionArs ? ` · No venta ${formatArs(stockCards.collectionArs)}` : ""}`} />
         <Metric label="Ventas semana" value={formatArs(weekSales)} helper={`${formatUsd(fromBlueArs(weekSales, blueRate))} blue`} />
         <Metric label="Ventas mes" value={formatArs(monthSales)} helper={`${formatUsd(fromBlueArs(monthSales, blueRate))} blue`} />
         <Metric label="Pendientes" value={pendingOrders + pendingReview} helper={`${pendingOrders} ordenes / ${pendingReview} importaciones`} />
@@ -9772,7 +9773,7 @@ function isSaleOverdue(sale: SaleRecord, todayStart: Date) {
 }
 
 type MoneySnapshot = {
-  cards: { totalArs: number; freeArs: number; reservedArs: number; resellersArs: number; units: number; unitsWithoutPrice: number; costArs: number; unitsWithCost: number; marketUsd: number; unitsWithMarket: number; owners: Array<{ name: string; totalArs: number; units: number }> };
+  cards: { totalArs: number; freeArs: number; reservedArs: number; resellersArs: number; collectionArs: number; saleArs: number; saleCostArs: number; missingFolderPrices: number; partialFolders: number; units: number; unitsWithoutPrice: number; costArs: number; unitsWithCost: number; marketUsd: number; unitsWithMarket: number; owners: Array<{ name: string; totalArs: number; units: number }> };
   owed: { totalArs: number; customersArs: number; customersUsd: number; customerOrders: number; overdueOrders: number; ordersWithoutDueDate: number; resellersArs: number; resellers: number };
 };
 
@@ -9845,24 +9846,30 @@ function CostFillPanel(props: {
 }
 
 function moneySnapshot(items: StockRow[], sales: SaleRecord[], resellers: ResellerDashboard[], blueRate: BlueExchangeRate): MoneySnapshot {
-  const cards: MoneySnapshot["cards"] = { totalArs: 0, freeArs: 0, reservedArs: 0, resellersArs: 0, units: 0, unitsWithoutPrice: 0, costArs: 0, unitsWithCost: 0, marketUsd: 0, unitsWithMarket: 0, owners: [] };
+  const cards: MoneySnapshot["cards"] = { totalArs: 0, freeArs: 0, reservedArs: 0, resellersArs: 0, collectionArs: 0, saleArs: 0, saleCostArs: 0, missingFolderPrices: 0, partialFolders: 0, units: 0, unitsWithoutPrice: 0, costArs: 0, unitsWithCost: 0, marketUsd: 0, unitsWithMarket: 0, owners: [] };
   const owners = new Map<string, { name: string; totalArs: number; units: number }>();
   for (const item of items) {
     const units = Math.max(0, item.quantityOnHand);
     if (!units) continue;
-    const unitArs = item.priceArs || toBlueArs(item.priceUsd, blueRate);
+    const values = stockItemValues(item, blueRate.sell);
+    const unitArs = values.unitArs;
     cards.units += units;
-    cards.totalArs += unitArs * units;
-    cards.freeArs += unitArs * Math.max(0, item.freeQuantity);
-    cards.reservedArs += unitArs * Math.max(0, item.quantityReserved);
-    cards.resellersArs += unitArs * Math.max(0, item.quantityAssigned);
+    cards.totalArs += values.totalArs;
+    cards.freeArs += values.freeArs;
+    cards.reservedArs += values.reservedArs;
+    cards.resellersArs += values.resellersArs;
+    cards.collectionArs += values.collectionArs;
+    cards.saleArs += values.saleArs;
+    cards.missingFolderPrices += values.missingFolderPrices;
+    if (values.missingFolderPrices) cards.partialFolders += 1;
     if (!unitArs) cards.unitsWithoutPrice += units;
     const costArs = unitCostArs(item, blueRate);
     if (costArs) {
       cards.costArs += costArs * units;
+      if (!values.collection) cards.saleCostArs += costArs * units;
       cards.unitsWithCost += units;
     }
-    const marketUsd = item.priceReferences?.tcgplayer.marketPriceUsd ?? item.priceReferences?.tcgplayer.usd ?? item.priceReferences?.priceCharting.usd ?? null;
+    const marketUsd = values.marketUsd;
     if (marketUsd) {
       cards.marketUsd += marketUsd * units;
       cards.unitsWithMarket += units;
@@ -9905,17 +9912,19 @@ function MoneyOverview({ snapshot, blueRate }: { snapshot: MoneySnapshot; blueRa
       <article className="panel money-card">
         <span className="eyebrow">Plata en cartas</span>
         <strong>{formatArs(cards.totalArs)}</strong>
-        <small>{formatUsd(fromBlueArs(cards.totalArs, blueRate))} al blue - {cards.units.toLocaleString("es-AR")} cartas a precio de venta</small>
+        <small>{formatUsd(fromBlueArs(cards.totalArs, blueRate))} al blue - {cards.units.toLocaleString("es-AR")} unidades</small>
         <dl>
           <div><dt>Libres para vender</dt><dd>{formatArs(cards.freeArs)}</dd></div>
           <div><dt>Separadas en ordenes</dt><dd>{formatArs(cards.reservedArs)}</dd></div>
           <div><dt>En manos de revendedores</dt><dd>{formatArs(cards.resellersArs)}</dd></div>
-          <div><dt>Referencia de mercado</dt><dd>{formatUsd(cards.marketUsd)} <small>TCGplayer/PriceCharting, {percentOf(cards.unitsWithMarket, cards.units)}% de las cartas</small></dd></div>
-          <div><dt>Costo cargado</dt><dd>{cards.unitsWithCost ? <>{formatArs(cards.costArs)} <small>{percentOf(cards.unitsWithCost, cards.units)}% de las cartas</small></> : <small>Sin costos cargados</small>}</dd></div>
-          {cards.unitsWithCost ? <div><dt>Ganancia potencial</dt><dd>{formatArs(cards.totalArs - cards.costArs)} <small>venta menos costo</small></dd></div> : null}
+          <div><dt>Coleccion / no venta</dt><dd>{formatArs(cards.collectionArs)}</dd></div>
+          <div><dt>Referencia de mercado</dt><dd>{formatUsd(cards.marketUsd)} <small>TCGplayer/PriceCharting, {percentOf(cards.unitsWithMarket, cards.units)}% de las unidades</small></dd></div>
+          <div><dt>Costo cargado</dt><dd>{cards.unitsWithCost ? <>{formatArs(cards.costArs)} <small>{percentOf(cards.unitsWithCost, cards.units)}% de las unidades</small></> : <small>Sin costos cargados</small>}</dd></div>
+          {cards.saleCostArs ? <div><dt>Ganancia potencial</dt><dd>{formatArs(cards.saleArs - cards.saleCostArs)} <small>venta menos costo, sin coleccion</small></dd></div> : null}
         </dl>
-        {cards.unitsWithoutPrice ? <p className="money-warning">{cards.unitsWithoutPrice} carta(s) sin precio no suman.</p> : null}
-        {cards.owners.length > 1 ? <dl className="money-owners">{cards.owners.map((owner) => <div key={owner.name}><dt>{owner.name}</dt><dd>{formatArs(owner.totalArs)} <small>{owner.units.toLocaleString("es-AR")} cartas</small></dd></div>)}</dl> : null}
+        {cards.unitsWithoutPrice ? <p className="money-warning">{cards.unitsWithoutPrice} unidad(es) sin valor no suman.</p> : null}
+        {cards.partialFolders ? <p className="money-warning">{cards.partialFolders} carpeta(s) con valor parcial: {cards.missingFolderPrices} carta(s) sin precio.</p> : null}
+        {cards.owners.length > 1 ? <dl className="money-owners">{cards.owners.map((owner) => <div key={owner.name}><dt>{owner.name}</dt><dd>{formatArs(owner.totalArs)} <small>{owner.units.toLocaleString("es-AR")} unidades</small></dd></div>)}</dl> : null}
       </article>
       <article className="panel money-card owed">
         <span className="eyebrow">Te deben</span>

@@ -32,7 +32,7 @@
     "staging:web": "powershell -ExecutionPolicy Bypass -File scripts/start-staging-web.ps1",
     "staging:web:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-staging-web.ps1",
     "typecheck": "tsc -b",
-    "test": "tsx --test packages/domain/src/*.test.ts packages/importers/src/*.test.ts packages/db/src/*.test.ts tools/coolstuff-price-worker.test.ts tools/tcgcsv-inventory-sync.test.ts",
+    "test": "tsx --test apps/admin-web/tests/*.test.ts packages/domain/src/*.test.ts packages/importers/src/*.test.ts packages/db/src/*.test.ts tools/coolstuff-price-worker.test.ts tools/tcgcsv-inventory-sync.test.ts",
     "db:verify": "npm run verify -w @ultimoturno/db",
     "check:new": "npm run lint && npm run typecheck && npm run test && npm run db:verify && npm run build"
   },
