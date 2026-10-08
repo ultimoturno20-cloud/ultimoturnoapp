@@ -121,4 +121,3 @@ it("sells a folder as one unit and locks its contents while reserved or sold", a
   assert.equal((await listStockForBusiness(db, actor.businessId)).summary.totalValueArs, 0);
   await assert.rejects(removeInventoryFolderEntry(db, folder.id, entries[0].id, actor), /reservada o vendida/);
 });
-
