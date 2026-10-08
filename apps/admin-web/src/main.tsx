@@ -3716,6 +3716,8 @@ function InventoryView(props: {
         </div> : null}
       </div>
 
+      <CollectionValuationsPanel />
+
       <div className="stock-content inventory-workspace inventory-browse-workspace">
         <section className="panel product-list-panel">
           <div className="section-heading">
@@ -6574,7 +6576,7 @@ function CollectionValuationsPanel() {
   const [selectedId, setSelectedId] = useState("");
   const [createName, setCreateName] = useState("Master Set 151");
   const [createType, setCreateType] = useState<CollectionType>("collection");
-  const [createDescription, setCreateDescription] = useState("Set base Scarlet & Violet 151 con promos agregadas a mano.");
+  const [createDescription, setCreateDescription] = useState("Activo fisico no venta, valuado por PriceCharting.");
   const [expansionName, setExpansionName] = useState("Scarlet & Violet 151");
   const [manualId, setManualId] = useState("");
   const [manualNote, setManualNote] = useState("");
@@ -6681,21 +6683,21 @@ function CollectionValuationsPanel() {
   return <section className="panel collection-valuation-panel">
     <div className="section-heading compact-heading">
       <div>
-        <p className="eyebrow">Colecciones</p>
-        <h3>{collection?.name || "Carpetas, mazos y piezas no vendibles"}</h3>
-        <p>{collection?.description || "Valuacion por PriceCharting fuera del stock vendible."}</p>
+        <p className="eyebrow">Stock no venta</p>
+        <h3>{collection?.name || "Carpetas, mazos y piezas"}</h3>
+        <p>{collection?.description || "Activos fisicos valuados por PriceCharting, fuera del carrito."}</p>
       </div>
       <button className="secondary-action" disabled={loading} onClick={() => void load()}><Icon name="refresh" />Actualizar</button>
     </div>
     <div className="metrics admin-metrics">
-      <Metric label="Valor colecciones" value={formatArs(summary.totalArs)} helper={`${formatUsd(summary.totalUsd)} contables`} />
-      <Metric label="Colecciones" value={summary.totalCollections.toLocaleString("es-AR")} helper={`${summary.countedCollections.toLocaleString("es-AR")} suman al total`} />
-      <Metric label="Seleccion" value={collection ? formatArs(collection.totalArs) : "Sin coleccion"} helper={collection ? `${collection.itemCount.toLocaleString("es-AR")} items` : "crea una para empezar"} />
-      <Metric label="Actualizado" value={collection?.lastImportedAt ? formatShortDate(collection.lastImportedAt) : "Sin cache"} helper={collection?.collectionType || "coleccion"} />
+      <Metric label="Valor activos" value={formatArs(summary.totalArs)} helper={`${formatUsd(summary.totalUsd)} contables`} />
+      <Metric label="Activos" value={summary.totalCollections.toLocaleString("es-AR")} helper={`${summary.countedCollections.toLocaleString("es-AR")} suman al total`} />
+      <Metric label="Seleccion" value={collection ? formatArs(collection.totalArs) : "Sin activo"} helper={collection ? `${collection.itemCount.toLocaleString("es-AR")} items` : "crea uno para empezar"} />
+      <Metric label="Actualizado" value={collection?.lastImportedAt ? formatShortDate(collection.lastImportedAt) : "Sin cache"} helper={collection?.collectionType || "activo"} />
     </div>
     <div className="admin-button-row">
-      <input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="Nombre de coleccion" />
-      <select value={createType} onChange={(event) => setCreateType(event.target.value as CollectionType)}><option value="collection">Coleccion</option><option value="deck">Mazo</option><option value="sealed">Sellado</option><option value="other">Otro</option></select>
+      <input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="Nombre del activo" />
+      <select value={createType} onChange={(event) => setCreateType(event.target.value as CollectionType)}><option value="collection">Carpeta</option><option value="deck">Mazo</option><option value="sealed">Sellado</option><option value="other">Otro</option></select>
       <input value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Descripcion opcional" />
       <button className="primary-action" disabled={loading || !createName.trim()} onClick={() => void createCollection()}><Icon name="plus" />Crear</button>
     </div>
@@ -6861,8 +6863,6 @@ function AdminView(props: {
       </section>
 
       <UserManagementPanel users={props.users} onCreated={props.onUserCreated} />
-
-      <CollectionValuationsPanel />
 
       <section className="metrics admin-metrics">
         <Metric label="Perfil" value={props.environment.dataProfile} helper={props.environment.allowExamples ? "permite ejemplos" : "datos reales"} />
