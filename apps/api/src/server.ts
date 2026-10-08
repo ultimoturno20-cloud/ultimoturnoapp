@@ -12,8 +12,6 @@ import {
   assignResellerStock,
   adjustInventoryQuantity,
   addClaimFree,
-  addCollectionExpansionItems,
-  addCollectionItem,
   addPriceChartingCardsToClaim,
   approveCardIndexEntriesByConfidence,
   archiveActiveClaim,
@@ -39,8 +37,6 @@ import {
   createResellerSettlement,
   checkPostgresConnection,
   createOperationalDatabase,
-  createCollection,
-  deleteCollectionItem,
   deleteMobileInventoryEntry,
   deleteClaimPlanItem,
   deleteClaimCard,
@@ -69,7 +65,6 @@ import {
   listPurchases,
   listClaimPlans,
   listClaimsWorkspace,
-  listCollectionValuations,
   listCardIndex,
   listCoolstuffPriceTargets,
   listMobileInventoryEntries,
@@ -4266,50 +4261,6 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/auth/me") {
       sendJson(response, 200, { user, roles: user.roles || ["admin"], environment: { dataProfile, allowExamples } });
-      return;
-    }
-
-    if (url.pathname === "/collections" && request.method === "GET") {
-      const blueRate = await getBlueExchangeRate();
-      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
-      return;
-    }
-
-    if (url.pathname === "/collections" && request.method === "POST") {
-      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
-      const body = await readJson<Parameters<typeof createCollection>[1]>(request);
-      const created = await createCollection(db, body, user);
-      const blueRate = await getBlueExchangeRate();
-      sendJson(response, 200, { ...(await listCollectionValuations(db, user.businessId, blueRate.sell)), created });
-      return;
-    }
-
-    const collectionItemsMatch = url.pathname.match(/^\/collections\/([^/]+)\/items$/);
-    if (collectionItemsMatch && request.method === "POST") {
-      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
-      const body = await readJson<{ priceChartingId?: string; quantity?: number; note?: string }>(request);
-      await addCollectionItem(db, decodeURIComponent(collectionItemsMatch[1]), { priceChartingId: body.priceChartingId || "", quantity: body.quantity, note: body.note }, user);
-      const blueRate = await getBlueExchangeRate();
-      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
-      return;
-    }
-
-    const collectionImportMatch = url.pathname.match(/^\/collections\/([^/]+)\/import-expansion$/);
-    if (collectionImportMatch && request.method === "POST") {
-      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
-      const body = await readJson<{ expansionName?: string; languageGroup?: "english" | "japanese" | "chinese" }>(request);
-      const result = await addCollectionExpansionItems(db, decodeURIComponent(collectionImportMatch[1]), { expansionName: body.expansionName || "", languageGroup: body.languageGroup || "english" }, user);
-      const blueRate = await getBlueExchangeRate();
-      sendJson(response, 200, { ...(await listCollectionValuations(db, user.businessId, blueRate.sell)), result });
-      return;
-    }
-
-    const collectionItemDeleteMatch = url.pathname.match(/^\/collections\/([^/]+)\/items\/([^/]+)$/);
-    if (collectionItemDeleteMatch && request.method === "DELETE") {
-      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
-      await deleteCollectionItem(db, decodeURIComponent(collectionItemDeleteMatch[1]), decodeURIComponent(collectionItemDeleteMatch[2]), user);
-      const blueRate = await getBlueExchangeRate();
-      sendJson(response, 200, await listCollectionValuations(db, user.businessId, blueRate.sell));
       return;
     }
 

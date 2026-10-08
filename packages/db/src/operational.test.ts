@@ -5,8 +5,6 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   adjustInventoryQuantity,
-  addCollectionExpansionItems,
-  addCollectionItem,
   addPriceChartingCardsToClaim,
   claimPriceChartingImageQueue,
   closeActiveClaim,
@@ -16,7 +14,6 @@ import {
   createClaimSection,
   createPurchase,
   createSale,
-  createCollection,
   createOperationalDatabase,
   ensurePriceChartingImageQueueForActiveClaim,
   ensurePriceChartingImageQueueForAll,
@@ -32,7 +29,6 @@ import {
   loadExampleInventory,
   listMovements,
   listClaimsWorkspace,
-  listCollectionValuations,
   listCoolstuffPriceTargets,
   listPriceChartingCache,
   listUnifiedCatalogCards,
@@ -63,7 +59,6 @@ import {
   getPriceHistory,
   importPriceHistory,
   listPriceChanges,
-  deleteCollectionItem,
   recordPriceHistorySnapshot
 } from "./index.js";
 
@@ -533,8 +528,8 @@ describe("operational inventory database", () => {
     await db.close();
   });
 
-  it("keeps collection items valued but unavailable for sale", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-collection-stock-"));
+  it("keeps not-for-sale items valued but unavailable for sale", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-not-for-sale-stock-"));
     const db = await createOperationalDatabase({ dataDir });
     const user = await getDefaultOperationalUser(db);
     const item = await upsertInventoryItem(db, {
@@ -549,7 +544,7 @@ describe("operational inventory database", () => {
       quantityReserved: 0,
       priceArs: 1500000,
       inventoryStatus: "not_for_sale",
-      tags: "coleccion, master set 151"
+      tags: "master set 151, no venta"
     }, user);
 
     const stock = await listStockForBusiness(db, user.businessId);
@@ -565,112 +560,6 @@ describe("operational inventory database", () => {
       channel: "whatsapp",
       lines: [{ inventoryItemId: item.id, quantity: 1, unitPriceArs: 1500000 }]
     }, user), /solo quedan 0 unidades disponibles/);
-    await db.close();
-  });
-
-  it("values editable collections with expansion imports and manual promo additions", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "ultimoturno-collection-valuation-"));
-    const db = await createOperationalDatabase({ dataDir });
-    const user = await getDefaultOperationalUser(db);
-    await replacePriceChartingCache(db, {
-      category: "pokemon-cards",
-      sourceHash: "collection-151",
-      rowsReceived: 4,
-      rowsSkipped: 0,
-      rows: [{
-        priceChartingId: "sv151-bulbasaur-1",
-        canonicalUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1",
-        sourceUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1",
-        productName: "Bulbasaur",
-        normalizedName: "bulbasaur",
-        expansionName: "Scarlet & Violet 151",
-        normalizedExpansion: "scarlet violet 151",
-        cardNumber: "1/165",
-        loosePriceUsd: 2,
-        imageUrl: "",
-        languageGroup: "english",
-        searchKey: "bulbasaur scarlet violet 151 1"
-      }, {
-        priceChartingId: "sv151-bulbasaur-1-rh",
-        canonicalUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1-reverse-holo",
-        sourceUrl: "https://www.pricecharting.com/game/pokemon-scarlet-&-violet-151/bulbasaur-1-reverse-holo",
-        productName: "Bulbasaur [Reverse Holo]",
-        normalizedName: "bulbasaur reverse holo",
-        expansionName: "Scarlet & Violet 151",
-        normalizedExpansion: "scarlet violet 151",
-        cardNumber: "1/165",
-        loosePriceUsd: 3,
-        imageUrl: "",
-        languageGroup: "english",
-        searchKey: "bulbasaur reverse holo scarlet violet 151 1"
-      }, {
-        priceChartingId: "sv151-upc-promo-mew",
-        canonicalUrl: "https://www.pricecharting.com/game/pokemon-promo/mew-053",
-        sourceUrl: "https://www.pricecharting.com/game/pokemon-promo/mew-053",
-        productName: "Mew ex [UPC Promo]",
-        normalizedName: "mew ex upc promo",
-        expansionName: "Pokemon Promo",
-        normalizedExpansion: "pokemon promo",
-        cardNumber: "053",
-        loosePriceUsd: 10,
-        imageUrl: "",
-        languageGroup: "english",
-        searchKey: "mew ex upc promo 053"
-      }, {
-        priceChartingId: "japanese-151-bulbasaur",
-        canonicalUrl: "https://www.pricecharting.com/game/pokemon-japanese-scarlet-&-violet-151/bulbasaur-1",
-        sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-scarlet-&-violet-151/bulbasaur-1",
-        productName: "Bulbasaur",
-        normalizedName: "bulbasaur",
-        expansionName: "Japanese Scarlet & Violet 151",
-        normalizedExpansion: "japanese scarlet violet 151",
-        cardNumber: "1",
-        loosePriceUsd: 4,
-        imageUrl: "",
-        languageGroup: "japanese",
-        searchKey: "bulbasaur japanese scarlet violet 151 1"
-      }]
-    });
-
-    const created = await createCollection(db, {
-      name: "Master Set 151",
-      collectionType: "collection",
-      description: "Set base con promos manuales",
-      sellable: false,
-      countsInValuation: true
-    }, user);
-    const collectionId = created.collection.id;
-    const imported = await addCollectionExpansionItems(db, collectionId, { expansionName: "Scarlet & Violet 151", languageGroup: "english" }, user);
-    assert.equal(imported.inserted, 2);
-    assert.equal(imported.candidates, 2);
-
-    let valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.name, "Master Set 151");
-    assert.equal(valuation.sellable, false);
-    assert.equal(valuation.countsInValuation, true);
-    assert.equal(valuation.expansionEntries, 2);
-    assert.equal(valuation.manualEntries, 0);
-    assert.equal(valuation.totalUsd, 5);
-    assert.equal(valuation.totalArs, 5000);
-
-    await addCollectionItem(db, collectionId, { priceChartingId: "sv151-upc-promo-mew", quantity: 1, note: "UPC" }, user);
-    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.itemCount, 3);
-    assert.equal(valuation.manualEntries, 1);
-    assert.equal(valuation.totalUsd, 15);
-
-    await addCollectionItem(db, collectionId, { priceChartingId: "sv151-bulbasaur-1", quantity: 1, note: "ya incluido" }, user);
-    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.itemCount, 3);
-    assert.equal(valuation.manualEntries, 1);
-    assert.equal(valuation.entries.find((entry) => entry.priceChartingId === "sv151-bulbasaur-1")?.source, "expansion");
-    assert.equal(valuation.totalUsd, 15);
-
-    await deleteCollectionItem(db, collectionId, "sv151-upc-promo-mew", user);
-    valuation = (await listCollectionValuations(db, user.businessId, 1000)).collections[0];
-    assert.equal(valuation.manualEntries, 0);
-    assert.equal(valuation.totalUsd, 5);
-    assert.equal((await listCollectionValuations(db, user.businessId, 1000)).totalUsd, 5);
     await db.close();
   });
 
