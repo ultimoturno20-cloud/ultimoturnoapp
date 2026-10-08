@@ -401,7 +401,17 @@ export type ManagedUser = {
   createdAt: string;
 };
 
-export type ResellerAssignment = {
+type ResellerInventoryMetadata = {
+  cardType?: CardType;
+  itemKind?: "standard" | "folder";
+  language?: string;
+  condition?: string;
+  finish?: string;
+  tags?: string;
+  imageFallbackUrl?: string;
+};
+
+export type ResellerAssignment = ResellerInventoryMetadata & {
   inventoryItemId: string;
   sku: string;
   name: string;
@@ -449,7 +459,7 @@ export type ResellerOrder = {
   lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }>;
 };
 
-export type ResellerGlobalStockItem = {
+export type ResellerGlobalStockItem = ResellerInventoryMetadata & {
   inventoryItemId: string;
   sku: string;
   name: string;
@@ -1468,6 +1478,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
     condition: String(row.condition || ""), finish: String(row.finish || ""), tags: String(row.tags || ""), availableQuantity: Number(row.available_quantity || 0),
     priceArs: Number(row.price_ars || 0), priceUsd: row.price_usd == null ? null : Number(row.price_usd)
   }));
+  await attachResellerInventoryMetadata(db, businessId, [...assignments, ...globalStock]);
   const requestRows = await db.query<Record<string, unknown>>(`
     select rsr.id, rsr.reseller_user_id, rsr.inventory_item_id, rsr.quantity_requested,
       rsr.price_ars_snapshot, rsr.created_at, ii.sku,
@@ -1517,6 +1528,44 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
       grossSalesArs, commissionArs, netDueArs, settledArs, outstandingArs: Math.max(0, netDueArs - settledArs)
     }
   };
+}
+
+async function attachResellerInventoryMetadata(db: PGlite, businessId: string, items: Array<ResellerAssignment | ResellerGlobalStockItem>) {
+  if (!items.length) return;
+  const result = await db.query<Record<string, unknown>>(`
+    select ii.id, ii.card_type_override, ii.item_kind, ii.tags,
+      p.name, p.expansion, p.card_number, v.language, v.condition, v.finish,
+      pc.external_id as pricecharting_id, cie.tcgplayer_product_id,
+      coalesce(nullif(pic.public_url, ''), nullif(cie.image_url, ''), nullif(pce.image_url, ''), '') as catalog_image
+    from inventory_items ii
+    join card_products p on p.id = ii.product_id
+    join card_variants v on v.id = ii.variant_id
+    left join lateral (
+      select ei.external_id from external_identifiers ei
+      join external_sources es on es.id = ei.source_id and es.name = 'pricecharting'
+      where ei.business_id = ii.business_id and ei.product_id = ii.product_id
+      order by ei.id limit 1
+    ) pc on true
+    left join pricecharting_cache_entries pce on pce.pricecharting_id = pc.external_id
+    left join pricecharting_image_cache pic on pic.pricecharting_id = pc.external_id
+    left join card_index_entries cie on cie.pricecharting_id = pc.external_id
+    where ii.business_id = $1 and ii.id = any($2::uuid[])
+  `, [businessId, [...new Set(items.map((item) => item.inventoryItemId))]]);
+  const classifications = await classifyCatalogReferences(db, result.rows.map((row) => ({
+    name: String(row.name), expansion: String(row.expansion), number: String(row.card_number || ''),
+    languageGroup: inventoryCardLanguage(String(row.language)), priceChartingId: String(row.pricecharting_id || ''),
+    tcgplayerProductId: String(row.tcgplayer_product_id || '')
+  })));
+  const metadata = new Map(result.rows.map((row, index) => [String(row.id), {
+    itemKind: String(row.item_kind) as 'standard' | 'folder',
+    cardType: row.item_kind === 'folder' ? undefined : isCardType(row.card_type_override) ? row.card_type_override : classifications[index].cardType,
+    language: String(row.language), condition: String(row.condition), finish: String(row.finish), tags: String(row.tags || ''),
+    imageFallbackUrl: String(row.catalog_image || '')
+  }]));
+  for (const item of items) {
+    Object.assign(item, metadata.get(item.inventoryItemId));
+    if (!item.imageUrl) item.imageUrl = item.imageFallbackUrl || '';
+  }
 }
 
 export async function createResellerStockRequest(

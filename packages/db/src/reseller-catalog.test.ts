@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { it } from 'node:test';
+import { assignResellerStock, createOperationalDatabase, createReseller, createSale, getDefaultOperationalUser, getResellerDashboard, listStockForBusiness, replacePriceChartingCache, upsertInventoryItem } from './index.js';
+
+it('enriches both reseller catalogs without leaking costs or changing inventory, and keeps in-hand separate from sellable', async (t) => {
+  const db = await createOperationalDatabase({ dataDir: await mkdtemp(path.join(tmpdir(), 'ut-reseller-catalog-')) });
+  t.after(() => db.close());
+  const admin = await getDefaultOperationalUser(db);
+  const reseller = await createReseller(db, { displayName: 'Catalog Test', email: 'catalog@test.local', password: 'local-test-only', commissionPercent: 20 }, admin);
+  await replacePriceChartingCache(db, { category: 'pokemon-cards', sourceHash: 'reseller-catalog', rowsReceived: 1, rowsSkipped: 0, rows: [{ priceChartingId: 'catalog-155', canonicalUrl: '', sourceUrl: '', productName: 'Big Air Balloon', normalizedName: 'big air balloon', expansionName: 'Pokemon Scarlet & Violet 151', normalizedExpansion: 'pokemon scarlet violet 151', cardNumber: '155', loosePriceUsd: 5, imageUrl: 'https://images.example.test/tool.png', searchKey: 'big air balloon' }] });
+  const input = { sku: 'CATALOG-1', name: 'Big Air Balloon', expansion: 'Pokemon Scarlet & Violet 151', number: '155', language: 'EN', condition: 'LP', finish: 'reverse holo', tags: 'jugables', quantityOnHand: 2, priceArs: 800, priceChartingId: 'catalog-155', purchaseCost: 400 };
+  const card = await upsertInventoryItem(db, input, admin);
+  await assignResellerStock(db, reseller.reseller.userId, card.id, 1, admin);
+  await createSale(db, { customerName: 'Reserved', saleType: 'reservation', channel: 'test', lines: [{ inventoryItemId: card.id, quantity: 2, unitPriceArs: 800 }] }, admin);
+  const before = await listStockForBusiness(db, admin.businessId);
+  const dashboard = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  const own = dashboard.assignments[0];
+  assert.equal(own.remaining, 1);
+  assert.equal(own.sellable, 0);
+  assert.equal(own.cardType, 'tool');
+  assert.equal(own.language, 'EN');
+  assert.equal(own.condition, 'LP');
+  assert.equal(own.finish, 'reverse holo');
+  assert.equal(own.tags, 'jugables');
+  assert.ok(own.imageUrl);
+  assert.equal('purchaseCost' in own, false);
+  assert.equal(dashboard.globalStock.some((item) => item.inventoryItemId === card.id), false);
+  const other = await upsertInventoryItem(db, { ...input, sku: 'CATALOG-2', name: 'Manual type', number: '42', expansion: 'Test', priceChartingId: '', cardTypeOverride: 'supporter', quantityOnHand: 1, imageUrl: 'https://images.example.test/manual.png' }, admin);
+  const updated = await getResellerDashboard(db, reseller.reseller.userId, admin.businessId);
+  assert.equal(updated.globalStock.find((item) => item.inventoryItemId === other.id)?.cardType, 'supporter');
+  assert.equal(updated.globalStock.find((item) => item.inventoryItemId === other.id)?.imageUrl, 'https://images.example.test/manual.png');
+  assert.equal('purchaseCost' in updated.globalStock[0], false);
+  const after = await listStockForBusiness(db, admin.businessId);
+  assert.deepEqual(after.items.find((item) => item.id === card.id), before.items.find((item) => item.id === card.id));
+});

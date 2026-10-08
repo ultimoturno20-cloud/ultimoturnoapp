@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { stockItemValues } from "./stock-value.js";
+import { defaultResellerCatalogFilters, filterResellerCatalog, resellerCatalogTags, type ResellerCatalogItem, type ResellerCatalogFilters } from "./reseller-catalog.js";
 import "./styles.css";
+import "./reseller-catalog.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -53,12 +55,11 @@ function resellerTabFromLocation(): ResellerPortalTab {
   const legacy = new URLSearchParams(window.location.search).get("seccion");
   return (["sell", "orders", "stock", "global", "sales"] as ResellerPortalTab[]).includes(legacy as ResellerPortalTab) ? legacy as ResellerPortalTab : "sell";
 }
-type ResellerAssignment = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number; priceArs: number };
+type ResellerAssignment = ResellerCatalogItem & { assigned: number; sold: number; returned: number; remaining: number; stockAvailable: number; sellable: number };
 type ResellerSale = { id: string; resellerUserId: string; resellerName: string; customerName: string; status: "confirmed" | "cancelled"; grossTotalArs: number; commissionPercent: number; commissionArs: number; netDueArs: number; notes: string; soldAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
 type ResellerOrder = { id: string; resellerUserId: string; customerName: string; status: "pending" | "converted" | "cancelled"; fulfillmentStatus: "to_pack" | "to_deliver" | "delivered"; paymentStatus: "pending" | "paid"; totalArs: number; notes: string; convertedSaleId: string; packedAt?: string; deliveredAt?: string; paidAt?: string; createdAt: string; lines: Array<{ inventoryItemId: string; sku: string; name: string; quantity: number; unitPriceArs: number; lineTotalArs: number }> };
-type ResellerGlobalStockItem = { inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; tags: string; availableQuantity: number; priceArs: number; priceUsd: number | null };
+type ResellerGlobalStockItem = ResellerCatalogItem & { language: string; condition: string; finish: string; tags: string; availableQuantity: number; priceUsd: number | null };
 type ResellerStockRequest = { id: string; resellerUserId: string; inventoryItemId: string; sku: string; name: string; expansion: string; number: string; imageUrl: string; language: string; condition: string; finish: string; quantityRequested: number; availableQuantity: number; priceArsSnapshot: number; currentPriceArs: number; createdAt: string };
-type ResellerGlobalSort = "name" | "expansion" | "number" | "price" | "quantity";
 type ResellerDashboard = {
   reseller: { userId: string; displayName: string; email: string; phone: string; notes: string; active: boolean; commissionPercent: number; creditLimitArs: number | null };
   assignments: ResellerAssignment[];
@@ -6399,16 +6400,6 @@ function ResellerPortal() {
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [activeTab, setActiveTab] = useState<ResellerPortalTab>(() => resellerTabFromLocation());
   const [search, setSearch] = useState("");
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [globalSort, setGlobalSort] = useState<ResellerGlobalSort>("name");
-  const [globalLanguageGroup, setGlobalLanguageGroup] = useState<LanguageGroupFilter>("all");
-  const [globalExpansion, setGlobalExpansion] = useState("all");
-  const [globalLanguage, setGlobalLanguage] = useState("all");
-  const [globalCondition, setGlobalCondition] = useState("all");
-  const [globalFinish, setGlobalFinish] = useState("all");
-  const [globalTag, setGlobalTag] = useState("all");
-  const [globalFiltersOpen, setGlobalFiltersOpen] = useState(false);
-  const [globalRenderLimit, setGlobalRenderLimit] = useState(48);
   const [requestQuantities, setRequestQuantities] = useState<Record<string, string>>({});
   const [requestSavingId, setRequestSavingId] = useState("");
   const [requestNotice, setRequestNotice] = useState("");
@@ -6449,9 +6440,6 @@ function ResellerPortal() {
     window.addEventListener("focus", sync);
     return () => { window.clearInterval(interval); window.removeEventListener("focus", sync); };
   }, [token]);
-  useEffect(() => {
-    setGlobalRenderLimit(48);
-  }, [globalCondition, globalExpansion, globalFinish, globalLanguage, globalLanguageGroup, globalSearch, globalSort, globalTag]);
   useEffect(() => {
     if (activeTab !== "sell") setMobileCheckoutOpen(false);
   }, [activeTab]);
@@ -6549,42 +6537,6 @@ function ResellerPortal() {
   const assigned = dashboard.assignments.filter((item) => item.remaining > 0);
   const normalizedSearch = search.trim().toLowerCase();
   const visibleAssignments = assigned.filter((item) => !normalizedSearch || [item.name, item.expansion, item.number, item.sku].join(" ").toLowerCase().includes(normalizedSearch));
-  const normalizedGlobalSearch = globalSearch.trim().toLowerCase();
-  const globalFilterOptions = {
-    expansions: unique(dashboard.globalStock.map((item) => item.expansion)),
-    languages: unique(dashboard.globalStock.map((item) => item.language)),
-    conditions: unique(dashboard.globalStock.map((item) => item.condition)),
-    finishes: unique(dashboard.globalStock.map((item) => item.finish)),
-    tags: unique(dashboard.globalStock.flatMap((item) => inventoryTags(item.tags)))
-  };
-  const globalAdvancedFilterCount = [globalExpansion, globalLanguage, globalCondition, globalFinish, globalTag].filter((value) => value !== "all").length;
-  const visibleGlobalStock = dashboard.globalStock
-    .filter((item) =>
-      (!normalizedGlobalSearch || [item.name, item.expansion, item.number, item.sku, item.language, item.condition, item.finish, item.tags].join(" ").toLowerCase().includes(normalizedGlobalSearch)) &&
-      (globalLanguageGroup === "all" || inventoryLanguageGroup(item.language) === globalLanguageGroup) &&
-      (globalExpansion === "all" || item.expansion === globalExpansion) &&
-      (globalLanguage === "all" || item.language === globalLanguage) &&
-      (globalCondition === "all" || item.condition === globalCondition) &&
-      (globalFinish === "all" || item.finish === globalFinish) &&
-      (globalTag === "all" || inventoryTags(item.tags).includes(globalTag)))
-    .sort((left, right) => {
-      if (globalSort === "price") return right.priceArs - left.priceArs;
-      if (globalSort === "quantity") return right.availableQuantity - left.availableQuantity;
-      if (globalSort === "expansion") return `${left.expansion} ${left.number}`.localeCompare(`${right.expansion} ${right.number}`, "es", { numeric: true });
-      if (globalSort === "number") return left.number.localeCompare(right.number, "es", { numeric: true });
-      return left.name.localeCompare(right.name, "es", { numeric: true });
-    });
-  const renderedGlobalStock = visibleGlobalStock.slice(0, globalRenderLimit);
-  const clearGlobalFilters = () => {
-    setGlobalSearch("");
-    setGlobalSort("name");
-    setGlobalLanguageGroup("all");
-    setGlobalExpansion("all");
-    setGlobalLanguage("all");
-    setGlobalCondition("all");
-    setGlobalFinish("all");
-    setGlobalTag("all");
-  };
   const cartItems = assigned.filter((item) => (cart[item.inventoryItemId]?.quantity || 0) > 0);
   const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
   const commission = saleTotal * dashboard.reseller.commissionPercent / 100;
@@ -6675,42 +6627,25 @@ function ResellerPortal() {
       ) : null}
 
       {activeTab === "stock" ? (
-        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mi stock en consignacion</h2><p>Lo que tenes en mano y lo que sigue disponible para vender.</p></div></div><div className="reseller-stock-list">{assigned.map((item) => <div key={item.inventoryItemId}><CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><span><strong>{item.name}</strong><small>{item.expansion} #{item.number || "-"}</small></span><b>{item.remaining} en mano</b><em className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</em><strong>{formatArs(item.priceArs)}</strong></div>)}</div></section>
+        <section className="reseller-tab-content"><div className="reseller-section-heading"><div><h2>Mi stock en consignacion</h2></div></div>
+          <ResellerStockBrowser key="own" items={assigned} owned renderItem={(item) => <ResellerStockCard key={item.inventoryItemId} item={item} quantities={[{ label: 'En mano', value: item.remaining }, { label: 'Vendibles', value: item.sellable, warning: item.sellable < item.remaining }]}>
+            <button className="primary-action" disabled={!item.sellable} onClick={() => { addToResellerCart(item); setActiveTab('sell'); }}><Icon name="cart" />Vender</button>
+          </ResellerStockCard>} />
+        </section>
       ) : null}
 
       {activeTab === "global" ? (
         <section className="reseller-tab-content">
-          <div className="reseller-section-heading"><div><h2>Stock global</h2><p>Explora el catalogo y solicita las cartas que quieras recibir en consignacion.</p></div></div>
+          <div className="reseller-section-heading"><div><h2>Stock global</h2></div></div>
           {requestNotice ? <div className="feedback success reseller-request-notice"><span>{requestNotice}</span><button className="icon-action" aria-label="Cerrar aviso" onClick={() => setRequestNotice("")}><Icon name="close" /></button></div> : null}
-          <div className="reseller-global-toolbar">
-            <div className="reseller-global-command-row">
-              <label className="reseller-search"><Icon name="search" /><input placeholder="Buscar carta, expansion, numero o categoria" value={globalSearch} onChange={(event) => setGlobalSearch(event.target.value)} /></label>
-              <span className="reseller-global-count">{visibleGlobalStock.length} de {dashboard.globalStock.length}</span>
-              <label className="reseller-global-select">Ordenar<select value={globalSort} onChange={(event) => setGlobalSort(event.target.value as ResellerGlobalSort)}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
-            </div>
-            <div className="reseller-global-quick-filters">
-              <LanguageGroupSelector value={globalLanguageGroup} onChange={setGlobalLanguageGroup} />
-              <button className={`secondary-action filter-toggle ${globalFiltersOpen ? "active" : ""}`} type="button" aria-expanded={globalFiltersOpen} aria-controls="reseller-global-filter-options" onClick={() => setGlobalFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{globalAdvancedFilterCount ? ` (${globalAdvancedFilterCount})` : ""}</button>
-              {(globalAdvancedFilterCount || globalLanguageGroup !== "all" || globalSearch) ? <button className="clear-action" type="button" onClick={clearGlobalFilters}>Restablecer</button> : null}
-            </div>
-            {globalFiltersOpen ? <div id="reseller-global-filter-options" className="reseller-global-filter-options">
-              <label>Expansion<select value={globalExpansion} onChange={(event) => setGlobalExpansion(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.expansions.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-              <label>Idioma<select value={globalLanguage} onChange={(event) => setGlobalLanguage(event.target.value)}><option value="all">Todos</option>{globalFilterOptions.languages.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-              <label>Condicion<select value={globalCondition} onChange={(event) => setGlobalCondition(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.conditions.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-              <label>Acabado<select value={globalFinish} onChange={(event) => setGlobalFinish(event.target.value)}><option value="all">Todos</option>{globalFilterOptions.finishes.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-              <label>Categoria<select value={globalTag} onChange={(event) => setGlobalTag(event.target.value)}><option value="all">Todas</option>{globalFilterOptions.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
-            </div> : null}
-          </div>
-          {visibleGlobalStock.length ? <><div className="reseller-global-grid">{renderedGlobalStock.map((item) => {
+          <ResellerStockBrowser key="global" items={dashboard.globalStock} renderItem={(item) => {
             const pending = dashboard.stockRequests.find((request) => request.inventoryItemId === item.inventoryItemId);
             const quantity = requestQuantities[item.inventoryItemId] ?? String(pending?.quantityRequested || 1);
-            return <article key={item.inventoryItemId} className={pending ? "request-pending" : ""}>
-              <CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-product-art" fallbackClassName="reseller-product-art image-placeholder" />
-              <div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span><small>{item.language} · {item.condition} · {item.finish}</small>{inventoryTags(item.tags).length ? <small>{inventoryTags(item.tags).join(" · ")}</small> : null}</div>
-              <span><b>{item.availableQuantity}</b><small>disponible{item.availableQuantity === 1 ? "" : "s"}</small></span><strong>{formatArs(item.priceArs)}</strong>
-              <div className="reseller-global-request"><label><span>Cantidad</span><input type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId || (!pending && dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0)} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0 ? "Limite alcanzado" : "Pedir asignacion"}</button></div>
-            </article>;
-          })}</div>{renderedGlobalStock.length < visibleGlobalStock.length ? <button className="secondary-action reseller-global-more" type="button" onClick={() => setGlobalRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body={globalSearch || globalAdvancedFilterCount || globalLanguageGroup !== "all" ? "Proba cambiando o restableciendo los filtros." : "No hay stock global disponible en este momento."} />}
+            return <ResellerStockCard key={item.inventoryItemId} item={item} pending={Boolean(pending)} quantities={[{ label: 'Disponibles', value: item.availableQuantity }]}>
+              <label className="reseller-catalog-quantity">Cantidad<input aria-label={`Cantidad a solicitar ${item.name}`} type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label>
+              <button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId || (!pending && dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0)} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0 ? "Limite alcanzado" : "Pedir asignacion"}</button>
+            </ResellerStockCard>;
+          }} />
         </section>
       ) : null}
 
@@ -6749,6 +6684,60 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
     </form>
     {feedback ? <p className="muted" role="status">{feedback}</p> : null}
   </section>;
+}
+
+function ResellerStockBrowser<T extends ResellerCatalogItem>({ items, owned = false, renderItem }: { items: T[]; owned?: boolean; renderItem: (item: T) => React.ReactNode }) {
+  const [filters, setFilters] = useState<ResellerCatalogFilters>({ ...defaultResellerCatalogFilters });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [renderLimit, setRenderLimit] = useState(48);
+  const filterKey = JSON.stringify(filters);
+  useEffect(() => { setRenderLimit(48); }, [filterKey]);
+  const visible = useMemo(() => filterResellerCatalog(items, filters), [items, filters]);
+  const set = (patch: Partial<ResellerCatalogFilters>) => setFilters((current) => ({ ...current, ...patch }));
+  const advancedCount = [filters.expansion, filters.language, filters.condition, filters.finish, filters.tag, filters.cardType, filters.availability].filter((value) => value !== 'all').length;
+  const options = {
+    expansion: unique(items.map((item) => item.expansion)), language: unique(items.map((item) => item.language || '')),
+    condition: unique(items.map((item) => item.condition || '')), finish: unique(items.map((item) => item.finish || '')),
+    tag: unique(items.flatMap((item) => resellerCatalogTags(item.tags)))
+  };
+  return <div className="reseller-stock-browser">
+    <div className="reseller-global-toolbar">
+      <div className="reseller-global-command-row">
+        <label className="reseller-search"><Icon name="search" /><input aria-label="Buscar cartas" placeholder="Buscar carta, expansion, numero o categoria" value={filters.search} onChange={(event) => set({ search: event.target.value })} /></label>
+        <span className="reseller-global-count">{visible.length} de {items.length}</span>
+        <label className="reseller-global-select">Ordenar<select aria-label="Ordenar cartas" value={filters.sort} onChange={(event) => set({ sort: event.target.value as ResellerCatalogFilters['sort'] })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
+      </div>
+      <div className="reseller-global-quick-filters">
+        <LanguageGroupSelector value={filters.languageGroup as LanguageGroupFilter} onChange={(value) => set({ languageGroup: value })} />
+        <div className="folder-view-switch" role="group" aria-label="Vista del catalogo">
+          <button className="mini-icon-action" aria-label="Grilla" title="Grilla" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><Icon name="image" /></button>
+          <button className="mini-icon-action" aria-label="Lista" title="Lista" aria-pressed={view === 'list'} onClick={() => setView('list')}><Icon name="orders" /></button>
+        </div>
+        <button className="secondary-action filter-toggle" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{advancedCount ? ` (${advancedCount})` : ''}</button>
+        {advancedCount || filters.search || filters.languageGroup !== 'all' ? <button className="clear-action" onClick={() => setFilters({ ...defaultResellerCatalogFilters })}>Restablecer</button> : null}
+      </div>
+      {filtersOpen ? <div className="reseller-catalog-filters">
+        {(['expansion', 'language', 'condition', 'finish', 'tag'] as const).map((key) => {
+          const label = { expansion: 'Expansion', language: 'Idioma', condition: 'Condicion', finish: 'Acabado', tag: 'Categoria' }[key];
+          return <label key={key}>{label}<select aria-label={label} value={filters[key]} onChange={(event) => set({ [key]: event.target.value })}><option value="all">Todos</option>{options[key].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>;
+        })}
+        <label>Tipo de carta<select aria-label="Tipo de carta" value={filters.cardType} onChange={(event) => set({ cardType: event.target.value })}><option value="all">Todos</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {owned ? <label>Disponibilidad<select aria-label="Disponibilidad" value={filters.availability} onChange={(event) => set({ availability: event.target.value })}><option value="all">Todas</option><option value="sellable">Vendibles</option><option value="restricted">Disponibilidad limitada</option></select></label> : null}
+      </div> : null}
+    </div>
+    {visible.length ? <><div className={`reseller-collection-grid ${view === 'list' ? 'is-list' : ''}`}>{visible.slice(0, renderLimit).map(renderItem)}</div>{renderLimit < visible.length ? <button className="secondary-action reseller-global-more" onClick={() => setRenderLimit((limit) => limit + 48)}>Mostrar 48 mas</button> : null}</> : <EmptyState title="Sin resultados" body="No hay cartas que coincidan con esta vista." />}
+  </div>;
+}
+
+function ResellerStockCard({ item, quantities, pending = false, children }: { item: ResellerCatalogItem; quantities: Array<{ label: string; value: number; warning?: boolean }>; pending?: boolean; children: React.ReactNode }) {
+  return <article className={`reseller-catalog-card ${pending ? 'request-pending' : ''}`}>
+    <CardArt src={item.imageUrl} fallbackSrc={item.imageFallbackUrl} alt={`${item.name} ${item.language || ''} ${item.finish || ''}`} label={item.name} className="reseller-catalog-art" fallbackClassName="reseller-catalog-art image-placeholder" />
+    <div className="reseller-catalog-copy"><strong>{item.name}</strong><span>{item.expansion}{item.number ? ` #${item.number}` : ''}</span><small>{[item.language, item.condition, item.finish].filter(Boolean).join(' · ')}</small><small>{item.itemKind === 'folder' ? 'Carpeta' : cardTypeLabels[item.cardType || 'unknown']}</small>{resellerCatalogTags(item.tags).length ? <small>{resellerCatalogTags(item.tags).join(' · ')}</small> : null}</div>
+    <div className="reseller-catalog-quantities">{quantities.map((quantity) => <span className={quantity.warning ? 'warning-text' : ''} key={quantity.label}><small>{quantity.label}</small><b>{quantity.value}</b></span>)}</div>
+    <strong className="reseller-catalog-price">{formatArs(item.priceArs)}</strong>
+    <div className="reseller-catalog-actions">{children}</div>
+  </article>;
 }
 
 function AdminView(props: {

@@ -7,6 +7,15 @@ Actualizado: 2026-10-08
 
 ## Prioridades vigentes
 
+### Pilotear catalogo visual de revendedores
+
+- Revisar `Mi stock` y `Stock global` con grilla/lista, variantes y filtros por tipo.
+- Comprobar que una carta en mano pero reservada por una orden muestre menos
+  vendibles, quede visible y no permita agregarse a la venta si tiene cero disponibles.
+- Probar la accion Vender hasta el carrito, sin confirmar ventas ficticias reales.
+- Siguiente mejora: solicitudes/asignaciones por lote con validacion transaccional
+  de cantidades, permisos y cupo; aprobacion seleccionada con cantidades parciales.
+
 ### Revisar tipos de cartas
 
 - En Inventario, usar `Mas filtros > Tipo de carta` para revisar Pokemon,

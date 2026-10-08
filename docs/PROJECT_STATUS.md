@@ -7,6 +7,14 @@ Actualizado: 2026-10-08
 
 ## Resumen vigente
 
+- El portal de revendedores comparte catalogo visual en `Mi stock` y `Stock global`:
+  grilla/lista, imagenes con fallback de catalogo, idioma, condicion, acabado y tipo.
+  Ambas vistas filtran y ordenan cartas, con 48 entradas por tanda. Mi stock agrega
+  filtro de disponibilidad y muestra por separado unidades en mano/vendibles.
+  `Vender` suma al carrito existente sin confirmar una venta ni descontar stock.
+  La lectura respeta el tipo manual del item y no expone costos ni datos de propietario.
+  No hay migracion ni conversion de inventario para esta mejora visual.
+
 - Inventario clasifica automaticamente cartas actuales y nuevas como Pokemon,
   Supporter, Item, Stadium, Tool o Energy a partir de atributos confiables del
   indice TCGplayer/TCGCSV. Sin referencia suficiente o con atributos contradictorios

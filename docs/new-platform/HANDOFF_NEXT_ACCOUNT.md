@@ -1,5 +1,16 @@
 # Traspaso de contexto - UltimoTurno
 
+## Catalogo visual de revendedores - 2026-10-08
+
+`ResellerStockBrowser` y `ResellerStockCard` en main.tsx comparten grilla/lista
+entre Mi stock y Stock global. Filtros puros/testeables en reseller-catalog.ts;
+estilos acotados en reseller-catalog.css, separados de las cascadas del portal legado.
+getResellerDashboard enriquece variantes/tipos/imagenes en lote desde inventario
+y catalogo, sin exponer costos ni propietarios. En mano y vendibles siguen separados.
+Vender agrega al carrito existente; no crea ventas. Sin migraciones ni backfill.
+Pruebas de filtros y lectura en reseller-catalog.test.ts (web/db) y Chrome local
+en 1440/390/320 px con imagenes reales de checklist y unidades reservadas.
+
 ## Tipos de cartas - 2026-10-08
 
 Clasificacion automatica en inventario actual, altas y contenidos de carpetas.
