@@ -10,6 +10,11 @@ import {
   changeOrderBoard,
   assignOrderToReseller,
   assignResellerStock,
+  assignResellerStockBatch,
+  createResellerStockRequestBatch,
+  resolveResellerStockRequestBatch,
+  type ResellerBatchInput,
+  type ResellerResolutionBatchInput,
   adjustInventoryQuantity,
   addClaimFree,
   addPriceChartingCardsToClaim,
@@ -3249,7 +3254,7 @@ function stockOwnerRouteAllowed(pathname: string, method = "GET") {
   if (/^\/inventory\/[^/]+\/contents(?:\/[^/]+)?$/.test(pathname) && ["GET", "POST", "PUT", "DELETE"].includes(method)) return true;
   if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
   if (method === "POST" && pathname === "/inventory/intake") return true;
-  if (method === "POST" && /^\/resellers\/[^/]+\/assignments$/.test(pathname)) return true;
+  if (method === "POST" && /^\/resellers\/[^/]+\/assignments(?:\/batch)?$/.test(pathname)) return true;
   return false;
 }
 
@@ -4113,6 +4118,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/reseller/portal/assignment-requests/batch" && request.method === "POST") {
+      const reseller = await requireResellerUser(request);
+      const body = await readJson<ResellerBatchInput>(request);
+      const result = await createResellerStockRequestBatch(await dbPromise, body, reseller);
+      sendJson(response, result.replayed ? 200 : 201, result);
+      return;
+    }
+
     if (url.pathname === "/reseller/portal/assignment-requests" && request.method === "POST") {
       const db = await dbPromise;
       const reseller = await requireResellerUser(request);
@@ -4228,6 +4241,18 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const resellerMatch = url.pathname.match(/^\/resellers\/([^/]+)$/);
     if (resellerMatch && request.method === "GET") {
       sendJson(response, 200, await getResellerDashboard(db, resellerMatch[1], user.businessId));
+      return;
+    }
+
+    const resellerAssignBatchMatch = url.pathname.match(/^\/resellers\/([^/]+)\/assignments\/batch$/);
+    const resellerResolveBatchMatch = url.pathname.match(/^\/resellers\/([^/]+)\/assignment-requests\/batch$/);
+    if (request.method === "POST" && (resellerAssignBatchMatch || resellerResolveBatchMatch)) {
+      if (resellerResolveBatchMatch && !user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const result = resellerAssignBatchMatch
+        ? await assignResellerStockBatch(db, resellerAssignBatchMatch[1], await readJson<ResellerBatchInput>(request), user)
+        : await resolveResellerStockRequestBatch(db, resellerResolveBatchMatch![1], await readJson<ResellerResolutionBatchInput>(request), user);
+      stockReadCache.delete(user.businessId);
+      sendJson(response, 200, result);
       return;
     }
 

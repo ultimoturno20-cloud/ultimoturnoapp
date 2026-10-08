@@ -7,14 +7,24 @@ Actualizado: 2026-10-08
 
 ## Prioridades vigentes
 
-### Pilotear catalogo visual de revendedores
+### Pilotear catalogo y lotes de revendedores
 
 - Revisar `Mi stock` y `Stock global` con grilla/lista, variantes y filtros por tipo.
 - Comprobar que una carta en mano pero reservada por una orden muestre menos
   vendibles, quede visible y no permita agregarse a la venta si tiene cero disponibles.
 - Probar la accion Vender hasta el carrito, sin confirmar ventas ficticias reales.
-- Siguiente mejora: solicitudes/asignaciones por lote con validacion transaccional
-  de cantidades, permisos y cupo; aprobacion seleccionada con cantidades parciales.
+- En la proxima entrega real, seleccionar cartas desde Stock global y revisar
+  cantidades/totales antes de enviar el lote. Filtrar no elimina la seleccion.
+- En Revendedores, aprobar solo las solicitudes a entregar; ajustar cantidades
+  y precios previamente. Aprobar una cantidad menor resuelve esa linea, sin
+  recrear el remanente como solicitud. Las lineas no elegidas siguen pendientes.
+- Para entrega directa, buscar cada carta, Agregar al lote y confirmar el total
+  una sola vez. Cambiar de revendedor limpia los borradores del destino anterior.
+- Si falla una linea por cupo, reservas o permisos, no se aplica ninguna. Ante
+  error de conexion, reintentar el mismo borrador sin recargar la pagina; la clave
+  recupera el lote ya aplicado sin duplicarlo. No crear pruebas en produccion.
+- Proximas mejoras a evaluar: seguimiento de entregas/devoluciones y rendiciones
+  por ventas seleccionadas, conservando siempre prioridad del stock central.
 
 ### Revisar tipos de cartas
 

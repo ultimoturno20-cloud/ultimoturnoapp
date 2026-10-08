@@ -4,6 +4,8 @@ import { stockItemValues } from "./stock-value.js";
 import { defaultResellerCatalogFilters, filterResellerCatalog, resellerCatalogTags, type ResellerCatalogItem, type ResellerCatalogFilters } from "./reseller-catalog.js";
 import "./styles.css";
 import "./reseller-catalog.css";
+import { ResellerBatchKeys, resellerBatchProblem, resellerBatchTotals, type ResellerBatchDraftLine } from "./reseller-batch.js";
+import "./reseller-batch.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -6149,6 +6151,44 @@ function ClaimLiveView({ workspace, blueRate, onGoClaims }: { workspace: ClaimsW
   );
 }
 
+function useResellerBatchOperation() {
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const revision = useRef(0);
+  const keys = useRef(new ResellerBatchKeys());
+  async function submit(path: string, body: object, token?: string) {
+    if (inFlight.current) return null;
+    inFlight.current = true;
+    revision.current++;
+    setBusy(true);
+    try {
+      return await api<{ dashboard: ResellerDashboard; processedCount: number; replayed: boolean }>(path, { token, method: "POST", body: { ...body, idempotencyKey: keys.current.get(path, body) } });
+    } finally { revision.current++; inFlight.current = false; setBusy(false); }
+  }
+  return { busy, submit, isBusy: () => inFlight.current, version: () => revision.current, reset: (path?: string) => keys.current.reset(path) };
+}
+
+function ResellerBatchReview({ lines, busy, title, command, onQuantity, onRemove, onClear, onSubmit }: {
+  lines: ResellerBatchDraftLine[]; busy: boolean; title: string; command: string;
+  onQuantity: (id: string, quantity: string) => void; onRemove: (id: string) => void; onClear: () => void; onSubmit: () => void;
+}) {
+  const total = resellerBatchTotals(lines);
+  const problem = resellerBatchProblem(lines);
+  if (!lines.length) return null;
+  return <section className="reseller-batch-review" aria-label={title}>
+    <div className="reseller-batch-bar"><h3>{title} ({lines.length})</h3><button className="clear-action" disabled={busy} onClick={onClear}>Vaciar seleccion</button></div>
+    <div className="reseller-batch-lines">{lines.map((line) => <div className="reseller-batch-line" key={line.id}>
+      <CardArt src={line.imageUrl} alt={line.name} label={line.name} className="reseller-batch-art" fallbackClassName="reseller-batch-art image-placeholder" />
+      <div><strong>{line.name}</strong><small>{line.expansion} #{line.number || "-"}</small><small>{[line.language, line.condition, line.finish].filter(Boolean).join(" / ")}</small><small className={line.max <= 0 ? "warning-text" : ""}>{line.max} disponibles</small></div>
+      <label>Cantidad<input aria-label={`Cantidad en lote ${line.name}`} disabled={busy} type="number" min="1" max={line.max} value={line.quantity} onChange={(event) => onQuantity(line.id, event.target.value)} /></label>
+      <b>{formatArs(Number(line.quantity || 0) * line.priceArs)}</b>
+      <button className="icon-action" title={`Quitar ${line.name}`} aria-label={`Quitar ${line.name}`} disabled={busy} onClick={() => onRemove(line.id)}><Icon name="close" /></button>
+    </div>)}</div>
+    {problem ? <p className="warning-text" role="status">{problem}</p> : null}
+    <div className="reseller-batch-footer"><div><strong>{total.units} unidades · {formatArs(total.valueArs)}</strong><small>Valor actual</small></div><button className="primary-action" disabled={busy || Boolean(problem)} onClick={onSubmit}><Icon name="check" />{busy ? "Procesando..." : command}</button></div>
+  </section>;
+}
+
 function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock: StockRow[]; assignmentOnly?: boolean; blueRate: BlueExchangeRate }) {
   const [resellers, setResellers] = useState<ResellerDashboard[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -6158,6 +6198,10 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   const [stockQuery, setStockQuery] = useState("");
   const [assignItemId, setAssignItemId] = useState("");
   const [assignQuantity, setAssignQuantity] = useState(1);
+  const [assignmentBatch, setAssignmentBatch] = useState<Record<string, string>>({});
+  const [selectedRequests, setSelectedRequests] = useState<string[]>([]);
+  const [batchNotice, setBatchNotice] = useState("");
+  const batch = useResellerBatchOperation();
   const [requestDrafts, setRequestDrafts] = useState<Record<string, { quantity: string; priceArs: string }>>({});
   const [resolvingRequestId, setResolvingRequestId] = useState("");
   const [creditLimitDrafts, setCreditLimitDrafts] = useState<Record<string, string>>({});
@@ -6165,6 +6209,9 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   const [assignmentPriceDrafts, setAssignmentPriceDrafts] = useState<Record<string, string>>({});
   const [savingAssignmentPriceId, setSavingAssignmentPriceId] = useState("");
   const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
+  useEffect(() => {
+    setAssignmentBatch({}); setSelectedRequests([]); setAssignItemId(""); setStockQuery(""); setRequestDrafts({}); setBatchNotice(""); batch.reset();
+  }, [selected?.reseller.userId]);
   const stockById = useMemo(() => new Map(stock.map((item) => [item.id, item])), [stock]);
   const monthlySalesArs = (dashboard: ResellerDashboard) => {
     const now = new Date();
@@ -6177,9 +6224,12 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   };
 
   const load = async (quiet = false) => {
+    if (batch.isBusy()) return;
+    const version = batch.version();
     if (!quiet) setLoading(true);
     try {
       const data = await api<{ resellers: ResellerDashboard[] }>("/resellers");
+      if (batch.isBusy() || batch.version() !== version) return;
       setResellers(data.resellers);
       setSelectedId((current) => current || data.resellers[0]?.reseller.userId || "");
       setError("");
@@ -6196,9 +6246,15 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   };
   const normalizedStockQuery = stockQuery.trim().toLowerCase();
   const visibleStock = normalizedStockQuery
-    ? stock.filter((item) => item.quantityOnHand > 0 && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(normalizedStockQuery)).slice(0, 8)
+    ? stock.filter((item) => item.freeQuantity > 0 && item.inventoryStatus !== "not_for_sale" && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(normalizedStockQuery)).slice(0, 8)
     : [];
   const assignItem = stock.find((item) => item.id === assignItemId);
+  const assignmentLines: ResellerBatchDraftLine[] = Object.entries(assignmentBatch).map(([id, quantity]) => {
+    const item = stockById.get(id);
+    return { id, quantity, name: item?.product.name || "Carta no disponible", expansion: item?.product.expansion || "", number: item?.product.number || "", imageUrl: item?.product.imageUrl || "", language: item?.variant.language || "", condition: item?.variant.condition || "", finish: item?.variant.finish || "", max: item && item.inventoryStatus !== "not_for_sale" ? item.freeQuantity : 0, priceArs: item?.priceArs || 0 };
+  });
+  const requestsForBatch = selected?.stockRequests.filter((request) => selectedRequests.includes(request.id)) || [];
+  const requestBatchValue = requestsForBatch.reduce((sum, request) => sum + Number(requestDrafts[request.id]?.quantity ?? request.quantityRequested) * Number(requestDrafts[request.id]?.priceArs ?? request.currentPriceArs), 0);
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
@@ -6212,24 +6268,49 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   }
 
   async function assign() {
-    if (!selected || !assignItemId) return;
+    if (!selected || !assignItem || batch.busy) return;
+    const quantity = Number(assignmentBatch[assignItem.id] || 0) + assignQuantity;
+    if (!Number.isSafeInteger(assignQuantity) || assignQuantity <= 0 || quantity > assignItem.freeQuantity) { setError(`El lote puede contener hasta ${assignItem.freeQuantity} unidades de ${assignItem.product.name}.`); return; }
+    if (!assignmentBatch[assignItem.id] && Object.keys(assignmentBatch).length >= 100) { setError("El lote ya contiene 100 cartas."); return; }
+    if (!Object.keys(assignmentBatch).length) batch.reset(`/resellers/${selected.reseller.userId}/assignments/batch`);
+    setAssignmentBatch((current) => ({ ...current, [assignItem.id]: String(quantity) }));
+    setAssignItemId(""); setStockQuery(""); setAssignQuantity(1); setError("");
+  }
+
+  async function submitAssignments() {
+    if (!selected || resellerBatchProblem(assignmentLines)) return;
+    const target = selected.reseller.userId;
     try {
-      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments`, { method: "POST", body: { inventoryItemId: assignItemId, quantity: assignQuantity } }));
-      setAssignItemId("");
-      setStockQuery("");
-      setAssignQuantity(1);
-      setError("");
+      const result = await batch.submit(`/resellers/${target}/assignments/batch`, { lines: assignmentLines.map((line) => ({ inventoryItemId: line.id, quantity: Number(line.quantity) })) });
+      if (!result) return;
+      replace(result.dashboard); setAssignmentBatch({}); setBatchNotice(`${result.processedCount} cartas asignadas a ${selected.reseller.displayName}.`); setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+  }
+
+  async function resolveRequestBatch(action: "approve" | "reject") {
+    if (!selected || !requestsForBatch.length || batch.busy || resolvingRequestId) return;
+    if (selectedRequests.length !== requestsForBatch.length) { setError("Una solicitud ya no esta pendiente. Actualiza la seleccion."); return; }
+    if (action === "reject" && !window.confirm(`Rechazar ${requestsForBatch.length} solicitudes de ${selected.reseller.displayName}?`)) return;
+    const lines = requestsForBatch.map((request) => ({ requestId: request.id, ...(action === "approve" ? { quantity: Number(requestDrafts[request.id]?.quantity ?? request.quantityRequested), priceArs: Number(requestDrafts[request.id]?.priceArs ?? request.currentPriceArs) } : {}) }));
+    if (action === "approve" && lines.some((line) => !Number.isSafeInteger(line.quantity) || (line.quantity || 0) <= 0 || !Number.isFinite(line.priceArs) || (line.priceArs || 0) < 0)) { setError("Revisa cantidades y precios antes de aprobar."); return; }
+    try {
+      const result = await batch.submit(`/resellers/${selected.reseller.userId}/assignment-requests/batch`, { action, lines });
+      if (!result) return;
+      replace(result.dashboard); setSelectedRequests([]); setBatchNotice(`${result.processedCount} solicitudes ${action === "approve" ? "aprobadas" : "rechazadas"}.`); setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
   }
 
   async function resolveStockRequest(request: ResellerStockRequest, action: "approve" | "reject") {
-    if (!selected) return;
+    if (!selected || batch.busy || resolvingRequestId) return;
     const draft = requestDrafts[request.id];
     const quantity = Number(draft?.quantity ?? request.quantityRequested);
     const priceArs = Number(draft?.priceArs ?? request.currentPriceArs);
     setResolvingRequestId(request.id);
     try {
-      replace(await api<ResellerDashboard>(`/resellers/assignment-requests/${request.id}/resolve`, { method: "POST", body: { action, quantity, priceArs } }));
+      const result = await batch.submit(`/resellers/${selected.reseller.userId}/assignment-requests/batch`, { action, lines: [{ requestId: request.id, ...(action === "approve" ? { quantity, priceArs } : {}) }] });
+      if (!result) return;
+      replace(result.dashboard);
+      setSelectedRequests((current) => current.filter((id) => id !== request.id));
       setRequestDrafts((current) => { const { [request.id]: _resolved, ...rest } = current; return rest; });
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
@@ -6286,12 +6367,13 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
     <section className="view reseller-admin-view">
       <div className="section-heading"><div><h2>{assignmentOnly ? "Asignar a revendedores" : "Revendedores"}</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div>{!assignmentOnly ? <a className="secondary-action" href="/portal-revendedor" target="_blank" rel="noreferrer">Abrir portal</a> : null}</div>
       {error ? <div className="feedback error">{error}</div> : null}
+      {batchNotice ? <div className="feedback success" role="status">{batchNotice}</div> : null}
       <div className="reseller-layout">
         <aside className="panel reseller-sidebar">
           <h3>Equipo</h3>
           {loading ? <p className="muted">Cargando...</p> : null}
-          {resellers.length ? <label className="reseller-mobile-picker"><span>Revendedor</span><select value={selected?.reseller.userId || ""} onChange={(event) => setSelectedId(event.target.value)}>{resellers.map((item) => <option key={item.reseller.userId} value={item.reseller.userId}>{item.reseller.displayName}{item.stockRequests.length ? ` · ${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"}` : ""}</option>)}</select><small>{selected ? `${formatArs(selected.summary.assignedValueArs)} asignado · ${formatArs(selected.summary.outstandingArs)} a rendir` : ""}</small></label> : null}
-          <div className="reseller-sidebar-list">{resellers.map((item) => <button key={item.reseller.userId} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}</div>
+          {resellers.length ? <label className="reseller-mobile-picker"><span>Revendedor</span><select disabled={batch.busy} value={selected?.reseller.userId || ""} onChange={(event) => setSelectedId(event.target.value)}>{resellers.map((item) => <option key={item.reseller.userId} value={item.reseller.userId}>{item.reseller.displayName}{item.stockRequests.length ? ` · ${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"}` : ""}</option>)}</select><small>{selected ? `${formatArs(selected.summary.assignedValueArs)} asignado · ${formatArs(selected.summary.outstandingArs)} a rendir` : ""}</small></label> : null}
+          <div className="reseller-sidebar-list">{resellers.map((item) => <button key={item.reseller.userId} disabled={batch.busy} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}</div>
           {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
             <h3>Nuevo revendedor</h3>
             <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
@@ -6326,6 +6408,13 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
             {!assignmentOnly ? <section className="panel reseller-credit-control"><div><h3>Limite de mercaderia</h3><p>Las cartas en mano y las solicitudes pendientes consumen este cupo. Dejalo vacio para no limitar.</p></div><label>Limite ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={creditLimitDrafts[selected.reseller.userId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs))} onChange={(event) => setCreditLimitDrafts((current) => ({ ...current, [selected.reseller.userId]: event.target.value }))} /></label><button className="primary-action" disabled={savingCreditLimit} onClick={() => void saveCreditLimit()}>{savingCreditLimit ? "Guardando..." : "Guardar limite"}</button><div className="reseller-credit-breakdown"><span>Asignado <b>{formatArs(selected.summary.assignedValueArs)}</b></span><span>Pendiente <b>{formatArs(selected.summary.pendingRequestValueArs)}</b></span><span>Disponible <b>{selected.summary.availableCreditArs == null ? "Sin limite" : formatArs(selected.summary.availableCreditArs)}</b></span></div></section> : null}
             {!assignmentOnly ? <section className="panel reseller-request-panel">
               <div className="section-heading"><div><h3>Solicitudes de asignacion</h3><p>Revisa cantidad y precio antes de entregar la mercaderia.</p></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
+              {selected.stockRequests.length ? <div className="reseller-batch-bar">
+                <label className="reseller-batch-check"><input type="checkbox" aria-label="Seleccionar todas las solicitudes" disabled={batch.busy} checked={selected.stockRequests.every((request) => selectedRequests.includes(request.id))} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests(event.target.checked ? selected.stockRequests.map((request) => request.id) : []); }} />Todas</label>
+                <strong>{requestsForBatch.length} seleccionadas · {formatArs(requestBatchValue)}</strong>
+                <button className="clear-action" disabled={batch.busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>Limpiar seleccion</button>
+                <button className="secondary-action" disabled={batch.busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("reject")}>Rechazar seleccionadas</button>
+                <button className="primary-action" disabled={batch.busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("approve")}><Icon name="check" />{batch.busy ? "Procesando..." : "Aprobar seleccionadas"}</button>
+              </div> : null}
               {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
                 const draft = requestDrafts[request.id];
                 const stockItem = stockById.get(request.inventoryItemId);
@@ -6336,36 +6425,37 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
                 };
                 return <article key={request.id}>
                   <CardArt src={request.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                  <div className="reseller-request-copy"><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
+                  <div className="reseller-request-copy"><label className="reseller-batch-check"><input type="checkbox" aria-label={`Seleccionar solicitud ${request.name}`} disabled={batch.busy} checked={selectedRequests.includes(request.id)} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests((current) => event.target.checked ? [...current, request.id] : current.filter((id) => id !== request.id)); }} />Seleccionar</label><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
                   <div className="reseller-request-prices" aria-label="Precios de referencia">
                     {referencePrices.map((price) => <button type="button" key={price.source} disabled={!price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => useReferencePrice(price.ars)}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
                   </div>
-                  <label>Cantidad<input type="number" min="1" max={Math.max(1, request.availableQuantity)} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
-                  <label>Precio ARS<input type="number" min="0" step="100" value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
+                  <label>Cantidad<input disabled={batch.busy} type="number" min="1" max={Math.min(request.quantityRequested, Math.max(1, request.availableQuantity))} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
+                  <label>Precio ARS<input type="number" min="0" step="100" disabled={batch.busy} value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
                   <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>
-                  <div className="reseller-request-actions"><button className="secondary-action" disabled={resolvingRequestId === request.id} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={resolvingRequestId === request.id} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
+                  <div className="reseller-request-actions"><button className="secondary-action" disabled={batch.busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={batch.busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
                 </article>;
               })}</div> : <EmptyState title="Sin solicitudes pendientes" body="Cuando un revendedor pida una carta desde el stock global aparecera aca." />}
             </section> : null}
             <section className="panel">
               <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
               <div className="reseller-assign-controls">
-                <label className="reseller-stock-search"><span>Buscar carta</span><input placeholder="Nombre, expansion, numero o SKU" value={stockQuery} onChange={(event) => { setStockQuery(event.target.value); setAssignItemId(""); }} /></label>
-                <label><span>Cantidad</span><input type="number" min="1" value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} /></label>
-                <button className="primary-action" onClick={() => void assign()} disabled={!assignItemId}><Icon name="plus" />Asignar</button>
+                <label className="reseller-stock-search"><span>Buscar carta</span><input disabled={batch.busy} placeholder="Nombre, expansion, numero o SKU" value={stockQuery} onChange={(event) => { setStockQuery(event.target.value); setAssignItemId(""); }} /></label>
+                <label><span>Cantidad</span><input type="number" min="1" disabled={batch.busy} max={assignItem?.freeQuantity} value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} /></label>
+                <button className="secondary-action" onClick={() => void assign()} disabled={!assignItemId || batch.busy}><Icon name="plus" />Agregar al lote</button>
               </div>
               {assignItem ? <div className="reseller-stock-selected">
                 <CardArt src={assignItem.product.imageUrl} alt={assignItem.product.name} label={assignItem.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
                 <div><span>Seleccionada</span><strong>{assignItem.product.name}</strong><small>{assignItem.product.expansion} #{assignItem.product.number || "-"} · {assignItem.variant.language} / {assignItem.variant.finish}</small></div>
-                <b>{assignItem.quantityOnHand} en stock</b>
+                <b>{assignItem.freeQuantity} libres</b>
                 <button type="button" className="secondary-action" onClick={() => setAssignItemId("")}>Cambiar</button>
               </div> : normalizedStockQuery ? <div className="reseller-stock-results" role="listbox" aria-label="Resultados de inventario">
                 {visibleStock.length ? visibleStock.map((item) => <button type="button" role="option" aria-selected="false" key={item.id} onClick={() => setAssignItemId(item.id)}>
                   <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
                   <span><strong>{item.product.name}</strong><small>{item.product.expansion} #{item.product.number || "-"}</small><small>{item.variant.language} · {item.variant.condition} · {item.variant.finish}</small></span>
-                  <b>{item.quantityOnHand} stock</b>
+                  <b>{item.freeQuantity} libres</b>
                 </button>) : <p className="muted">No hay cartas con stock para esa busqueda.</p>}
               </div> : <p className="reseller-stock-hint">Escribi para ver y elegir resultados directamente.</p>}
+              <ResellerBatchReview title="Lote de asignacion" command={`Asignar lote a ${selected.reseller.displayName}`} lines={assignmentLines} busy={batch.busy} onQuantity={(id, quantity) => setAssignmentBatch((current) => ({ ...current, [id]: quantity }))} onRemove={(id) => setAssignmentBatch((current) => { const { [id]: _removed, ...rest } = current; return rest; })} onClear={() => setAssignmentBatch({})} onSubmit={() => void submitAssignments()} />
             </section>
             <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero. Toca una referencia para usarla como precio.</p></div></div>
               <div className="reseller-table">{selected.assignments.map((item) => {
@@ -6403,6 +6493,8 @@ function ResellerPortal() {
   const [requestQuantities, setRequestQuantities] = useState<Record<string, string>>({});
   const [requestSavingId, setRequestSavingId] = useState("");
   const [requestNotice, setRequestNotice] = useState("");
+  const [requestSelection, setRequestSelection] = useState<string[]>([]);
+  const requestBatch = useResellerBatchOperation();
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [cart, setCart] = useState<Record<string, { quantity: number; unitPriceArs: number }>>({});
@@ -6413,9 +6505,11 @@ function ResellerPortal() {
   const portalRouteInitialized = useRef(false);
   const load = async (sessionToken = token) => {
     if (!sessionToken) return;
+    if (requestBatch.isBusy()) return;
     if (portalRefreshRequest.current) return;
+    const version = requestBatch.version();
     portalRefreshRequest.current = true;
-    try { setDashboard(await api<ResellerDashboard>("/reseller/portal", { token: sessionToken })); setError(""); }
+    try { const result = await api<ResellerDashboard>("/reseller/portal", { token: sessionToken }); if (!requestBatch.isBusy() && requestBatch.version() === version) { setDashboard(result); setError(""); } }
     catch (nextError) { if (isAccessError(nextError)) { removeLocalStorage(resellerTokenKey); setToken(""); } setError(errorMessage(nextError)); }
     finally { portalRefreshRequest.current = false; }
   };
@@ -6492,6 +6586,7 @@ function ResellerPortal() {
     finally { setSaving(false); }
   }
   async function requestAssignment(item: ResellerGlobalStockItem) {
+    if (requestBatch.isBusy()) return;
     const pending = dashboard?.stockRequests.find((request) => request.inventoryItemId === item.inventoryItemId);
     const quantity = Number(requestQuantities[item.inventoryItemId] ?? pending?.quantityRequested ?? 1);
     if (!Number.isInteger(quantity) || quantity <= 0 || quantity > item.availableQuantity) {
@@ -6500,7 +6595,10 @@ function ResellerPortal() {
     }
     setRequestSavingId(item.inventoryItemId);
     try {
-      setDashboard(await api<ResellerDashboard>("/reseller/portal/assignment-requests", { token, method: "POST", body: { inventoryItemId: item.inventoryItemId, quantity } }));
+      const result = await requestBatch.submit("/reseller/portal/assignment-requests/batch", { lines: [{ inventoryItemId: item.inventoryItemId, quantity }] }, token);
+      if (!result) return;
+      setDashboard(result.dashboard);
+      requestBatch.reset();
       setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: String(quantity) }));
       setRequestNotice(`${item.name}: solicitud enviada por ${quantity} unidad${quantity === 1 ? "" : "es"}.`);
       setError("");
@@ -6540,6 +6638,20 @@ function ResellerPortal() {
   const cartItems = assigned.filter((item) => (cart[item.inventoryItemId]?.quantity || 0) > 0);
   const saleTotal = Object.values(cart).reduce((sum, line) => sum + line.quantity * line.unitPriceArs, 0);
   const commission = saleTotal * dashboard.reseller.commissionPercent / 100;
+  const requestLines: ResellerBatchDraftLine[] = requestSelection.map((id) => {
+    const item = dashboard.globalStock.find((entry) => entry.inventoryItemId === id);
+    const pending = dashboard.stockRequests.find((request) => request.inventoryItemId === id);
+    return { id, quantity: requestQuantities[id] ?? String(pending?.quantityRequested || 1), name: item?.name || "Carta no disponible", expansion: item?.expansion || "", number: item?.number || "", imageUrl: item?.imageUrl || "", language: item?.language || "", condition: item?.condition || "", finish: item?.finish || "", max: item?.availableQuantity || 0, priceArs: item?.priceArs || 0 };
+  });
+  async function submitRequestBatch() {
+    const problem = resellerBatchProblem(requestLines);
+    if (problem) { setError(problem); return; }
+    try {
+      const result = await requestBatch.submit("/reseller/portal/assignment-requests/batch", { lines: requestLines.map((line) => ({ inventoryItemId: line.id, quantity: Number(line.quantity) })) }, token);
+      if (!result) return;
+      setDashboard(result.dashboard); setRequestSelection([]); setRequestNotice(`${result.processedCount} cartas solicitadas.`); setError("");
+    } catch (nextError) { setError(errorMessage(nextError)); }
+  }
 
   return (
     <main className="reseller-portal redesigned">
@@ -6638,12 +6750,13 @@ function ResellerPortal() {
         <section className="reseller-tab-content">
           <div className="reseller-section-heading"><div><h2>Stock global</h2></div></div>
           {requestNotice ? <div className="feedback success reseller-request-notice"><span>{requestNotice}</span><button className="icon-action" aria-label="Cerrar aviso" onClick={() => setRequestNotice("")}><Icon name="close" /></button></div> : null}
-          <ResellerStockBrowser key="global" items={dashboard.globalStock} renderItem={(item) => {
+          <ResellerBatchReview title="Solicitud de asignacion" command="Enviar solicitud de lote" lines={requestLines} busy={requestBatch.busy} onQuantity={(id, quantity) => setRequestQuantities((current) => ({ ...current, [id]: quantity }))} onRemove={(id) => setRequestSelection((current) => current.filter((entry) => entry !== id))} onClear={() => setRequestSelection([])} onSubmit={() => void submitRequestBatch()} />
+          <ResellerStockBrowser key="global" items={dashboard.globalStock} selectionBusy={requestBatch.busy} onSelectVisible={(items) => { if (!requestSelection.length) requestBatch.reset(); setRequestSelection((current) => [...new Set([...current, ...items.map((item) => item.inventoryItemId)])].slice(0, 100)); }} renderItem={(item) => {
             const pending = dashboard.stockRequests.find((request) => request.inventoryItemId === item.inventoryItemId);
             const quantity = requestQuantities[item.inventoryItemId] ?? String(pending?.quantityRequested || 1);
-            return <ResellerStockCard key={item.inventoryItemId} item={item} pending={Boolean(pending)} quantities={[{ label: 'Disponibles', value: item.availableQuantity }]}>
-              <label className="reseller-catalog-quantity">Cantidad<input aria-label={`Cantidad a solicitar ${item.name}`} type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label>
-              <button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestSavingId === item.inventoryItemId || (!pending && dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0)} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0 ? "Limite alcanzado" : "Pedir asignacion"}</button>
+            return <ResellerStockCard key={item.inventoryItemId} item={item} pending={Boolean(pending)} selection={<label className="reseller-batch-check"><input type="checkbox" aria-label={`Seleccionar ${item.name}`} disabled={requestBatch.busy || (!requestSelection.includes(item.inventoryItemId) && requestSelection.length >= 100)} checked={requestSelection.includes(item.inventoryItemId)} onChange={(event) => { if (!requestSelection.length) requestBatch.reset(); setRequestSelection((current) => event.target.checked ? [...current, item.inventoryItemId] : current.filter((id) => id !== item.inventoryItemId)); }} />Seleccionar</label>} quantities={[{ label: 'Disponibles', value: item.availableQuantity }]}>
+              <label className="reseller-catalog-quantity">Cantidad<input aria-label={`Cantidad a solicitar ${item.name}`} disabled={requestBatch.busy} type="number" min="1" max={item.availableQuantity} value={quantity} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestQuantities((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label>
+              <button type="button" className={pending ? "secondary-action" : "primary-action"} disabled={requestBatch.busy || Boolean(requestSelection.length) || requestSavingId === item.inventoryItemId || (!pending && dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0)} onClick={() => void requestAssignment(item)}><Icon name={pending ? "refresh" : "plus"} />{requestSavingId === item.inventoryItemId ? "Enviando..." : pending ? `Actualizar pedido (${pending.quantityRequested})` : dashboard.summary.availableCreditArs !== null && dashboard.summary.availableCreditArs <= 0 ? "Limite alcanzado" : "Pedir asignacion"}</button>
             </ResellerStockCard>;
           }} />
         </section>
@@ -6686,7 +6799,7 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
   </section>;
 }
 
-function ResellerStockBrowser<T extends ResellerCatalogItem>({ items, owned = false, renderItem }: { items: T[]; owned?: boolean; renderItem: (item: T) => React.ReactNode }) {
+function ResellerStockBrowser<T extends ResellerCatalogItem>({ items, owned = false, renderItem, onSelectVisible, selectionBusy }: { items: T[]; owned?: boolean; renderItem: (item: T) => React.ReactNode; onSelectVisible?: (items: T[]) => void; selectionBusy?: boolean }) {
   const [filters, setFilters] = useState<ResellerCatalogFilters>({ ...defaultResellerCatalogFilters });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -6709,6 +6822,7 @@ function ResellerStockBrowser<T extends ResellerCatalogItem>({ items, owned = fa
         <label className="reseller-global-select">Ordenar<select aria-label="Ordenar cartas" value={filters.sort} onChange={(event) => set({ sort: event.target.value as ResellerCatalogFilters['sort'] })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
       </div>
       <div className="reseller-global-quick-filters">
+        {onSelectVisible ? <button className="secondary-action" disabled={selectionBusy} onClick={() => onSelectVisible(visible.slice(0, renderLimit))}><Icon name="check" />Seleccionar visibles</button> : null}
         <LanguageGroupSelector value={filters.languageGroup as LanguageGroupFilter} onChange={(value) => set({ languageGroup: value })} />
         <div className="folder-view-switch" role="group" aria-label="Vista del catalogo">
           <button className="mini-icon-action" aria-label="Grilla" title="Grilla" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><Icon name="image" /></button>
@@ -6730,10 +6844,10 @@ function ResellerStockBrowser<T extends ResellerCatalogItem>({ items, owned = fa
   </div>;
 }
 
-function ResellerStockCard({ item, quantities, pending = false, children }: { item: ResellerCatalogItem; quantities: Array<{ label: string; value: number; warning?: boolean }>; pending?: boolean; children: React.ReactNode }) {
+function ResellerStockCard({ item, quantities, pending = false, selection, children }: { item: ResellerCatalogItem; quantities: Array<{ label: string; value: number; warning?: boolean }>; pending?: boolean; selection?: React.ReactNode; children: React.ReactNode }) {
   return <article className={`reseller-catalog-card ${pending ? 'request-pending' : ''}`}>
     <CardArt src={item.imageUrl} fallbackSrc={item.imageFallbackUrl} alt={`${item.name} ${item.language || ''} ${item.finish || ''}`} label={item.name} className="reseller-catalog-art" fallbackClassName="reseller-catalog-art image-placeholder" />
-    <div className="reseller-catalog-copy"><strong>{item.name}</strong><span>{item.expansion}{item.number ? ` #${item.number}` : ''}</span><small>{[item.language, item.condition, item.finish].filter(Boolean).join(' · ')}</small><small>{item.itemKind === 'folder' ? 'Carpeta' : cardTypeLabels[item.cardType || 'unknown']}</small>{resellerCatalogTags(item.tags).length ? <small>{resellerCatalogTags(item.tags).join(' · ')}</small> : null}</div>
+    <div className="reseller-catalog-copy">{selection}<strong>{item.name}</strong><span>{item.expansion}{item.number ? ` #${item.number}` : ''}</span><small>{[item.language, item.condition, item.finish].filter(Boolean).join(' · ')}</small><small>{item.itemKind === 'folder' ? 'Carpeta' : cardTypeLabels[item.cardType || 'unknown']}</small>{resellerCatalogTags(item.tags).length ? <small>{resellerCatalogTags(item.tags).join(' · ')}</small> : null}</div>
     <div className="reseller-catalog-quantities">{quantities.map((quantity) => <span className={quantity.warning ? 'warning-text' : ''} key={quantity.label}><small>{quantity.label}</small><b>{quantity.value}</b></span>)}</div>
     <strong className="reseller-catalog-price">{formatArs(item.priceArs)}</strong>
     <div className="reseller-catalog-actions">{children}</div>

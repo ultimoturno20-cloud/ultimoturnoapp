@@ -8,6 +8,8 @@ import { parse } from "csv-parse/sync";
 import { masterSet151Contents, masterSet151ImageUrl } from "./folder-templates.js";
 import { classifyCard, isCardType, type CardType, type CardClassification } from "./card-types.js";
 export type { CardType, CardClassification } from "./card-types.js";
+export { createResellerStockRequestBatch, assignResellerStockBatch, resolveResellerStockRequestBatch } from "./reseller-batches.js";
+export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchResult } from "./reseller-batches.js";
 
 const minimumSalePriceArs = 800;
 
@@ -248,7 +250,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql", "0058_reseller_batches.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1440,7 +1442,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
   if (!profile) throw new Error("Revendedor no encontrado.");
   const assignmentRows = await db.query<Record<string, unknown>>(`
     select rsa.inventory_item_id, rsa.quantity_assigned, rsa.quantity_sold, rsa.quantity_returned,
-      ii.sku, ii.quantity_on_hand, ii.quantity_reserved, p.name, p.expansion, p.card_number, p.image_url,
+      ii.sku, ii.quantity_on_hand, ii.quantity_reserved, ii.active, ii.inventory_status, p.name, p.expansion, p.card_number, p.image_url,
       coalesce(cp.price_ars, 0) as price_ars
     from reseller_stock_assignments rsa
     join inventory_items ii on ii.id = rsa.inventory_item_id and ii.business_id = rsa.business_id
@@ -1456,7 +1458,7 @@ export async function getResellerDashboard(db: PGlite, resellerUserId: string, b
       inventoryItemId: String(row.inventory_item_id), sku: String(row.sku), name: String(row.name), expansion: String(row.expansion),
       number: String(row.card_number || ""), imageUrl: String(row.image_url || ""), assigned: Number(row.quantity_assigned),
       sold: Number(row.quantity_sold), returned: Number(row.quantity_returned), remaining, stockAvailable,
-      sellable: Math.min(remaining, stockAvailable), priceArs: Number(row.price_ars || 0)
+      sellable: row.active && row.inventory_status !== "not_for_sale" ? Math.min(remaining, stockAvailable) : 0, priceArs: Number(row.price_ars || 0)
     };
   });
   const globalStockRows = includeGlobalStock ? await db.query<Record<string, unknown>>(`
@@ -1568,25 +1570,31 @@ async function attachResellerInventoryMetadata(db: PGlite, businessId: string, i
   }
 }
 
-export async function createResellerStockRequest(
+export async function createResellerStockRequest(db: PGlite, input: { inventoryItemId: string; quantity: number }, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  await applyResellerStockRequest(db, input, actor);
+  return getResellerDashboard(db, actor.id, actor.businessId);
+}
+
+export async function applyResellerStockRequest(
   db: PGlite,
   input: { inventoryItemId: string; quantity: number },
   actor: AuthenticatedUser
-): Promise<ResellerDashboard> {
+): Promise<void> {
   const quantity = Number(input.quantity);
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad solicitada debe ser un entero positivo.");
-  await db.transaction(async (tx) => {
+  await inventoryTransaction(db, async (tx) => {
     const connection = tx as unknown as PGlite;
     const profile = await tx.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2 for update", [actor.id, actor.businessId]);
     if (!profile.rows[0]) throw new Error("Revendedor no encontrado.");
     const item = await tx.query<Record<string, unknown>>(`
-      select ii.quantity_on_hand, ii.quantity_reserved, coalesce(cp.price_ars, 0) as price_ars
+      select ii.quantity_on_hand, ii.quantity_reserved, ii.inventory_status, coalesce(cp.price_ars, 0) as price_ars
       from inventory_items ii
       left join current_prices cp on cp.inventory_item_id = ii.id
       where ii.id = $1 and ii.business_id = $2 and ii.active = true
       for update of ii
     `, [input.inventoryItemId, actor.businessId]);
     if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    if (item.rows[0].inventory_status === "not_for_sale") throw new Error("La carta esta marcada No venta.");
     const available = Number(item.rows[0].quantity_on_hand) - Number(item.rows[0].quantity_reserved);
     if (quantity > available) throw new Error(`Solo hay ${Math.max(0, available)} unidad(es) disponibles para solicitar.`);
     const creditLimitArs = profile.rows[0].credit_limit_ars == null ? null : Number(profile.rows[0].credit_limit_ars);
@@ -1619,19 +1627,26 @@ export async function createResellerStockRequest(
     `, [crypto.randomUUID(), actor.businessId, actor.id, input.inventoryItemId, quantity, Number(item.rows[0].price_ars || 0)]);
     await writeAudit(connection, actor, "reseller.stock.request", "inventory_item", input.inventoryItemId, null, { quantity });
   });
-  return getResellerDashboard(db, actor.id, actor.businessId);
 }
 
-export async function resolveResellerStockRequest(
+export async function resolveResellerStockRequest(db: PGlite, requestId: string, input: { action: "approve" | "reject"; quantity?: number; priceArs?: number }, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  const resellerUserId = await applyResellerStockResolution(db, requestId, input, actor);
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
+}
+
+export async function applyResellerStockResolution(
   db: PGlite,
   requestId: string,
   input: { action: "approve" | "reject"; quantity?: number; priceArs?: number },
   actor: AuthenticatedUser
-): Promise<ResellerDashboard> {
+): Promise<string> {
   if (actor.roles && !actor.roles.includes("admin")) throw new Error("Se requiere rol administrador.");
   let resellerUserId = "";
-  await db.transaction(async (tx) => {
+  await inventoryTransaction(db, async (tx) => {
     const connection = tx as unknown as PGlite;
+    const target = await tx.query<{ reseller_user_id: string }>("select reseller_user_id from reseller_stock_requests where id = $1 and business_id = $2", [requestId, actor.businessId]);
+    if (!target.rows[0]) throw new Error("La solicitud no existe.");
+    await tx.query("select 1 from reseller_profiles where business_id = $1 and user_id = $2 for update", [actor.businessId, target.rows[0].reseller_user_id]);
     const request = await tx.query<Record<string, unknown>>(`
       select * from reseller_stock_requests
       where id = $1 and business_id = $2
@@ -1654,13 +1669,14 @@ export async function resolveResellerStockRequest(
     if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad aprobada debe ser un entero positivo.");
     if (!Number.isFinite(priceArs) || priceArs < 0) throw new Error("El precio aprobado no es valido.");
     const item = await tx.query<Record<string, unknown>>(`
-      select ii.quantity_on_hand, ii.quantity_reserved, coalesce(cp.price_ars, 0) as current_price_ars
+      select ii.quantity_on_hand, ii.quantity_reserved, ii.inventory_status, coalesce(cp.price_ars, 0) as current_price_ars
       from inventory_items ii
       left join current_prices cp on cp.inventory_item_id = ii.id
       where ii.id = $1 and ii.business_id = $2 and ii.active = true
       for update of ii
     `, [pending.inventory_item_id, actor.businessId]);
     if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    if (item.rows[0].inventory_status === "not_for_sale") throw new Error("La carta esta marcada No venta.");
     const assigned = await tx.query<{ total: string }>(`
       select coalesce(sum(quantity_assigned - quantity_sold - quantity_returned), 0)::text as total
       from reseller_stock_assignments where business_id = $1 and inventory_item_id = $2
@@ -1712,7 +1728,7 @@ export async function resolveResellerStockRequest(
     `, [quantity, priceArs, actor.id, requestId]);
     await writeAudit(connection, actor, "reseller.stock.request.approve", "reseller_stock_request", requestId, pending, { status: "approved", quantity, priceArs });
   });
-  return getResellerDashboard(db, resellerUserId, actor.businessId);
+  return resellerUserId;
 }
 
 async function listResellerOrders(db: PGlite, businessId: string, resellerUserId: string): Promise<ResellerOrder[]> {
@@ -1774,16 +1790,22 @@ async function listResellerSales(db: PGlite, businessId: string, resellerUserId:
 }
 
 export async function assignResellerStock(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<ResellerDashboard> {
+  await applyResellerStockAssignment(db, resellerUserId, inventoryItemId, quantity, actor);
+  return getResellerDashboard(db, resellerUserId, actor.businessId);
+}
+
+export async function applyResellerStockAssignment(db: PGlite, resellerUserId: string, inventoryItemId: string, quantity: number, actor: AuthenticatedUser): Promise<void> {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error("La cantidad a asignar debe ser un entero positivo.");
   await inventoryTransaction(db, async (db) => {
-    const reseller = await db.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2", [resellerUserId, actor.businessId]);
+    const reseller = await db.query<Record<string, unknown>>("select credit_limit_ars from reseller_profiles where user_id = $1 and business_id = $2 for update", [resellerUserId, actor.businessId]);
     if (!reseller.rows[0]) throw new Error("Revendedor no encontrado.");
     const item = await db.query<Record<string, unknown>>(`
-      select ii.quantity_on_hand, ii.quantity_reserved, ii.owner_user_id, coalesce(cp.price_ars, 0) as price_ars
+      select ii.quantity_on_hand, ii.quantity_reserved, ii.owner_user_id, ii.inventory_status, coalesce(cp.price_ars, 0) as price_ars
       from inventory_items ii left join current_prices cp on cp.inventory_item_id = ii.id
       where ii.id = $1 and ii.business_id = $2 and ii.active = true for update of ii
     `, [inventoryItemId, actor.businessId]);
     if (!item.rows[0]) throw new Error("La carta ya no existe.");
+    if (item.rows[0].inventory_status === "not_for_sale") throw new Error("La carta esta marcada No venta.");
     const ownerRestricted = actor.roles?.includes("stock_owner") && !actor.roles.includes("admin");
     if (ownerRestricted && String(item.rows[0].owner_user_id || "") !== actor.id) {
       throw new Error("No podes asignar stock de otro propietario.");
@@ -1818,7 +1840,6 @@ export async function assignResellerStock(db: PGlite, resellerUserId: string, in
     await db.query(`insert into reseller_stock_events (id, business_id, reseller_user_id, inventory_item_id, event_type, quantity, created_by) values ($1, $2, $3, $4, 'assign', $5, $6)`, [crypto.randomUUID(), actor.businessId, resellerUserId, inventoryItemId, quantity, actor.id]);
     await writeAudit(db, actor, "reseller.stock.assign", "reseller", resellerUserId, null, { inventoryItemId, quantity });
   });
-  return getResellerDashboard(db, resellerUserId, actor.businessId);
 }
 
 export async function updateResellerAssignmentPrice(
@@ -1985,8 +2006,9 @@ export async function createResellerSale(db: PGlite, input: { customerName?: str
       const assignment = await db.query<Record<string, unknown>>("select * from reseller_stock_assignments where business_id = $1 and reseller_user_id = $2 and inventory_item_id = $3 for update", [actor.businessId, actor.id, inventoryItemId]);
       const assigned = assignment.rows[0];
       if (!assigned || line.quantity > Number(assigned.quantity_assigned) - Number(assigned.quantity_sold) - Number(assigned.quantity_returned)) throw new Error("La venta supera las unidades asignadas.");
-      const inventory = await db.query<Record<string, unknown>>("select quantity_on_hand, quantity_reserved from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
+      const inventory = await db.query<Record<string, unknown>>("select quantity_on_hand, quantity_reserved, inventory_status from inventory_items where id = $1 and business_id = $2 and active = true for update", [inventoryItemId, actor.businessId]);
       const stock = inventory.rows[0];
+      if (stock?.inventory_status === "not_for_sale") throw new Error("La carta esta marcada No venta.");
       if (!stock || line.quantity > Number(stock.quantity_on_hand) - Number(stock.quantity_reserved)) throw new Error("UltimoTurno vendio parte de este stock. Actualiza el portal antes de confirmar.");
       await db.query("update inventory_items set quantity_on_hand = quantity_on_hand - $1, updated_at = now() where id = $2 and business_id = $3", [line.quantity, inventoryItemId, actor.businessId]);
       await db.query("update reseller_stock_assignments set quantity_sold = quantity_sold + $1, updated_at = now() where id = $2", [line.quantity, assigned.id]);

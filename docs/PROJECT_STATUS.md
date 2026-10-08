@@ -7,6 +7,24 @@ Actualizado: 2026-10-08
 
 ## Resumen vigente
 
+- Revendedores permite solicitar y asignar hasta 100 cartas por lote, con imagenes,
+  cantidades editables, totales y revision previa. La seleccion del portal se
+  conserva al filtrar; las entregas se arman en `Asignar stock > Agregar al lote`.
+- Administracion permite aprobar/rechazar solicitudes seleccionadas y aprobar
+  menos unidades que las pedidas. Una linea aprobada queda resuelta; el remanente
+  no se vuelve a solicitar automaticamente. Las otras lineas siguen pendientes.
+- Cada lote aplica todo o nada y controla reservas, asignaciones existentes,
+  propietario, negocio y cupo acumulado. No descuenta stock ni reserva unidades.
+  Los reintentos usan una clave persistida en `reseller_batch_receipts` y no
+  repiten asignaciones; cambiar el contenido con la misma clave se rechaza.
+  Las claves del borrador se conservan durante la sesion del componente, no
+  sobreviven a recargar/cerrar la pagina. No hay reenvios automaticos offline.
+- Migracion aditiva `0058_reseller_batches.sql`: crea solamente recibos de lote.
+  No venta/inactivos permanecen en mano pero no vendibles; No venta se bloquea
+  tambien en las operaciones individuales de solicitud, asignacion y venta.
+  Pruebas locales cubren rollback, cupo, permisos, idempotencia y respuestas
+  perdidas; Chrome verifica el recorrido completo en 1440/390/320 px.
+
 - El portal de revendedores comparte catalogo visual en `Mi stock` y `Stock global`:
   grilla/lista, imagenes con fallback de catalogo, idioma, condicion, acabado y tipo.
   Ambas vistas filtran y ordenan cartas, con 48 entradas por tanda. Mi stock agrega

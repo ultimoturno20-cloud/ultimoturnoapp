@@ -1,5 +1,37 @@
 # Traspaso de contexto - UltimoTurno
 
+## Lotes de revendedores - 2026-10-08
+
+`packages/db/src/reseller-batches.ts` expone solicitudes, entregas directas y
+aprobacion/rechazo por lote (1..100 lineas unicas). Reutiliza las mismas operaciones
+individuales mediante helpers applyResellerStock* e inventoryTransaction; el
+dashboard se calcula una vez al terminar. Se bloquea perfil/cupo y los items en
+orden estable. Si falla cualquier linea, movimientos, precios, pedidos y recibo
+se revierten juntos. No se reduce cantidad fisica para una asignacion.
+
+0058_reseller_batches.sql crea recibos de idempotencia por negocio/actor/clave;
+el hash incluye operacion, destino y lineas canonicas. Mismo lote devuelve
+dashboard actual con replayed=true; otra carga con esa clave falla. No se escriben
+datos de prueba ni se reinicializan tablas reales. Snapshots derivados se invalidan
+en la misma transaccion; la API elimina cache en memoria en asignacion/resolucion.
+
+Rutas: POST /reseller/portal/assignment-requests/batch (reseller),
+/resellers/:id/assignments/batch (admin/stock_owner con propiedad),
+/resellers/:id/assignment-requests/batch (admin). Cantidad aprobada <= pedida;
+la linea queda resuelta incluso si se aprueba menos. No se recrea el sobrante.
+No venta se bloquea tambien en singles y en venta; el dashboard conserva en mano
+pero vendible=0 para No venta/inactivos.
+
+Web: ResellerBatchReview y useResellerBatchOperation en main.tsx; helpers/tests
+en reseller-batch.ts/test.ts y estilos scoped en reseller-batch.css. Ref evita
+doble click, claves separadas por ruta se mantienen para reintentos durante la
+sesion del componente (no tras reload) y versiones descartan refrescos antiguos.
+Lote de entrega revisable, seleccion persistente entre filtros, aprobacion
+seleccionada y borradores limpios al cambiar de revendedor. Revisado en Chrome
+1440/390/320 px, incluyendo respuesta perdida tras commit y replay confirmado,
+cantidades parciales, rechazo seleccionado, cambio de destino y entrega repetida.
+QA solamente en PGlite local; pruebas automatizadas usan bases temporales.
+
 ## Catalogo visual de revendedores - 2026-10-08
 
 `ResellerStockBrowser` y `ResellerStockCard` en main.tsx comparten grilla/lista
