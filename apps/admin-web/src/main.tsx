@@ -85,7 +85,11 @@ type InventoryBatchPatch = {
 type CardIndexFilter = "all" | "matched" | "pending_review" | "weak_match" | "conflict" | "pricecharting_only" | "missing_tcg" | "missing_image" | "approved" | "rejected" | "manual";
 type OrderFilter = "all" | "pending" | "packed" | "paid" | "debt" | "no_message" | "message" | "note";
 type OrderSort = "current" | "money_desc" | "money_asc" | "units_desc" | "units_asc";
+type CardType = 'pokemon' | 'supporter' | 'item' | 'stadium' | 'tool' | 'energy' | 'unknown';
+const cardTypeLabels: Record<CardType, string> = { pokemon: 'Pokémon', supporter: 'Supporter', item: 'Item', stadium: 'Stadium', tool: 'Tool', energy: 'Energy', unknown: 'Sin clasificar' };
+
 type InventoryFilters = {
+  cardType: string;
   query: string;
   expansion: string;
   language: string;
@@ -116,6 +120,9 @@ type BlueExchangeRate = {
 };
 
 type StockRow = {
+  cardType?: CardType;
+  cardTypeSource?: 'catalog' | 'checklist' | 'manual' | 'unknown';
+  cardTypeOverride?: CardType | null;
   itemKind?: "standard" | "folder";
   folder?: { totalCards: number; missingPrices: number; valueUsd: number; valueArs: number; updatedAt: string };
   purchaseCost: number | null;
@@ -691,6 +698,7 @@ type ClaimOrderPreview = {
 };
 
 type PriceChartingCacheEntry = {
+  cardType?: CardType;
   catalogId?: string;
   priceChartingId: string;
   canonicalUrl: string;
@@ -992,6 +1000,8 @@ type ImageBatchResult = {
 };
 
 type InventoryFormState = {
+  cardTypeOverride: CardType | '';
+  detectedCardType?: CardType;
   itemKind: "standard" | "folder";
   ownerUserId: string;
   purchaseCost: number | null;
@@ -1114,6 +1124,7 @@ function App() {
   const [batchFilter, setBatchFilter] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
+  const [cardTypeFilter, setCardTypeFilter] = useState('all');
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [availability, setAvailability] = useState<AvailabilityFilter>("in_stock");
   const [inventoryPriceSource, setInventoryPriceSource] = useState<InventoryPriceSource>("sale");
@@ -1457,6 +1468,7 @@ function App() {
           (batchFilter === "all" || item.intakeBatch === batchFilter) &&
           (inventoryStatusFilter === "all" || (item.inventoryStatus || "available") === inventoryStatusFilter) &&
           (tagFilter === "all" || inventoryTags(item.tags).includes(tagFilter)) &&
+          (cardTypeFilter === 'all' || (item.itemKind !== 'folder' && (item.cardType || 'unknown') === cardTypeFilter)) &&
           (ownerFilter === "all" || (ownerFilter === "ultimoturno" ? !item.ownerUserId : item.ownerUserId === ownerFilter)) &&
           (issue === "all" || stockItemIssues(item, duplicateKeys).includes(issue)) &&
           (availability === "all" ||
@@ -1478,7 +1490,7 @@ function App() {
         return leftItem.product.name.localeCompare(rightItem.product.name, "es");
       })
       .map(({ item }) => item);
-  }, [availability, batchFilter, blueRate, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, languageGroup, locationFilter, ownerFilter, query, sortMode, stock.items, tagFilter]);
+  }, [availability, batchFilter, blueRate, cardTypeFilter, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, languageGroup, locationFilter, ownerFilter, query, sortMode, stock.items, tagFilter]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -2825,7 +2837,7 @@ function App() {
           selected={selected}
           selectedMovements={selectedMovements}
           options={options}
-          filters={{ query, expansion, language, languageGroup, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, owner: ownerFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
+          filters={{ query, expansion, language, languageGroup, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, cardType: cardTypeFilter, owner: ownerFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
           density={inventoryDensity}
           quality={quality}
           adjustment={adjustment}
@@ -2847,6 +2859,7 @@ function App() {
             if (patch.intakeBatch !== undefined) setBatchFilter(patch.intakeBatch);
             if (patch.inventoryStatus !== undefined) setInventoryStatusFilter(patch.inventoryStatus);
             if (patch.tag !== undefined) setTagFilter(patch.tag);
+            if (patch.cardType !== undefined) setCardTypeFilter(patch.cardType);
             if (patch.owner !== undefined) setOwnerFilter(patch.owner);
             if (patch.availability !== undefined) setAvailability(patch.availability);
             if (patch.priceSource !== undefined) setInventoryPriceSource(patch.priceSource);
@@ -2863,6 +2876,7 @@ function App() {
             setBatchFilter("all");
             setInventoryStatusFilter("all");
             setTagFilter("all");
+            setCardTypeFilter('all');
             setOwnerFilter("all");
             setAvailability("in_stock");
             setInventoryPriceSource("sale");
@@ -3501,7 +3515,7 @@ function InventoryView(props: {
   const [batchInventoryStatus, setBatchInventoryStatus] = useState("");
   const [batchTags, setBatchTags] = useState("");
   const [batchPriceSource, setBatchPriceSource] = useState<"none" | InventoryPriceSource>("none");
-  const advancedFilterCount = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.issue].filter((value) => value !== "all").length;
+  const advancedFilterCount = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.cardType, filters.issue].filter((value) => value !== "all").length;
   const ownerOptions = useMemo(() => unique(allItems.filter((item) => item.ownerUserId).map((item) => `${item.ownerUserId}\t${item.ownerName}`)), [allItems]);
   const availabilityCounts = useMemo(() => ({
     all: allItems.length,
@@ -3675,6 +3689,7 @@ function InventoryView(props: {
           <label>Ubicacion<select value={filters.location} onChange={(event) => props.onFilterChange({ location: event.target.value })}><option value="all">Todas</option>{options.locations.map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>Estado<select value={filters.inventoryStatus} onChange={(event) => props.onFilterChange({ inventoryStatus: event.target.value })}><option value="all">Todos</option>{options.inventoryStatuses.map((value) => <option value={value} key={value}>{inventoryStatusLabel(value)}</option>)}</select></label>
           <label>Categoria<select value={filters.tag} onChange={(event) => props.onFilterChange({ tag: event.target.value })}><option value="all">Todas</option>{options.tags.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+          <label>Tipo de carta<select aria-label="Tipo de carta" value={filters.cardType} onChange={(event) => props.onFilterChange({ cardType: event.target.value })}><option value="all">Todos</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         </div>
         </div> : null}
       </div>
@@ -3730,6 +3745,7 @@ function InventoryView(props: {
                         {item.ownerUserId ? <span className="inventory-owner-label">Stock: {item.ownerName}</span> : null}
                         <span>{item.product.expansion} #{item.product.number || "-"}</span>
                         <small>{inventoryVariantLabel(item)}</small>
+                        {item.itemKind !== 'folder' ? <small className="inventory-card-type">{cardTypeLabels[item.cardType || 'unknown']}</small> : null}
                         <div className={`inventory-tag-list compact ${itemTags.length ? "" : "empty"}`}>{itemTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
                         <div className={`inventory-big-price ${displayPrice.hasPrice ? "" : "missing"}`}>
                           <span>{displayPrice.label}</span>
@@ -3776,6 +3792,7 @@ function InventoryView(props: {
                   </div>
                 )}
                 <div className="detail-title"><h3>{selected.product.name}</h3><span>{selected.sku}</span></div>
+                {selected.itemKind !== 'folder' ? <p className="muted">{cardTypeLabels[selected.cardType || 'unknown']}{selected.cardTypeSource === 'manual' ? ' · Manual' : ''}</p> : null}
                 {selected.folder ? <div className="folder-value"><span>Valor del contenido</span><strong>{formatUsd(selected.folder.valueUsd)}</strong><span>{formatArs(toBlueArs(selected.folder.valueUsd, props.blueRate))}</span><small>{selected.folder.totalCards} cartas{selected.folder.missingPrices ? ` · ${selected.folder.missingPrices} sin precio · valor parcial` : ""}</small><button type="button" className="secondary-action" onClick={() => setSideTab("contents")}><Icon name="inventory" />Contenido</button></div> : null}
                 <section className="inventory-tags-panel">
                   <div className="inventory-tags-head">
@@ -3898,6 +3915,7 @@ function InventoryView(props: {
 }
 
 type FolderEntry = {
+  cardType?: CardType;
   id: string; priceChartingId: string; name: string; expansion: string; number: string; finish: string;
   quantity: number; priceUsd: number | null; imageUrl: string; imageFallbackUrl?: string; updatedAt: string;
 };
@@ -3914,6 +3932,7 @@ function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; 
   const [view, setView] = useState<"grid" | "list">("grid");
   const [contentQuery, setContentQuery] = useState("");
   const [finishFilter, setFinishFilter] = useState("");
+  const [cardTypeFilter, setCardTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState("");
   const [adding, setAdding] = useState(false);
   const addSearchRef = useRef<HTMLInputElement>(null);
@@ -3968,6 +3987,7 @@ function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; 
     const identity = `${entry.name} ${entry.expansion} ${entry.number}`.toLowerCase();
     return searchTokens.every((token) => identity.includes(token))
       && (!finishFilter || entry.finish === finishFilter)
+      && (!cardTypeFilter || (entry.cardType || 'unknown') === cardTypeFilter)
       && (!statusFilter || (statusFilter === "unlinked" ? !entry.priceChartingId : entry.priceUsd === null));
   });
   const finishes = [...new Set(entries.map((entry) => entry.finish))].sort();
@@ -3996,6 +4016,7 @@ function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; 
         <button className="mini-icon-action" title="Lista" aria-label="Lista" aria-pressed={view === "list"} onClick={() => setView("list")}><Icon name="orders" /></button>
       </div>
       <div className="folder-content-filters">
+        <select aria-label="Tipo de carta del contenido" value={cardTypeFilter} onChange={(event) => setCardTypeFilter(event.target.value)}><option value="">Tipos de carta</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
         <select aria-label="Variante del contenido" value={finishFilter} onChange={(event) => setFinishFilter(event.target.value)}><option value="">Variantes</option>{finishes.map((finish) => <option value={finish} key={finish}>{finishLabel(finish)}</option>)}</select>
         <select aria-label="Estado de referencia" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Referencias</option><option value="unlinked">Sin vincular</option><option value="unpriced">Sin precio</option></select>
       </div>
@@ -4018,6 +4039,7 @@ function InventoryFolderEntryRow({ entry, view, disabled, onSave, onRemove, onLi
     <div className="folder-entry-copy">
       <div className="folder-entry-heading"><strong>{entry.name}{entry.number ? ` #${entry.number}` : ""}</strong>{view === "grid" ? <button className="mini-icon-action" title="Editar carta" aria-label={`Editar ${entry.name} ${entry.finish}`} aria-expanded={editing} disabled={disabled} onClick={() => setEditing((current) => !current)}><Icon name="edit" /></button> : null}</div>
       <small>{entry.expansion}</small>
+      <small>{cardTypeLabels[entry.cardType || 'unknown']}</small>
       <span className={`folder-entry-finish ${entry.finish.includes("reverse") ? "is-reverse" : ""}`}>{finishLabel(entry.finish)}</span>
       <span>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}</span>
       {!entry.priceChartingId ? <small className="folder-entry-pending">Sin vincular</small> : null}
@@ -4438,6 +4460,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     const priceChartingUrl = entry.priceChartingUrl || entry.canonicalUrl;
     set({
       itemKind: "standard",
+      cardTypeOverride: '',
+      detectedCardType: entry.cardType,
       sku: "",
       name: entry.productName,
       expansion: entry.expansionName,
@@ -4456,6 +4480,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
     set({
       ...form,
       itemKind: preset.itemKind ?? "standard",
+      cardTypeOverride: preset.cardTypeOverride ?? '',
+      detectedCardType: undefined,
       sku: preset.sku ?? "",
       name: preset.name ?? "",
       expansion: preset.expansion ?? "Producto",
@@ -4555,6 +4581,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                 </div>
                 <div className="catalog-picker-meta">
                   <div className="catalog-picker-badges">
+                    {entry.cardType && entry.cardType !== 'unknown' ? <span className="badge">{cardTypeLabels[entry.cardType]}</span> : null}
                     {entry.finish && entry.finish !== "normal" ? <span className="badge">{finishLabel(entry.finish)}</span> : null}
                     {entry.language ? <span className="badge">{entry.language}</span> : null}
                   </div>
@@ -4590,6 +4617,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               </div></> : null}
               <label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label>
               <label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label>
+              {!showDetails && form.itemKind !== 'folder' ? <label>Tipo de carta<select aria-label="Tipo de carta" value={form.cardTypeOverride} onChange={(event) => set({ cardTypeOverride: event.target.value as CardType | '' })}><option value="">Automatico{form.detectedCardType ? ` (${cardTypeLabels[form.detectedCardType]})` : ''}</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label> : null}
               {!fullPage ? <>
                 <label>Idioma<input required value={form.language} onChange={(event) => set({ language: event.target.value.toUpperCase() })} /></label>
                 <label>Condicion<input required value={form.condition} onChange={(event) => set({ condition: event.target.value.toUpperCase() })} /></label>
@@ -4634,6 +4662,7 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
               <label>Ubicacion<input value={form.location} onChange={(event) => set({ location: event.target.value })} /></label>
               <label>Lote<input value={form.intakeBatch} onChange={(event) => set({ intakeBatch: event.target.value })} placeholder="Caja 1, Binder EX..." /></label>
               <label>Categoria(s)<input value={form.tags} onChange={(event) => set({ tags: event.target.value })} placeholder="jugables, old, full art..." list="inventory-tag-suggestions" /></label>
+              {form.itemKind !== 'folder' ? <label>Tipo de carta<select aria-label="Tipo de carta" value={form.cardTypeOverride} onChange={(event) => set({ cardTypeOverride: event.target.value as CardType | '' })}><option value="">Automatico{form.detectedCardType ? ` (${cardTypeLabels[form.detectedCardType]})` : ''}</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label> : null}
               <label>Estado<select value={form.inventoryStatus} onChange={(event) => set({ inventoryStatus: event.target.value })}>{inventoryStatusOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
               {editing ? <><label>Costo de compra por unidad<input type="number" min={0} step={0.01} value={form.purchaseCost ?? ""} onChange={(event) => set({ purchaseCost: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Sin registrar" /></label><label>Moneda del costo<select value={form.purchaseCurrency} onChange={(event) => set({ purchaseCurrency: event.target.value })}><option value="ARS">ARS</option><option value="USD">USD</option></select></label></> : null}
               {!fullPage || editing ? <>
@@ -8820,6 +8849,7 @@ async function api<T>(path: string, options: { token?: string; method?: string; 
 
 function blankForm(): InventoryFormState {
   return {
+    cardTypeOverride: '',
     itemKind: "standard",
     ownerUserId: "",
     purchaseCost: null,
@@ -8906,6 +8936,8 @@ function readImportDraft(): { csvText: string; batch: ImportBatchState } {
 function formFromItem(item: StockRow): InventoryFormState {
   const priceCharting = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
   return {
+    cardTypeOverride: item.cardTypeOverride || '',
+    detectedCardType: item.cardTypeSource === 'manual' ? undefined : item.cardType,
     itemKind: item.itemKind || "standard",
     ownerUserId: item.ownerUserId || "",
     purchaseCost: item.purchaseCost ?? null,
@@ -9599,6 +9631,7 @@ function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
   const priceChartingReference = item.priceReferences?.priceCharting;
   const priceChartingId = priceChartingReference?.priceChartingId || priceChartingIdentifier?.externalId || item.sku;
   return {
+    cardType: item.cardType,
     priceChartingId,
     canonicalUrl: priceChartingReference?.url || priceChartingIdentifier?.url || "",
     sourceUrl: "",

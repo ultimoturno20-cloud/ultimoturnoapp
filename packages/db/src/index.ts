@@ -6,6 +6,8 @@ import { createRequire } from "node:module";
 import type { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
 import { masterSet151Contents, masterSet151ImageUrl } from "./folder-templates.js";
+import { classifyCard, isCardType, type CardType, type CardClassification } from "./card-types.js";
+export type { CardType, CardClassification } from "./card-types.js";
 
 const minimumSalePriceArs = 800;
 
@@ -18,6 +20,7 @@ export type InventoryFolderValue = {
 };
 
 export type InventoryFolderEntry = {
+  cardType?: CardType;
   id: string;
   priceChartingId: string;
   name: string;
@@ -37,6 +40,9 @@ export type DatabaseCheck = {
 };
 
 export type DbStockRow = {
+  cardType?: CardType;
+  cardTypeSource?: CardClassification["cardTypeSource"];
+  cardTypeOverride?: CardType | null;
   itemKind?: "standard" | "folder";
   folder?: InventoryFolderValue;
   purchaseCost: number | null;
@@ -242,7 +248,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -490,6 +496,7 @@ export type ResellerDashboard = {
 };
 
 export type UpsertInventoryInput = {
+  cardTypeOverride?: CardType | "" | null;
   itemKind?: "standard" | "folder";
   ownerUserId?: string;
   productId?: string;
@@ -893,6 +900,7 @@ export type PriceChartingCacheInput = {
 };
 
 export type PriceChartingCacheEntry = PriceChartingCacheInput & {
+  cardType?: CardType;
   finish: string;
   tcgplayerPriceUsd: number | null;
   tcgplayerSubtype: string;
@@ -901,6 +909,7 @@ export type PriceChartingCacheEntry = PriceChartingCacheInput & {
 };
 
 export type UnifiedCatalogEntry = {
+  cardType?: CardType;
   catalogId: string;
   priceChartingId: string;
   tcgplayerProductId: string;
@@ -3074,8 +3083,14 @@ export async function listPriceChartingCache(db: PGlite, query = "", limit = 50,
     .sort((left, right) => right.score - left.score || String(left.row.product_name).localeCompare(String(right.row.product_name), "es", { numeric: true }))
     .slice(0, safeLimit)
     .map((entry) => entry.row);
+  const classifications = await classifyCatalogReferences(db, rows.map((row) => ({
+    name: String(row.product_name), expansion: String(row.expansion_name || ''), number: String(row.card_number || ''),
+    languageGroup: inferLanguageGroup(String(row.expansion_name || ''), String(row.product_name || ''), String(row.canonical_url || ''), String(row.language_group || '')),
+    priceChartingId: String(row.pricecharting_id || '')
+  })));
   return {
-    entries: rows.map((row) => ({
+    entries: rows.map((row, index) => ({
+      cardType: classifications[index].cardType,
       priceChartingId: String(row.pricecharting_id),
       canonicalUrl: String(row.canonical_url || ""),
       sourceUrl: String(row.source_url || ""),
@@ -3224,8 +3239,14 @@ export async function listUnifiedCatalogCards(db: PGlite, query = "", limit = 50
     })
     .slice(0, safeLimit)
     .map((entry) => entry.row);
+  const entries = rows.map(mapUnifiedCatalogRow);
+  const classifications = await classifyCatalogReferences(db, entries.map((entry) => ({
+    name: entry.productName, expansion: entry.expansionName, number: entry.cardNumber,
+    languageGroup: entry.languageGroup, priceChartingId: entry.priceChartingId, tcgplayerProductId: entry.tcgplayerProductId
+  })));
+  entries.forEach((entry, index) => { entry.cardType = classifications[index].cardType; });
   return {
-    entries: rows.map(mapUnifiedCatalogRow),
+    entries,
     ...(includeStatus ? { status: await getPriceChartingCacheStatus(db) } : {})
   };
 }
@@ -4230,6 +4251,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
 
   const items = result.rows.map((row) => toStockRow(row));
   await attachInventoryFolderValues(db, demoBusinessId, items);
+  await attachInventoryCardTypes(db, items);
   return { summary: summarizeDbStock(items), items };
 }
 
@@ -4534,7 +4556,59 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
   `, [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
   await attachInventoryFolderValues(db, businessId, items);
+  await attachInventoryCardTypes(db, items);
   return { summary: summarizeDbStock(items), items };
+}
+
+async function classifyCatalogReferences(db: PGlite, references: Array<{ name: string; expansion: string; number?: string; languageGroup?: string; entryKey?: string; priceChartingId?: string; tcgplayerProductId?: string }>): Promise<CardClassification[]> {
+  const pcIds = [...new Set(references.map((entry) => entry.priceChartingId).filter(Boolean))];
+  const tcgIds = [...new Set(references.map((entry) => entry.tcgplayerProductId).filter(Boolean))];
+  const result = pcIds.length || tcgIds.length ? await db.query<Record<string, unknown>>(`
+    select pricecharting_id, tcgplayer_product_id, evidence_json
+    from card_index_entries
+    where (pricecharting_id = any($1::text[]) or tcgplayer_product_id = any($2::text[]))
+      and review_status <> 'rejected'
+      and match_status not in ('weak_match', 'conflict')
+      and (pricecharting_id like 'tcgcsv-%' or match_status in ('matched', 'manual'))
+  `, [pcIds, tcgIds]) : { rows: [] };
+  const byPc = new Map<string, unknown[]>();
+  const byTcg = new Map<string, unknown[]>();
+  for (const row of result.rows) {
+    const metadata = parseJsonObject(row.evidence_json);
+    for (const [map, id] of [[byPc, String(row.pricecharting_id || '')], [byTcg, String(row.tcgplayer_product_id || '')]] as const) {
+      if (id) map.set(id, [...(map.get(id) || []), metadata]);
+    }
+  }
+  return references.map((entry) => classifyCard({ ...entry, metadata: [
+    ...(byPc.get(entry.priceChartingId || '') || []), ...(byTcg.get(entry.tcgplayerProductId || '') || [])
+  ] }));
+}
+
+async function attachInventoryCardTypes(db: PGlite, items: DbStockRow[]) {
+  if (!items.length) return;
+  const overrides = await db.query<{ id: string; card_type_override: CardType | null }>(
+    'select id, card_type_override from inventory_items where id = any($1::uuid[])', [items.map((item) => item.id)]
+  );
+  const manual = new Map(overrides.rows.map((row) => [row.id, row.card_type_override]));
+  const types = await classifyCatalogReferences(db, items.map((item) => ({
+    name: item.product.name, expansion: item.product.expansion, number: item.product.number,
+    languageGroup: inferLanguageGroup(item.product.expansion, item.product.name, '', inventoryCardLanguage(item.variant.language)),
+    priceChartingId: item.priceReferences?.priceCharting.priceChartingId,
+    tcgplayerProductId: item.priceReferences?.tcgplayer.productId
+  })));
+  items.forEach((item, index) => {
+    if (item.itemKind === 'folder') return;
+    item.cardTypeOverride = manual.get(item.id) || null;
+    Object.assign(item, item.cardTypeOverride ? { cardType: item.cardTypeOverride, cardTypeSource: 'manual' } : types[index]);
+  });
+}
+
+function inventoryCardLanguage(language: string): string {
+  const value = language.trim().toLowerCase();
+  if (['en', 'english', 'ingles'].includes(value)) return 'english';
+  if (['jp', 'ja', 'japanese', 'japones'].includes(value)) return 'japanese';
+  if (['cn', 'zh', 'chinese', 'chino'].includes(value)) return 'chinese';
+  return value;
 }
 
 async function attachInventoryFolderValues(db: PGlite, businessId: string, items: DbStockRow[]) {
@@ -4599,10 +4673,16 @@ export async function getInventoryFolderContents(db: PGlite, inventoryItemId: st
       (fe.card_number = ''), length(ltrim(split_part(fe.card_number, '/', 1), '0')),
       ltrim(split_part(fe.card_number, '/', 1), '0'), fe.finish, fe.name, fe.id
   `, [inventoryItemId, actor.businessId]);
-  return result.rows.map((row) => {
+  const types = await classifyCatalogReferences(db, result.rows.map((row) => ({
+    name: String(row.name), expansion: String(row.expansion), number: String(row.card_number),
+    entryKey: String(row.entry_key), languageGroup: String(row.language_group || 'english'),
+    priceChartingId: String(row.pricecharting_id || '')
+  })));
+  return result.rows.map((row, index) => {
     const checklistImage = !row.pricecharting_id || row.language_group === "english"
       ? masterSet151ImageUrl(String(row.entry_key), String(row.card_number), String(row.expansion)) : "";
     return {
+      cardType: types[index].cardType,
       id: String(row.id), priceChartingId: String(row.pricecharting_id || ""), name: String(row.name),
       expansion: String(row.expansion), number: String(row.card_number), finish: String(row.finish), quantity: Number(row.quantity),
       priceUsd: optionalNumber(row.loose_price_usd) ?? null, imageUrl: String(row.image_url || checklistImage),
@@ -4932,6 +5012,7 @@ export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput,
       productId: existing ? undefined : template?.product.id,
       variantId: existing ? undefined : template?.variant.id,
       sku: existing?.sku || `INTAKE-${crypto.randomUUID()}`,
+      cardTypeOverride: existing && !input.cardTypeOverride ? undefined : input.cardTypeOverride,
       quantityOnHand: (existing?.quantityOnHand || 0) + input.quantityOnHand,
       quantityReserved: existing?.quantityReserved || 0,
       location: input.location || existing?.location,
@@ -5044,6 +5125,9 @@ export async function upsertInventoryItem(
       await db.query("update inventory_items set purchase_cost = $1, purchase_currency = $2 where id = $3 and business_id = $4", [input.purchaseCost, input.purchaseCurrency || "ARS", itemId, actor.businessId]);
     }
     await db.query("update inventory_items set item_kind = $1 where id = $2 and business_id = $3", [itemKind, itemId, actor.businessId]);
+    if (input.cardTypeOverride !== undefined) {
+      await db.query('update inventory_items set card_type_override = $1 where id = $2 and business_id = $3', [input.cardTypeOverride || null, itemId, actor.businessId]);
+    }
     await db.query(`
       insert into current_prices (inventory_item_id, business_id, price_ars, price_usd, manual_override)
       values ($1, $2, $3, $4, true)
@@ -8477,6 +8561,7 @@ async function findStockBySku(db: PGlite, businessId: string, sku: string): Prom
 }
 
 function validateInventoryInput(input: UpsertInventoryInput): void {
+  if (input.cardTypeOverride != null && input.cardTypeOverride !== '' && !isCardType(input.cardTypeOverride)) throw new Error('Tipo de carta invalido.');
   if (input.purchaseCost != null && (!Number.isFinite(input.purchaseCost) || input.purchaseCost < 0)) throw new Error("El costo debe ser positivo o quedar vacio.");
   if (input.purchaseCurrency && !["ARS", "USD"].includes(input.purchaseCurrency)) throw new Error("Moneda de compra invalida.");
   if (!input.name?.trim()) throw new Error("El nombre es obligatorio");

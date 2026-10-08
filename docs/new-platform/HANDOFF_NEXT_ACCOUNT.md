@@ -1,5 +1,23 @@
 # Traspaso de contexto - UltimoTurno
 
+## Tipos de cartas - 2026-10-08
+
+Clasificacion automatica en inventario actual, altas y contenidos de carpetas.
+`packages/db/src/card-types.ts` normaliza atributos de TCGCSV/PokemonTCG; Grass,
+Fire, etc. identifican Pokemon, no energias. Supporter/Item/Stadium/Tool/Energy
+se toman de atributos explicitos. Conflictos quedan unknown, con fallback al
+checklist ingles exacto de 151. No se usan nombres aislados ni variantes foil.
+
+Las lecturas de stock/catalogo agregan tipos en lote desde `evidence_json` del
+indice; se excluyen referencias weak_match, conflict o rechazadas. No hace falta
+un backfill que reescriba inventario. La migracion 0057 agrega solo
+`inventory_items.card_type_override` nullable e invalida snapshots de lectura.
+El override es por item, respeta permisos existentes y se conserva al sumar stock.
+Vaciarlo en edicion vuelve al tipo automatico; unknown manual sigue siendo manual.
+Snapshots antiguos sin tipos se vuelven a generar. Carpetas no reciben tipo de
+carta, pero sus entradas si. UI filtra por tipo, separado de tags/estado/acabado.
+Tests aislados en `packages/db/src/card-types.test.ts`; no probar sobre produccion.
+
 ## Carpetas - 2026-10-08
 
 La creacion especifica de `Master Set 151` fue reemplazada por `Crear carpeta`

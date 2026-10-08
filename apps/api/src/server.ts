@@ -220,6 +220,7 @@ function parseStockSnapshot(payload: unknown, compressed?: string | null): Stock
   }
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Partial<StockReadResult>;
+  if (Array.isArray(value.items) && value.items.some((item) => item.itemKind !== 'folder' && !item.cardType)) return null;
   return value.summary && Array.isArray(value.items) ? value as StockReadResult : null;
 }
 

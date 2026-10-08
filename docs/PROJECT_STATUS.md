@@ -7,6 +7,23 @@ Actualizado: 2026-10-08
 
 ## Resumen vigente
 
+- Inventario clasifica automaticamente cartas actuales y nuevas como Pokemon,
+  Supporter, Item, Stadium, Tool o Energy a partir de atributos confiables del
+  indice TCGplayer/TCGCSV. Sin referencia suficiente o con atributos contradictorios
+  queda `Sin clasificar`; no se adivina por nombre, imagen ni acabado.
+- La plantilla 151 inglesa tiene fallback al checklist exacto por expansion,
+  nombre y numero (y clave para energias cosmos); clasifica las 368 entradas.
+  No se aplica el numerado ingles a cartas japonesas ni a promos sin referencia.
+- `Mas filtros > Tipo de carta` filtra singles del inventario, y `Contenido`
+  incorpora filtro/etiqueta de tipo. Las carpetas completas no son cartas.
+  Categoria, variante y estado de venta siguen separados del tipo.
+- Agregar/editar stock permite mantener `Automatico` o elegir un tipo manual,
+  incluido `Sin clasificar`. La correccion pertenece al item/propietario, se
+  conserva al sumar unidades y se puede quitar desde edicion volviendo a Automatico.
+- Migracion aditiva `0057_inventory_card_type.sql`: agrega una correccion nullable
+  e invalida snapshots derivados. La clasificacion actual se resuelve en lectura,
+  sin reescribir cantidades, precios, movimientos, ordenes ni claims existentes.
+
 - Inventario permite crear carpetas como items unicos desde `Agregar stock > Crear carpeta`.
   Cada carpeta tiene SKU y producto propios, cantidad fisica maxima de uno,
   estado `No venta` inicial y precio de venta independiente de su valuacion.

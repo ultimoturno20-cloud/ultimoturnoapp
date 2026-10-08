@@ -7,6 +7,20 @@ Actualizado: 2026-10-08
 
 ## Prioridades vigentes
 
+### Revisar tipos de cartas
+
+- En Inventario, usar `Mas filtros > Tipo de carta` para revisar Pokemon,
+  Supporter, Item, Stadium, Tool y Energy. `Sin clasificar` significa que falta
+  una referencia confiable, no que el sistema haya inferido que es una carta Item.
+- Para una carta pendiente o una excepcion, elegir el tipo en Editar.
+  `Automatico` elimina la correccion manual; agregar mas unidades no la borra.
+- Las altas desde catalogo reutilizan sus atributos sin exigir cargar el tipo.
+  Las importaciones y otros ingresos tambien reciben la clasificacion al leer stock.
+- Revisar el filtro de tipo dentro de cada carpeta; el checklist ingles de 151
+  cubre sus 368 entradas, mientras promos adicionales dependen del indice.
+- Ampliar cobertura con referencias verificadas del catalogo, sin adivinar por
+  nombres ni ejecutar pruebas que creen/reemplacen stock, ordenes o claims reales.
+
 ### Cargar carpetas reales
 
 - Crear la carpeta `MASTER SET 151` desde `Agregar stock > Crear carpeta`,
