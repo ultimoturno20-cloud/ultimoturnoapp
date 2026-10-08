@@ -6861,6 +6861,7 @@ select {
 }
 
 .folder-intake-workspace { max-width: 700px; margin-inline: auto; }
+.folder-contents h3 { margin: 0; font-size: 18px; }
 
 .folder-contents h3,
 .folder-entry-copy strong,
@@ -6908,6 +6909,60 @@ select {
 .folder-entry-actions { display: flex; align-items: center; gap: 8px; }
 .folder-entry-actions input { width: 68px; min-height: 36px; }
 .folder-entry-actions .mini-icon-action { width: 36px; height: 36px; }
+
+.folder-add > summary { cursor: pointer; }
+.folder-add[open] > summary { margin-bottom: 10px; }
+.folder-content-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.folder-content-toolbar input, .folder-content-toolbar select { width: 100%; min-width: 0; }
+.folder-content-toolbar select { font-size: 12px; }
+.folder-content-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; grid-column: 1 / -1; }
+.folder-content-count { grid-column: 1 / -1; color: var(--muted); }
+.folder-view-switch { display: flex; gap: 4px; }
+.folder-view-switch .mini-icon-action { width: 36px; height: 36px; }
+.folder-view-switch [aria-pressed="true"] { background: var(--accent); color: white; }
+.folder-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.folder-entry-tile {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.folder-entry-art { position: relative; min-width: 0; aspect-ratio: 63 / 88; }
+.folder-entry-image { display: block; width: 100%; height: 100%; object-fit: contain; }
+.folder-image-missing { display: grid; place-items: center; background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border); border-radius: 6px; }
+.folder-image-missing::after { content: "Sin imagen"; font-size: 12px; }
+.folder-entry-quantity { position: absolute; top: 4px; right: 4px; padding: 3px 6px; background: #17191fee; color: white; font-size: 12px; border-radius: 4px; }
+.folder-entry-heading { display: flex; align-items: start; justify-content: space-between; gap: 4px; }
+.folder-entry-heading strong { font-size: 13px; line-height: 1.4; min-width: 0; }
+.folder-entry-heading .mini-icon-action { flex: 0 0 28px; width: 28px; height: 28px; }
+.folder-entry-finish { justify-self: start; padding: 3px 6px; font-size: 11px; line-height: 1.3; border: 1px solid var(--border); border-radius: 4px; }
+.folder-entry-finish.is-reverse { color: #94dbc8; border-color: #438d7a; background: #234e4333; }
+.folder-entry-pending { color: #e7b56b !important; }
+.folder-entry-tile .folder-entry-copy small { font-size: 11px; overflow-wrap: anywhere; }
+.folder-entry-tile .folder-entry-actions { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 28px); gap: 4px; }
+.folder-entry-tile .folder-entry-actions input { width: 100%; min-width: 0; min-height: 28px; padding: 4px; }
+.folder-entry-tile .folder-entry-actions .mini-icon-action { width: 28px; height: 28px; }
+.folder-entry-row { grid-template-columns: 64px minmax(0, 1fr); align-items: start; column-gap: 12px; }
+.folder-entry-row .folder-entry-actions { grid-column: 2; }
+.folder-entry-row .folder-entry-quantity { font-size: 10px; padding: 2px 4px; }
+@media (max-width: 520px) {
+  .folder-contents { padding: 10px; gap: 10px; }
+  .folder-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .folder-entry-tile .folder-entry-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .folder-entry-tile .folder-entry-actions input { grid-column: 1 / -1; min-height: 32px; }
+  .folder-entry-tile .folder-entry-actions .mini-icon-action { width: 100%; height: 32px; }
+  .folder-entry-row .folder-entry-actions { grid-column: 1 / -1; }
+}
 
 .catalog-picker-results {
   display: grid;
@@ -13843,6 +13898,13 @@ textarea {
 .inventory-detail-drawer.workspace-side {
   top: 12px;
   max-height: calc(100dvh - 24px);
+}
+
+.inventory-detail-drawer.folder-drawer.workspace-side { width: min(860px, calc(100vw - 24px)); }
+.inventory-detail-drawer.folder-drawer .side-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 700px) {
+  .inventory-detail-drawer.folder-drawer.workspace-side { width: calc(100vw - 20px); left: 10px; right: 10px; }
+  .inventory-detail-drawer.folder-drawer .side-tabs button { padding-inline: 4px; font-size: 12px; }
 }
 
 .toast-stack {

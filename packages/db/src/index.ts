@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import type { PGlite } from "@electric-sql/pglite";
 import { parse } from "csv-parse/sync";
-import { masterSet151Contents } from "./folder-templates.js";
+import { masterSet151Contents, masterSet151ImageUrl } from "./folder-templates.js";
 
 const minimumSalePriceArs = 800;
 
@@ -27,6 +27,7 @@ export type InventoryFolderEntry = {
   quantity: number;
   priceUsd: number | null;
   imageUrl: string;
+  imageFallbackUrl?: string;
   updatedAt: string;
 };
 
@@ -4586,17 +4587,28 @@ async function assertInventoryFolder(db: PGlite, inventoryItemId: string, actor:
 export async function getInventoryFolderContents(db: PGlite, inventoryItemId: string, actor: AuthenticatedUser): Promise<InventoryFolderEntry[]> {
   await assertInventoryFolder(db, inventoryItemId, actor);
   const result = await db.query<Record<string, unknown>>(`
-    select fe.*, pce.loose_price_usd, pce.image_url, pce.imported_at
+    select fe.*, pce.loose_price_usd, pce.language_group, pce.imported_at,
+      coalesce(nullif(pic.public_url, ''), nullif(cie.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as image_url,
+      coalesce(nullif(cie.image_url, ''), nullif(pic.source_image_url, ''), nullif(pce.image_url, '')) as fallback_image_url
     from inventory_folder_entries fe
     left join pricecharting_cache_entries pce on pce.pricecharting_id = fe.pricecharting_id
+    left join pricecharting_image_cache pic on pic.pricecharting_id = fe.pricecharting_id
+    left join card_index_entries cie on cie.pricecharting_id = fe.pricecharting_id
     where fe.inventory_item_id = $1 and fe.business_id = $2
-    order by fe.expansion, length(fe.card_number), fe.card_number, fe.finish, fe.name, fe.id
+    order by case when fe.entry_key like '151:%' then '' else fe.expansion end,
+      (fe.card_number = ''), length(ltrim(split_part(fe.card_number, '/', 1), '0')),
+      ltrim(split_part(fe.card_number, '/', 1), '0'), fe.finish, fe.name, fe.id
   `, [inventoryItemId, actor.businessId]);
-  return result.rows.map((row) => ({
-    id: String(row.id), priceChartingId: String(row.pricecharting_id || ""), name: String(row.name),
-    expansion: String(row.expansion), number: String(row.card_number), finish: String(row.finish), quantity: Number(row.quantity),
-    priceUsd: optionalNumber(row.loose_price_usd) ?? null, imageUrl: String(row.image_url || ""), updatedAt: String(row.imported_at || "")
-  }));
+  return result.rows.map((row) => {
+    const checklistImage = !row.pricecharting_id || row.language_group === "english"
+      ? masterSet151ImageUrl(String(row.entry_key), String(row.card_number), String(row.expansion)) : "";
+    return {
+      id: String(row.id), priceChartingId: String(row.pricecharting_id || ""), name: String(row.name),
+      expansion: String(row.expansion), number: String(row.card_number), finish: String(row.finish), quantity: Number(row.quantity),
+      priceUsd: optionalNumber(row.loose_price_usd) ?? null, imageUrl: String(row.image_url || checklistImage),
+      imageFallbackUrl: String(row.fallback_image_url || checklistImage), updatedAt: String(row.imported_at || "")
+    };
+  });
 }
 
 export async function saveInventoryFolderEntry(db: PGlite, inventoryItemId: string, input: { id?: string; priceChartingId?: string; quantity: number }, actor: AuthenticatedUser) {

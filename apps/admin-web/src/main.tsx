@@ -3753,7 +3753,7 @@ function InventoryView(props: {
           {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + inventoryPageSize)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
         </section>
 
-        {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"}`} role="dialog" aria-label={sideTab === "cart" ? "Carrito" : "Detalles del item"}>
+        {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"} ${sideTab === "contents" ? "folder-drawer" : ""}`} role="dialog" aria-label={sideTab === "cart" ? "Carrito" : "Detalles del item"}>
           <button className="secondary-action drawer-close" onClick={() => setSideTab(null)}><Icon name="close" />Cerrar</button>
           <div className="side-tabs" role="tablist" aria-label="Panel de inventario">
             <button className={sideTab === "detail" ? "active" : ""} onClick={() => setSideTab("detail")}>Detalle</button>
@@ -3898,7 +3898,7 @@ function InventoryView(props: {
 
 type FolderEntry = {
   id: string; priceChartingId: string; name: string; expansion: string; number: string; finish: string;
-  quantity: number; priceUsd: number | null; imageUrl: string; updatedAt: string;
+  quantity: number; priceUsd: number | null; imageUrl: string; imageFallbackUrl?: string; updatedAt: string;
 };
 
 function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; blueRate: BlueExchangeRate; onSaved: (item: StockRow) => void }) {
@@ -3910,7 +3910,12 @@ function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; 
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
-  const [limit, setLimit] = useState(40);
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [contentQuery, setContentQuery] = useState("");
+  const [finishFilter, setFinishFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [adding, setAdding] = useState(false);
+  const addSearchRef = useRef<HTMLInputElement>(null);
   const savedRef = useRef(onSaved);
   savedRef.current = onSaved;
   const editable = item.quantityOnHand === 1 && item.quantityReserved === 0 && item.quantityAssigned === 0;
@@ -3941,52 +3946,88 @@ function InventoryFolderContents({ item, blueRate, onSaved }: { item: StockRow; 
     }, 180);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query]);
+  useEffect(() => {
+    if (resolvingId) addSearchRef.current?.focus();
+  }, [resolvingId]);
   async function change(suffix: string, method: "POST" | "PUT" | "DELETE", body?: unknown) {
     if (busy || !editable) return;
     setBusy(suffix || "add");
     setError("");
     try {
       accept(await api<{ entries: FolderEntry[]; item: StockRow }>(path + suffix, { method, body }));
-      if (method !== "DELETE") { setResolvingId(""); setQuery(""); setResults([]); }
+      if (method !== "DELETE") { setResolvingId(""); setQuery(""); setResults([]); setAdding(false); }
     } catch (err) { setError(errorMessage(err)); }
     finally { setBusy(""); }
   }
   const totalUsd = entries.reduce((sum, entry) => sum + (entry.priceUsd ?? 0) * entry.quantity, 0);
   const missing = entries.reduce((sum, entry) => sum + (entry.priceUsd === null ? entry.quantity : 0), 0);
   const totalCards = entries.reduce((sum, entry) => sum + entry.quantity, 0);
+  const searchTokens = contentQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const filteredEntries = entries.filter((entry) => {
+    const identity = `${entry.name} ${entry.expansion} ${entry.number}`.toLowerCase();
+    return searchTokens.every((token) => identity.includes(token))
+      && (!finishFilter || entry.finish === finishFilter)
+      && (!statusFilter || (statusFilter === "unlinked" ? !entry.priceChartingId : entry.priceUsd === null));
+  });
+  const finishes = [...new Set(entries.map((entry) => entry.finish))].sort();
   return <section className="folder-contents">
     <h3>{item.product.name}</h3>
     <div className="folder-value"><strong>{formatUsd(totalUsd)}</strong><span>{formatArs(toBlueArs(totalUsd, blueRate))}</span><small>{totalCards} cartas{missing ? ` · ${missing} sin precio · valor parcial` : ""}</small>{item.folder?.updatedAt ? <small>Precios: {formatDate(item.folder.updatedAt)}</small> : null}</div>
     {!editable ? <p className="muted">Contenido bloqueado: carpeta reservada, asignada o vendida.</p> : null}
     {error ? <p className="field-error" role="alert">{error}</p> : null}
     <details className="folder-template"><summary>Plantilla de expansion</summary><button type="button" className="secondary-action" disabled={Boolean(busy) || !editable || loading} onClick={() => void change("/template-151", "POST")}><Icon name="plus" />{busy === "/template-151" ? "Agregando..." : "Master set 151 (EN)"}</button></details>
+    <details className="folder-add" open={adding} onToggle={(event) => setAdding(event.currentTarget.open)}>
+    <summary>Agregar carta o promo</summary>
     <div className="folder-search">
       {resolvingId ? <div className="folder-resolving"><span>Vincular: {entries.find((entry) => entry.id === resolvingId)?.name}</span><button className="mini-icon-action" title="Cancelar vinculacion" aria-label="Cancelar vinculacion" onClick={() => { setResolvingId(""); setQuery(""); }}><Icon name="close" /></button></div> : null}
-      <label>{resolvingId ? "Referencia PriceCharting" : "Agregar carta o promo"}<input value={query} disabled={!editable || Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, expansion o numero" /></label>
+      <label>{resolvingId ? "Referencia PriceCharting" : "Agregar carta o promo"}<input ref={addSearchRef} value={query} disabled={!editable || Boolean(busy)} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, expansion o numero" /></label>
       {searching ? <small>Buscando...</small> : query.trim().length >= 2 && !results.length ? <small>Sin coincidencias PriceCharting</small> : null}
       <div className="folder-search-results">{results.map((entry) => <button type="button" className="folder-search-result" disabled={Boolean(busy) || !editable} key={entry.priceChartingId} onClick={() => void change(resolvingId ? `/${resolvingId}` : "", resolvingId ? "PUT" : "POST", { priceChartingId: entry.priceChartingId, quantity: resolvingId ? entries.find((row) => row.id === resolvingId)?.quantity || 1 : 1 })}>
-        <CardArt src={entry.imageUrl} alt={entry.productName} label="" className="folder-card-art" fallbackClassName="folder-card-art image-placeholder" />
+        <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={entry.productName} label="" className="folder-card-art" fallbackClassName="folder-card-art image-placeholder" />
         <span><strong>{entry.productName}</strong><small>{entry.expansionName} #{entry.cardNumber} · {entry.finish || "normal"}</small><small>{entry.loosePriceUsd === null ? "Sin precio" : formatUsd(entry.loosePriceUsd)}</small></span><Icon name="plus" />
       </button>)}</div>
     </div>
-    {loading ? <p className="muted">Cargando contenido...</p> : !entries.length ? <p className="muted">Carpeta vacia</p> : <div className="folder-entry-list">{entries.slice(0, limit).map((entry) => <InventoryFolderEntryRow key={entry.id} entry={entry} disabled={Boolean(busy) || !editable} onSave={(quantity) => void change(`/${entry.id}`, "PUT", { quantity })} onRemove={() => void change(`/${entry.id}`, "DELETE")} onLink={() => { setResolvingId(entry.id); setQuery(`${entry.name} ${entry.number}`); }} />)}</div>}
-    {entries.length > limit ? <button type="button" className="secondary-action" onClick={() => setLimit((current) => current + 40)}>Ver mas ({Math.min(limit, entries.length)} de {entries.length})</button> : null}
+    </details>
+    <div className="folder-content-toolbar">
+      <input type="search" aria-label="Buscar en la carpeta" placeholder="Buscar nombre o numero" value={contentQuery} onChange={(event) => setContentQuery(event.target.value)} />
+      <div className="folder-view-switch" role="group" aria-label="Vista del contenido">
+        <button className="mini-icon-action" title="Grilla" aria-label="Grilla" aria-pressed={view === "grid"} onClick={() => setView("grid")}><Icon name="image" /></button>
+        <button className="mini-icon-action" title="Lista" aria-label="Lista" aria-pressed={view === "list"} onClick={() => setView("list")}><Icon name="orders" /></button>
+      </div>
+      <div className="folder-content-filters">
+        <select aria-label="Variante del contenido" value={finishFilter} onChange={(event) => setFinishFilter(event.target.value)}><option value="">Variantes</option>{finishes.map((finish) => <option value={finish} key={finish}>{finishLabel(finish)}</option>)}</select>
+        <select aria-label="Estado de referencia" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Referencias</option><option value="unlinked">Sin vincular</option><option value="unpriced">Sin precio</option></select>
+      </div>
+      <small className="folder-content-count">{filteredEntries.length} de {entries.length} entradas</small>
+    </div>
+    {loading ? <p className="muted">Cargando contenido...</p> : !entries.length ? <p className="muted">Carpeta vacia</p> : !filteredEntries.length ? <p className="muted">Sin coincidencias en la carpeta</p> : <div className={view === "grid" ? "folder-entry-grid" : "folder-entry-list"}>{filteredEntries.map((entry) => <InventoryFolderEntryRow key={entry.id} view={view} entry={entry} disabled={Boolean(busy) || !editable} onSave={(quantity) => void change(`/${entry.id}`, "PUT", { quantity })} onRemove={() => void change(`/${entry.id}`, "DELETE")} onLink={() => { setAdding(true); setResolvingId(entry.id); setQuery(`${entry.name} ${entry.number}`); }} />)}</div>}
   </section>;
 }
 
-function InventoryFolderEntryRow({ entry, disabled, onSave, onRemove, onLink }: { entry: FolderEntry; disabled: boolean; onSave: (quantity: number) => void; onRemove: () => void; onLink: () => void }) {
+function InventoryFolderEntryRow({ entry, view, disabled, onSave, onRemove, onLink }: { entry: FolderEntry; view: "grid" | "list"; disabled: boolean; onSave: (quantity: number) => void; onRemove: () => void; onLink: () => void }) {
   const [quantity, setQuantity] = useState(String(entry.quantity));
+  const [editing, setEditing] = useState(false);
   useEffect(() => { setQuantity(String(entry.quantity)); }, [entry.quantity]);
   const valid = Number.isInteger(Number(quantity)) && Number(quantity) > 0;
-  return <div className="folder-entry">
-    <div className="folder-entry-copy"><strong>{entry.name}</strong><small>{entry.expansion}{entry.number ? ` #${entry.number}` : ""} · {finishLabel(entry.finish)}</small><span>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}{!entry.priceChartingId ? " · Sin vincular" : ""}</span></div>
-    <div className="folder-entry-actions">
+  return <article className={`folder-entry ${view === "grid" ? "folder-entry-tile" : "folder-entry-row"}`}>
+    <div className="folder-entry-art">
+      <CardArt src={entry.imageUrl} fallbackSrc={entry.imageFallbackUrl} alt={`${entry.name}${entry.number ? ` #${entry.number}` : ""} - ${finishLabel(entry.finish)}`} label="" className="folder-entry-image" fallbackClassName="folder-entry-image folder-image-missing" />
+      <span className="folder-entry-quantity">x{entry.quantity}</span>
+    </div>
+    <div className="folder-entry-copy">
+      <div className="folder-entry-heading"><strong>{entry.name}{entry.number ? ` #${entry.number}` : ""}</strong>{view === "grid" ? <button className="mini-icon-action" title="Editar carta" aria-label={`Editar ${entry.name} ${entry.finish}`} aria-expanded={editing} disabled={disabled} onClick={() => setEditing((current) => !current)}><Icon name="edit" /></button> : null}</div>
+      <small>{entry.expansion}</small>
+      <span className={`folder-entry-finish ${entry.finish.includes("reverse") ? "is-reverse" : ""}`}>{finishLabel(entry.finish)}</span>
+      <span>{entry.priceUsd === null ? "Sin precio" : formatUsd(entry.priceUsd * entry.quantity)}</span>
+      {!entry.priceChartingId ? <small className="folder-entry-pending">Sin vincular</small> : null}
+    </div>
+    {view === "list" || editing ? <div className="folder-entry-actions">
       <input type="number" min={1} step={1} aria-label={`Cantidad de ${entry.name} ${entry.finish}`} value={quantity} disabled={disabled} onChange={(event) => setQuantity(event.target.value)} />
       <button className="mini-icon-action" disabled={disabled || !valid || Number(quantity) === entry.quantity} title="Guardar cantidad" aria-label="Guardar cantidad" onClick={() => onSave(Number(quantity))}><Icon name="check" /></button>
       <button className="mini-icon-action" disabled={disabled} title="Vincular referencia PriceCharting" aria-label={`Vincular ${entry.name}`} onClick={onLink}><Icon name="search" /></button>
       <button className="mini-icon-action" disabled={disabled} title="Quitar del contenido" aria-label={`Quitar ${entry.name}`} onClick={onRemove}><Icon name="close" /></button>
-    </div>
-  </div>;
+    </div> : null}
+  </article>;
 }
 
 function CartPanel(props: {

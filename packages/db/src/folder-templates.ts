@@ -221,3 +221,13 @@ export function masterSet151Contents() {
     entryKey: `151:energy:${type.toLowerCase()}`, name: `${type} Energy`, expansion, number: "", finish: "cosmos holo"
   }))];
 }
+
+export function masterSet151ImageUrl(entryKey: string, number: string, expansion: string) {
+  const match = /^151:(\d+):(base|reverse)$/.exec(entryKey);
+  const set = expansion.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!match || !["scarletviolet151", "pokemonscarletviolet151", "pokemon151", "151"].includes(set)) return "";
+  const cardNumber = Number(match[1]);
+  if (cardNumber < 1 || cardNumber > 207 || Number(number.split("/")[0]) !== cardNumber) return "";
+  // The checklist artwork is shared by normal/reverse; the finish remains a separate label.
+  return `https://images.pokemontcg.io/sv3pt5/${cardNumber}.png`;
+}

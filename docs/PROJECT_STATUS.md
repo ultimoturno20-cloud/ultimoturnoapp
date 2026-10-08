@@ -13,6 +13,15 @@ Actualizado: 2026-10-08
 - `Detalles > Contenido` permite buscar cartas/promos en PriceCharting, agregar,
   editar cantidades, vincular referencias pendientes y quitar entradas.
   El contenido no crea ni consume unidades de singles.
+- El contenido abre como grilla de imagenes, con nombre, numero, variante,
+  cantidad y valor. Incluye vista de lista y filtros de nombre/numero, variante,
+  referencias sin vincular y precios pendientes. Todas las entradas son visibles
+  sin paginacion, con carga diferida de imagenes.
+- Las imagenes priorizan Supabase y el indice de cartas. La plantilla 151 usa
+  el arte del checklist ingles para las 360 entradas numeradas, incluso si falta
+  precio; normal y reverse se diferencian por etiqueta, no por el arte compartido.
+  Energias y promos sin imagen de catalogo muestran `Sin imagen`, sin inventar
+  referencias ni precios. El panel de contenido se adapta a escritorio y movil.
 - La valuacion suma los ultimos precios sin graduar del cache PriceCharting;
   se convierte con el dolar vigente y suma una sola vez al valor total.
   Precios faltantes quedan visibles como valuacion parcial, con fecha de referencia.

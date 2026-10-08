@@ -11,6 +11,14 @@ de venta ni crear singles. La migracion aditiva es `0056_inventory_folders.sql`.
 No convertir ni recrear datos existentes para probar; usar bases temporales.
 Verificar siempre el nuevo commit mediante `git log -1` y `/api/public-status`.
 
+Contenido ahora abre como grilla de cartas, con vista de lista, busqueda por
+nombre/numero y filtros de variante/referencia/precio. Usa imagenes del cache
+Supabase/indice y arte de checklist para las cartas numeradas de la plantilla
+151. El arte normal/reverse es compartido y la variante se muestra por separado;
+las ocho energias y promos sin imagen permanecen explicitamente sin imagen.
+No confundir referencias sin vincular con cartas fisicamente faltantes.
+Verificado en localhost con imagenes cargadas y viewports 1440, 390 y 320 px.
+
 ## Aviso vigente - 2026-10-07
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y

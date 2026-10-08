@@ -9,7 +9,7 @@ import {
   removeInventoryFolderEntry, replacePriceChartingCache, revalueInventoryFolders,
   saveInventoryFolderEntry, upsertInventoryItem
 } from "./index.js";
-import { masterSet151Contents } from "./folder-templates.js";
+import { masterSet151Contents, masterSet151ImageUrl } from "./folder-templates.js";
 
 const folderInput = {
   itemKind: "folder" as const, name: "Mi carpeta", expansion: "Coleccion", language: "EN",
@@ -57,6 +57,18 @@ it("keeps folders unique and values only their contents at the latest prices", a
   assert.equal(stock.summary.totalValueArs, 50000);
   assert.equal(stock.summary.collectionValueArs, 50000);
   const entries = await getInventoryFolderContents(db, first.id, actor);
+  await db.query(`insert into pricecharting_image_cache (pricecharting_id, public_url, source_image_url)
+    values ('folder-normal', 'https://storage.example.test/pikachu.png', 'https://source.example.test/pikachu.png')`);
+  await db.query(`insert into card_index_entries (id, pricecharting_id, canonical_name, normalized_name, image_url)
+    values ($1, 'folder-normal', 'Pikachu', 'pikachu', 'https://index.example.test/pikachu.png')`, [crypto.randomUUID()]);
+  let imageEntries = await getInventoryFolderContents(db, first.id, actor);
+  assert.equal(imageEntries.length, entries.length);
+  assert.equal(imageEntries.find((entry) => entry.priceChartingId === "folder-normal")?.imageUrl, "https://storage.example.test/pikachu.png");
+  assert.equal(imageEntries.find((entry) => entry.priceChartingId === "folder-normal")?.imageFallbackUrl, "https://index.example.test/pikachu.png");
+  assert.equal(imageEntries.find((entry) => entry.priceChartingId === "folder-promo")?.imageUrl, "");
+  await db.query("update pricecharting_image_cache set public_url = '' where pricecharting_id = 'folder-normal'");
+  imageEntries = await getInventoryFolderContents(db, first.id, actor);
+  assert.equal(imageEntries.find((entry) => entry.priceChartingId === "folder-normal")?.imageUrl, "https://index.example.test/pikachu.png");
   await assert.rejects(removeInventoryFolderEntry(db, second.id, entries[0].id, actor), /No se encontro/);
   await assert.rejects(getInventoryFolderContents(db, first.id, { ...actor, businessId: "00000000-0000-0000-0000-000000000001" }), /No se encontro/);
   await assert.rejects(getInventoryFolderContents(db, first.id, { ...actor, id: "00000000-0000-0000-0000-000000000002", roles: ["stock_owner"] }), /otro propietario/);
@@ -90,6 +102,11 @@ it("builds the 151 checklist idempotently without special promos or sealed produ
   assert.equal(entries.length, 368);
   assert.equal(entries.filter((entry) => entry.priceChartingId).length, 4);
   assert.equal(entries.some((entry) => entry.priceChartingId === "151-stamp"), false);
+  assert.equal(entries.filter((entry) => entry.imageUrl).length, 360);
+  assert.equal(entries.find((entry) => entry.number === "2")?.imageUrl, "https://images.pokemontcg.io/sv3pt5/2.png");
+  assert.equal(entries.find((entry) => entry.number === "2")?.priceUsd, null);
+  assert.equal(entries.find((entry) => entry.priceChartingId === "151-reverse")?.imageUrl, "https://images.pokemontcg.io/sv3pt5/1.png");
+  assert.equal(entries.find((entry) => entry.priceChartingId === "151-energy")?.imageUrl, "");
   entries = await addInventoryFolder151Template(db, folder.id, actor);
   assert.equal(entries.length, 368);
   const missing = entries.find((entry) => !entry.priceChartingId)!;
@@ -100,6 +117,15 @@ it("builds the 151 checklist idempotently without special promos or sealed produ
   assert.equal(stock.summary.totalUnits, 1);
   assert.equal(stock.items[0].folder?.valueUsd, 106);
   assert.equal(stock.items[0].folder?.missingPrices, 365);
+});
+
+it("limits checklist artwork to the exact numbered 151 template entry", () => {
+  assert.equal(masterSet151ImageUrl("151:1:reverse", "001/165", "Pokemon Scarlet & Violet 151"), "https://images.pokemontcg.io/sv3pt5/1.png");
+  assert.equal(masterSet151ImageUrl("151:1:base", "2", "Scarlet & Violet 151"), "");
+  assert.equal(masterSet151ImageUrl("151:1:base", "1", "Pokemon Promo"), "");
+  assert.equal(masterSet151ImageUrl("manual:1", "1", "Scarlet & Violet 151"), "");
+  assert.equal(masterSet151ImageUrl("151:energy:grass", "", "Scarlet & Violet 151"), "");
+  assert.equal(masterSet151ImageUrl("151:208:base", "208", "Scarlet & Violet 151"), "");
 });
 
 it("sells a folder as one unit and locks its contents while reserved or sold", async (t) => {

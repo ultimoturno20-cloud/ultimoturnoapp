@@ -13,6 +13,10 @@ Actualizado: 2026-10-08
   mantener `No venta` y abrir `Detalles > Contenido`.
 - Aplicar la plantilla 151 inglesa, revisar las referencias sin vincular
   (incluidas energias) y agregar solamente las promos que contiene esa carpeta.
+- Revisar la grilla en `Detalles > Contenido`, comparando numero y variante con
+  la carpeta fisica. Los filtros `Sin vincular` y `Sin precio` indican datos de
+  catalogo pendientes, no cartas fisicamente faltantes. Normal y reverse usan
+  el mismo arte con etiquetas distintas. Vincular las energias/promos sin imagen.
 - Cargar las otras carpetas con nombres y contenidos independientes.
 - Comparar una muestra de precios con PriceCharting y comprobar que el valor
   cambie despues de la proxima sincronizacion del catalogo. Las pruebas del
