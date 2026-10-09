@@ -16,6 +16,8 @@ Bootstrap restaura una vez por scope antes de habilitar persistencia; cambios
 de filtros no borran vistas. Save captura busqueda pendiente; salir del sector
 aplica el borrador pendiente antes de desmontar. QuickOrder/calidad usan defaults
 completos para no heredar propietario/categoria/tipo/idioma ocultos.
+Aplicar una vista o Restablecer incrementa searchResetKey: invalida el borrador
+de busqueda aun cuando el query aplicado ya estaba vacio, sin esperar debounce.
 
 UI: presets En stock, Disponibles, Coleccion / no venta (not_for_sale en stock),
 Reservadas; guardar/abrir/actualizar/eliminar vistas, confirmacion en dialogo

@@ -3327,18 +3327,20 @@ function StockQualityPanel({ quality, onIssue }: { quality: StockQualitySummary;
   );
 }
 
-function InventorySearchField({ value, onChange, onDraftChange }: { value: string; onChange: (value: string) => void; onDraftChange: (value: string) => void }) {
+function InventorySearchField({ value, resetKey, onChange, onDraftChange }: { value: string; resetKey: number; onChange: (value: string) => void; onDraftChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   const changeRef = useRef(onChange);
   const appliedValueRef = useRef(value);
   const draftValueRef = useRef(value);
+  const appliedResetRef = useRef(resetKey);
   changeRef.current = onChange;
   useEffect(() => {
-    if (value === appliedValueRef.current) return;
+    if (value === appliedValueRef.current && resetKey === appliedResetRef.current) return;
+    appliedResetRef.current = resetKey;
     appliedValueRef.current = value;
     draftValueRef.current = value;
     setDraft(value);
-  }, [value]);
+  }, [value, resetKey]);
   useEffect(() => {
     if (draft === appliedValueRef.current) return;
     const timer = window.setTimeout(() => {
@@ -3509,6 +3511,7 @@ function InventoryView(props: {
 }) {
   const { items, allItems, selected, selectedMovements, options, filters } = props;
   const searchDraft = useRef(filters.query);
+  const [searchResetKey, setSearchResetKey] = useState(0);
   useEffect(() => { searchDraft.current = filters.query; }, [filters.query]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"detail" | "contents" | "cart" | null>(null);
@@ -3677,14 +3680,14 @@ function InventoryView(props: {
         {inventoryTagSuggestions.map((tag) => <option value={tag} key={tag} />)}
       </datalist>
       <WorkspaceToolbar className="inventory-toolbar" label="Controles de inventario"
-        search={<InventorySearchField value={filters.query} onDraftChange={(query) => { searchDraft.current = query; }} onChange={(query) => props.onFilterChange({ query })} />}
+        search={<InventorySearchField value={filters.query} resetKey={searchResetKey} onDraftChange={(query) => { searchDraft.current = query; }} onChange={(query) => props.onFilterChange({ query })} />}
         actions={<>
           <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
           <label className="sort-control">Ordenar<select aria-label="Ordenar inventario" value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
           <button className={`secondary-action inventory-cart-button ${props.cart.length ? "has-items" : ""}`} type="button" aria-label={`Abrir carrito, ${props.cart.length} carta(s)`} title="Abrir carrito" onClick={() => setSideTab("cart")}><Icon name="cart" /><span className="inventory-cart-count">{props.cart.length}</span></button>
           <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
         </>}>
-        <InventoryViewsControl key={props.preferenceScope} scope={props.preferenceScope} filters={filters} density={props.density} onBeforeSave={() => props.onFilterChange({ query: searchDraft.current })} onApply={(view) => { props.onFilterChange(view.filters); props.onDensityChange(view.density); }} onDensityChange={props.onDensityChange} />
+        <InventoryViewsControl key={props.preferenceScope} scope={props.preferenceScope} filters={filters} density={props.density} onBeforeSave={() => props.onFilterChange({ query: searchDraft.current })} onApply={(view) => { searchDraft.current = view.filters.query; setSearchResetKey((key) => key + 1); props.onFilterChange(view.filters); props.onDensityChange(view.density); }} onDensityChange={props.onDensityChange} />
         <div className="inventory-quick-filter-bar">
           <div className="availability-filter-row" aria-label="Disponibilidad">
             {([
@@ -3708,7 +3711,7 @@ function InventoryView(props: {
           </select></label>
           <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{advancedFilterCount ? ` (${advancedFilterCount})` : ""}</button>
           <button className="icon-action" type="button" disabled={!items.length} title="Exportar vista" aria-label="Exportar vista" onClick={() => exportInventoryCsv(items)}><Icon name="download" /></button>
-          <button className="icon-action" type="button" title="Restablecer filtros" aria-label="Restablecer filtros" onClick={props.onClearFilters}><Icon name="refresh" /></button>
+          <button className="icon-action" type="button" title="Restablecer filtros" aria-label="Restablecer filtros" onClick={() => { searchDraft.current = ""; setSearchResetKey((key) => key + 1); props.onClearFilters(); }}><Icon name="refresh" /></button>
         </div>
         {activeFilters.length ? <div className="inventory-active-filters" aria-label="Filtros activos">{activeFilters.map((key) => <button type="button" key={key} title={`Quitar filtro ${filterLabels[key]}`} aria-label={`Quitar filtro ${filterLabels[key]}`} onClick={() => props.onFilterChange({ [key]: defaultInventoryFilters[key] })}><span>{filterLabels[key]}: {activeFilterText(key)}</span><Icon name="close" /></button>)}</div> : null}
         {filtersOpen ? <div id="inventory-filter-options" className="inventory-filter-options">
