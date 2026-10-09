@@ -42,6 +42,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Torneos tiene su propio documento y no pertenece al shell offline de Stock.
+  if (url.pathname === "/torneos" || url.pathname.startsWith("/torneos/") || url.pathname === "/torneos.html") return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/pricecharting-images/")) return;
 
   if (request.mode === "navigate") {

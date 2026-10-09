@@ -7,17 +7,23 @@ Actualizado: 2026-10-09
 
 ## Resumen vigente
 
-- Se incorpora `Torneos` en `/torneos`, con acceso de administrador y datos por
-  negocio: inscripción, Swiss/byes, resultados, bajas, posiciones estilo TOM,
-  top cut sembrado y exportación/importación JSON, CSV y tabla imprimible.
-- Persistencia compartida en PostgreSQL/Supabase mediante migración aditiva
-  `0059_tournaments.sql`; no altera stock, claims, caja ni ventas. Las acciones
-  validan versión para impedir sobrescrituras entre PCs; un conflicto o respuesta
-  no confirmada pausa edición hasta recargar. No hay reenvíos automáticos offline.
+- `UltimoTurno Torneos` tiene espacio independiente en `/torneos`: entrada,
+  registro público y cuenta propia, sin administrador ni sesión de Stock.
+  Ya no aparece en la navegación del panel. Conserva la identidad visual de la marca.
+- Migración aditiva `0060_tournament_space.sql`: cuentas, sesiones, límites de
+  intentos y torneos privados por cuenta. Contraseñas con scrypt, tokens aleatorios
+  guardados como hash y vencimiento de 30 días. No crea usuarios/roles de Stock.
+- Swiss/byes, resultados, bajas, posiciones estilo TOM, top cut y exportaciones.
+  Guardado compartido entre PCs con la misma cuenta y control de versión; conflictos
+  y respuestas no confirmadas pausan edición hasta recargar.
+- La integración anterior (`0059_tournaments.sql`) conserva sus datos y API
+  protegida. No se asignan registros antiguos a cuentas públicas automáticamente;
+  las copias JSON permiten importar eventos en el nuevo espacio.
 - Alcance: una categoría, hasta 128 jugadores, top cuts simétricos. No equivale
   completamente a TOM ni contempla categorías etarias, ingreso tardío o sanciones.
-- QA: motor/DB/exportaciones y recorrido Chrome con datos simulados, campeón,
-  segunda sesión y conflicto HTTP 409; sin overflow en 1440/768/390/320 px.
+- QA: cuentas y sesiones independientes, privacidad, contraseñas, límites,
+  motor/DB/exportaciones y Chrome con base temporal: registro, segunda PC,
+  restauración, logout, campeón y conflicto 409; anchos 1440/768/390/320 px.
   Detalles operativos en `docs/new-platform/TOURNAMENTS.md`.
 
 - Correccion de layout de Inventario: Stock abre un dialogo independiente,

@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
+  registerTournamentAccount, loginTournamentAccount, getTournamentAccount, logoutTournamentAccount,
+  listSpaceTournaments, getSpaceTournament, createSpaceTournament, commandSpaceTournament,
   listTournaments, getTournament, createTournament, commandTournament,
   getOrderBoards,
   changeOrderBoard,
@@ -3966,6 +3968,43 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       request.url = normalizeDispatchTarget(url);
 
       url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+    }
+
+    if (url.pathname.startsWith("/tournament-space/")) {
+      response.setHeader("Cache-Control", "private, no-store");
+      const spaceDb = await dbPromise;
+      if (request.method === "POST" && ["/tournament-space/register", "/tournament-space/login"].includes(url.pathname)) {
+        const body = await readJson<{ displayName: string; email: string; password: string }>(request);
+        const result = url.pathname.endsWith("/register")
+          ? await registerTournamentAccount(spaceDb, body, clientIp(request))
+          : await loginTournamentAccount(spaceDb, body, clientIp(request));
+        sendJson(response, url.pathname.endsWith("/register") ? 201 : 200, result);
+        return;
+      }
+      const account = await getTournamentAccount(spaceDb, bearerToken(request));
+      if (!account) throw Object.assign(new Error("Iniciá sesión en tu espacio de Torneos."), { statusCode: 401 });
+      if (url.pathname === "/tournament-space/me" && request.method === "GET") {
+        sendJson(response, 200, { account }); return;
+      }
+      if (url.pathname === "/tournament-space/logout" && request.method === "POST") {
+        await logoutTournamentAccount(spaceDb, bearerToken(request)); sendJson(response, 200, { ok: true }); return;
+      }
+      if (url.pathname === "/tournament-space/tournaments" && request.method === "GET") {
+        sendJson(response, 200, { tournaments: await listSpaceTournaments(spaceDb, account) }); return;
+      }
+      if (url.pathname === "/tournament-space/tournaments" && request.method === "POST") {
+        const body = await readJson<{ id: string; name?: string; swissCount?: number; cutSize?: number; imported?: unknown }>(request);
+        sendJson(response, 201, { tournament: await createSpaceTournament(spaceDb, body, account) }); return;
+      }
+      const match = url.pathname.match(/^\/tournament-space\/tournaments\/([^/]+)$/);
+      if (match && request.method === "GET") {
+        sendJson(response, 200, { tournament: await getSpaceTournament(spaceDb, match[1], account) }); return;
+      }
+      if (match && request.method === "PUT") {
+        const body = await readJson<{ version: number; command: TournamentCommand }>(request);
+        sendJson(response, 200, { tournament: await commandSpaceTournament(spaceDb, match[1], body, account) }); return;
+      }
+      sendJson(response, 404, { ok: false, error: "Ruta de Torneos no encontrada." }); return;
     }
 
     if (url.pathname === "/public-status" && request.method === "GET") {

@@ -1,4 +1,3 @@
-import { TournamentsView } from "./tournaments.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { stockItemValues } from "./stock-value.js";
@@ -19,7 +18,7 @@ type DeferredInstallPrompt = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin" | "tournaments";
+type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerPortalTab = "sell" | "orders" | "stock" | "global" | "sales";
 const viewPaths: Record<View, string> = {
   dashboard: "/inicio",
@@ -36,7 +35,6 @@ const viewPaths: Record<View, string> = {
   import: "/importar",
   "mobile-intake": "/carga-movil",
   resellers: "/revendedores",
-  tournaments: "/torneos",
   admin: "/admin"
 };
 const resellerPortalPaths: Record<ResellerPortalTab, string> = {
@@ -2769,7 +2767,6 @@ function App() {
             <NavButton href={viewPaths.resellers} icon="sales" active={view === "resellers"} onClick={() => setView("resellers")}>Revendedores</NavButton>
             <NavButton href={viewPaths.catalog} icon="palette" active={view === "catalog"} onClick={() => setView("catalog")}>Calidad</NavButton>
             <NavButton href={viewPaths.movements} icon="activity" active={view === "movements"} onClick={() => setView("movements")}>Movimientos</NavButton>
-            <NavButton href={viewPaths.tournaments} icon="activity" active={view === "tournaments"} onClick={() => setView("tournaments")}>Torneos</NavButton>
             <NavButton href={viewPaths.admin} icon="settings" active={view === "admin"} onClick={() => setView("admin")}>Admin</NavButton>
           </div>
         </details></> : null}
@@ -2786,7 +2783,7 @@ function App() {
         </section>
       ) : null}
 
-      {!restrictedStockOwner && view !== "stock-intake" && view !== "tournaments" ? <OperationsDock
+      {!restrictedStockOwner && view !== "stock-intake" ? <OperationsDock
         collectedTodayArs={collectedTodayArs}
         pendingDebtArs={pendingDebtArs}
         overdueDebtCount={overdueDebtCount}
@@ -2987,7 +2984,6 @@ function App() {
           onExit={() => setView("dashboard")}
         />
       ) : null}
-      {view === "tournaments" ? <TournamentsView request={api} /> : null}
       {view === "resellers" ? <ResellersAdminView stock={stock.items} assignmentOnly={restrictedStockOwner} blueRate={blueRate} /> : null}
       {view === "admin" ? (
         <AdminView

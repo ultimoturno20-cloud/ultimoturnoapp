@@ -20,6 +20,7 @@
   ],
   "rewrites": [
     { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
+    { "source": "/api/tournament-space/:path*", "destination": "/api/dispatch?path=/tournament-space/:path*" },
     { "source": "/api/tournaments", "destination": "/api/dispatch?path=/tournaments" },
     { "source": "/api/tournaments/:path*", "destination": "/api/dispatch?path=/tournaments/:path*" },
     { "source": "/api/auth/:path*", "destination": "/api/dispatch?path=/auth/:path*" },
@@ -40,7 +41,8 @@
     { "source": "/api/exchange-rate/:path*", "destination": "/api/dispatch?path=/exchange-rate/:path*" },
     { "source": "/api/examples/:path*", "destination": "/api/dispatch?path=/examples/:path*" },
     { "source": "/api/imports/:path*", "destination": "/api/dispatch?path=/imports/:path*" },
-    { "source": "/torneos", "destination": "/index.html" },
+    { "source": "/torneos", "destination": "/torneos.html" },
+    { "source": "/torneos/", "destination": "/torneos.html" },
     { "source": "/inicio", "destination": "/index.html" },
     { "source": "/inventario", "destination": "/index.html" },
     { "source": "/inventario/:path*", "destination": "/index.html" },

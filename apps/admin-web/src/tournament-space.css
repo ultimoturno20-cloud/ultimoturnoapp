@@ -1,0 +1,26 @@
+.tournament-space { min-height: 100vh; }
+.space-header { gap: 18px; flex-wrap: wrap; }
+.space-header h1 { font-size: 28px; }
+.space-header h1 span { color: var(--accent); }
+.space-header .brand-lockup { min-width: 0; }
+.space-account { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.space-account > span { color: var(--muted); overflow-wrap: anywhere; }
+.space-welcome { max-width: 1120px; margin: 70px auto; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,400px); gap: 70px; align-items: center; }
+.space-intro h2 { font-size: clamp(34px,5vw,62px); line-height: 1.05; margin: 14px 0 22px; }
+.space-intro > p:last-of-type { font-size: 17px; color: var(--muted); line-height: 1.6; max-width: 440px; }
+.space-features { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
+.space-features span { background: var(--accent-soft); border: 1px solid #68202e; border-radius: 6px; color: var(--text); font-size: 12px; padding: 8px 12px; }
+.space-login { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; }
+.space-login h2 { font-size: 24px; margin-bottom: 10px; }
+.space-login > p { color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 22px; }
+.space-login fieldset { display: grid; gap: 16px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.space-login label { display: grid; gap: 8px; font-size: 12px; color: var(--muted); }
+.space-login input { width: 100%; min-width: 0; min-height: 44px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 10px 12px; }
+.space-login small { color: var(--muted); }
+.space-switch { background: transparent; border: 0; color: var(--muted); padding: 8px; font-size: 13px; }
+.space-switch:hover { color: var(--text); }
+.space-loading { max-width: 700px; margin: 70px auto; text-align: center; color: var(--muted); }
+.space-error { max-width: 1120px; }
+.space-footer { max-width: 1440px; margin: 36px auto 0; padding: 20px 0; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border-soft); }
+@media(max-width:760px) { .space-welcome { grid-template-columns: minmax(0,1fr); gap: 28px; margin: 30px auto; max-width: 500px; } .space-login { padding: 20px; } .space-header h1 { font-size: 22px; } .space-account { width: 100%; justify-content: space-between; } }
+@media(max-width:390px) { .space-header .brand-mark { width: 44px; height: 44px; } .space-header h1 { font-size: 20px; } }
