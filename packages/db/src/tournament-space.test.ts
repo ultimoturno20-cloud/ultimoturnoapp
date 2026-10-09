@@ -59,4 +59,11 @@ it('late signup and manual rounds persist, reject invalid replacements and prese
   await assert.rejects(()=>commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'manualSwiss',mode:'replace',matches:[{a:1,b:3,result:'A'},{a:1,b:2,result:'B'}]}},account),/dos mesas/);
   assert.deepEqual(await getSpaceTournament(db,doc.id,account),doc);
   assert.equal(doc.state.players.length,3);assert.equal(doc.state.swiss[0][0].b,3);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'result',phase:'swiss',match:0,result:null}},account);
+  const pending=structuredClone(doc.state.swiss);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'setActive',player:3,active:false}},account);
+  assert.deepEqual(doc.state.swiss,pending);assert.equal(doc.state.players[2].dropRound,1);
+  assert.deepEqual(await getSpaceTournament(db,doc.id,account),doc);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'result',phase:'swiss',match:0,result:'A'}},account);
+  assert.equal(doc.state.swiss[0][0].result,'A');
 });

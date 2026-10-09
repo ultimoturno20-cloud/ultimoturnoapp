@@ -66,9 +66,11 @@ export function applyTournamentCommand(original: TournamentState, cmd: Tournamen
       t.players.push({ id: Math.max(0,...t.players.map(p => p.id))+1, name, playerId, active: true, dropRound: null }); break;
     }
     case 'setActive': {
-      if (t.cut.length || (t.swiss.length && !roundComplete(t.swiss.at(-1)!))) fail('Las bajas se registran entre rondas Swiss.');
+      if (t.cut.length) fail('No se pueden cambiar bajas después de iniciar top cut.');
+      if (cmd.active === true && t.swiss.length && !roundComplete(t.swiss.at(-1)!)) fail('Las reactivaciones se registran entre rondas Swiss.');
       const p = t.players.find(p => p.id === cmd.player);
       if (!p || typeof cmd.active !== 'boolean') fail('Jugador inválido.');
+      if (p.active === cmd.active) break;
       p.active = cmd.active; p.dropRound = cmd.active ? null : t.swiss.length; break;
     }
     case 'result': {
@@ -85,7 +87,8 @@ export function applyTournamentCommand(original: TournamentState, cmd: Tournamen
       if (cmd.mode === 'replace' && !t.swiss.length) fail('No hay una ronda actual para editar.');
       if (cmd.mode === 'append' && (t.swiss.length >= t.swissCount || (t.swiss.length && !roundComplete(t.swiss.at(-1)!)))) fail('Completá la ronda actual antes de crear otra; no superes las rondas configuradas.');
       if (!Array.isArray(cmd.matches) || !cmd.matches.length || cmd.matches.length > 64) fail('Ingresá de 1 a 64 mesas.');
-      const active = new Set(t.players.filter(p=>p.active).map(p=>p.id));
+      const currentPlayers = new Set(cmd.mode==='replace' ? t.swiss.at(-1)!.flatMap(m=>m.b===null?[m.a]:[m.a,m.b]) : []);
+      const active = new Set(t.players.filter(p=>p.active||currentPlayers.has(p.id)).map(p=>p.id));
       const earlier = cmd.mode === 'replace' ? t.swiss.slice(0,-1) : t.swiss;
       const key = (a:number,b:number)=>[a,b].sort((a,b)=>a-b).join(':');
       const played = new Set(earlier.flatMap(r=>r.filter(m=>m.b!==null).map(m=>key(m.a,m.b!))));

@@ -43,7 +43,7 @@ it('byes rotate and score automatically; dropped players keep record and stop pa
 it('invalid actions preserve original state and pending rounds block progression',()=>{
   let t=act(tournament(),{type:'nextSwiss'});const before=structuredClone(t);
   assert.throws(()=>act(t,{type:'nextSwiss'}));assert.throws(()=>act(t,{type:'startCut'}));
-  assert.throws(()=>act(t,{type:'setActive',player:1,active:false}));
+  assert.throws(()=>act(t,{type:'setActive',player:999,active:false}));
   assert.deepEqual(t,before);
   t=tournament(2,2,0);t=finish(act(t,{type:'nextSwiss'}));assert.throws(()=>act(t,{type:'nextSwiss'}),/sin repetir/);
 });
@@ -103,4 +103,19 @@ it('manual rounds reject duplicates, invalid players, repeated rivals and multip
   assert.throws(()=>act(played,{type:'manualSwiss',mode:'append',matches:[{a:2,b:1,result:'A'}]}),/ya se enfrentaron/);
   const dropped=act(played,{type:'setActive',player:3,active:false});
   assert.throws(()=>act(dropped,{type:'manualSwiss',mode:'append',matches:[{a:3,b:4,result:'A'}]}),/activos/);
+});
+
+it('withdrawal during a pending round keeps its matches and scores, records the drop and excludes future pairings',()=>{
+  let t=act(tournament(6,3,0),{type:'nextSwiss'});const matches=structuredClone(t.swiss);
+  const id=t.swiss[0][0].a;
+  t=act(t,{type:'setActive',player:id,active:false});
+  assert.equal(t.players.find(p=>p.id===id)!.dropRound,1);assert.deepEqual(t.swiss,matches);
+  assert.throws(()=>act(t,{type:'setActive',player:id,active:true}),/reactivaciones/);
+  t=act(t,{type:'manualSwiss',mode:'replace',matches:t.swiss[0]});
+  assert.deepEqual(t.swiss,matches);t=finish(t,'B');
+  assert.equal(tournamentStandings(t).find(p=>p.id===id)!.l,1);
+  assert.deepEqual(importTournament(t),t);
+  t=act(t,{type:'nextSwiss'});assert.ok(t.swiss.at(-1)!.every(m=>m.a!==id&&m.b!==id));
+  t=act(t,{type:'setActive',player:id,active:false});assert.equal(t.players.find(p=>p.id===id)!.dropRound,1);
+  t=finish(t);t=act(t,{type:'setActive',player:id,active:true});assert.equal(t.players.find(p=>p.id===id)!.dropRound,null);
 });

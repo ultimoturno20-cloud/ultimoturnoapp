@@ -16,6 +16,10 @@ Actualizado: 2026-10-09
 - Inscripción tardía habilitada hasta top cut: comienza con 0 puntos sin alterar
   mesas existentes. Editor manual permite crear Swiss o reemplazar solo la ronda
   actual, elegir participantes, bye y resultados. Ausentes no reciben puntos.
+- Bajas permitidas durante Swiss en curso: conservan mesa y resultados, se
+  registra la ronda de baja y se excluye al jugador de siguientes emparejamientos.
+  Reactivaciones entre rondas. El editor manual conserva participantes dados de baja
+  en la ronda actual; no los ofrece para una nueva ronda.
 - Swiss/byes, resultados, bajas, posiciones estilo TOM, top cut y exportaciones.
   Guardado compartido entre PCs con la misma cuenta y control de versión; conflictos
   y respuestas no confirmadas pausan edición hasta recargar.

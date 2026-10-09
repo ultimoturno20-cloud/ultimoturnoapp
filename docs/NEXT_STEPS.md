@@ -6,7 +6,7 @@
 - Abrir `/torneos` y crear una cuenta propia de Torneos. Crear un torneo real o importar
   un JSON guardado desde el programa de escritorio; la importación crea una copia.
 - Guardar configuración, inscribir jugadores e iniciar Swiss. Cargar resultados
-  por mesa y avanzar solo cuando esté completa la ronda. Bajas entre rondas.
+  por mesa y avanzar solo cuando esté completa la ronda. Bajas también durante rondas Swiss en curso: conservan mesa y resultado; no emparejan en la siguiente.
 - Para ingresos tardíos, inscribir desde Jugadores. Participan desde la siguiente
   ronda o se agregan a la actual con Editar ronda actual a mano. Cargar ronda manual
   permite reconstruir una ronda jugada con sus mesas y resultados. Revisar el editor
