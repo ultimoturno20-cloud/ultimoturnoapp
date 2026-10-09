@@ -11,6 +11,7 @@ import "./reseller-admin.css";
 import { defaultInventoryFilters, inventoryPreferencesKey, inventoryPresets, inventoryStatesEqual, maxInventoryViews, readInventoryPreferences, writeInventoryPreferences, type InventoryFilters, type SavedInventoryView } from "./inventory-views.js";
 import { WorkspaceToolbar } from "./workspace-toolbar.js";
 import "./workspace-toolbar.css";
+import "./inventory-layout.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -3407,7 +3408,7 @@ function InventoryViewsControl({ scope, filters, density, onApply, onDensityChan
   </>;
 }
 
-function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSaved: (item: StockRow) => void; onClose: () => void }) {
+function InventoryQuickIntake({ item, onSaved, onClose, onBusyChange }: { item: StockRow; onSaved: (item: StockRow) => void; onClose: () => void; onBusyChange: (busy: boolean) => void }) {
   const [quantity, setQuantity] = useState("1");
   const [currency, setCurrency] = useState("ARS");
   const [priceArs, setPriceArs] = useState(String(item.priceArs || ""));
@@ -3426,6 +3427,7 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
     if (request.current) return;
     request.current = true;
     setSaving(true);
+    onBusyChange(true);
     setFeedback("");
     try {
       const response = await api<{ item: StockRow }>("/inventory/intake", { method: "POST", body: {
@@ -3437,12 +3439,13 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
       setFeedback(`Agregadas ${quantity}. Stock actual: ${response.item.quantityOnHand}.`);
       setQuantity("1");
     } catch (error) { setFeedback(errorMessage(error)); }
-    finally { request.current = false; setSaving(false); }
+    finally { request.current = false; setSaving(false); onBusyChange(false); }
   }
   async function updatePrice() {
     if (request.current || !priceChanged) return;
     request.current = true;
     setSaving(true);
+    onBusyChange(true);
     setFeedback("");
     try {
       const response = await api<{ item: StockRow }>(`/inventory/${item.id}`, { method: "PUT", body: {
@@ -3451,7 +3454,7 @@ function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSa
       onSaved(response.item);
       setFeedback(`Precio actualizado. Stock sin cambios: ${response.item.quantityOnHand}.`);
     } catch (error) { setFeedback(errorMessage(error)); }
-    finally { request.current = false; setSaving(false); }
+    finally { request.current = false; setSaving(false); onBusyChange(false); }
   }
   return <form className="inventory-inline-intake" aria-label={`Gestionar stock y precio de ${item.product.name}`} onSubmit={addStock}>
     <div className="inline-intake-fields">
@@ -3516,12 +3519,20 @@ function InventoryView(props: {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"detail" | "contents" | "cart" | null>(null);
   const [intakeId, setIntakeId] = useState("");
+  const [intakeSaving, setIntakeSaving] = useState(false);
+  const intakeItem = allItems.find((item) => item.id === intakeId);
   const [assignmentItemId, setAssignmentItemId] = useState("");
   const [assignmentResellerId, setAssignmentResellerId] = useState("");
   const [assignmentQuantity, setAssignmentQuantity] = useState("1");
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentError, setAssignmentError] = useState("");
-  const inventoryPageSize = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches ? 16 : 24;
+  const [inventoryPageSize, setInventoryPageSize] = useState(() => window.matchMedia("(max-width: 760px)").matches ? 16 : 24);
+  useEffect(() => {
+    const viewport = window.matchMedia("(max-width: 760px)");
+    const update = () => setInventoryPageSize(viewport.matches ? 16 : 24);
+    viewport.addEventListener("change", update);
+    return () => viewport.removeEventListener("change", update);
+  }, []);
   const [renderLimit, setRenderLimit] = useState(inventoryPageSize);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const filterKey = JSON.stringify(filters);
@@ -3535,10 +3546,10 @@ function InventoryView(props: {
     return () => observer.disconnect();
   }, [inventoryPageSize, items.length, renderLimit]);
   useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setSideTab(null); setIntakeId(""); setAssignmentItemId(""); } };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !intakeSaving) { setSideTab(null); setIntakeId(""); setAssignmentItemId(""); } };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, []);
+  }, [intakeSaving]);
   const [quickStockOpen, setQuickStockOpen] = useState(false);
   const [quickStockDraft, setQuickStockDraft] = useState("");
   const [quickStockSaving, setQuickStockSaving] = useState(false);
@@ -3791,11 +3802,11 @@ function InventoryView(props: {
                         <small>{inventoryVariantLabel(item)}</small>
                         {item.itemKind !== 'folder' ? <small className="inventory-card-type">{cardTypeLabels[item.cardType || 'unknown']}</small> : null}
                         <div className={`inventory-tag-list compact ${itemTags.length ? "" : "empty"}`}>{itemTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-                        <div className={`inventory-big-price ${displayPrice.hasPrice ? "" : "missing"}`}>
-                          <span>{displayPrice.label}</span>
-                          <strong>{displayPrice.hasPrice ? formatArs(displayPrice.ars || 0) : "Sin precio"}</strong>
-                          <small>{displayPrice.helper}</small>
-                        </div>
+                      </div>
+                      <div className={`inventory-big-price ${displayPrice.hasPrice ? "" : "missing"}`}>
+                        <span>{displayPrice.label}</span>
+                        <strong>{displayPrice.hasPrice ? formatArs(displayPrice.ars || 0) : "Sin precio"}</strong>
+                        <small>{displayPrice.helper}</small>
                       </div>
                     </button>
                     <div className={`inventory-card-actions ${item.product.imageUrl ? "" : "with-image-repair"}`}>
@@ -3805,7 +3816,6 @@ function InventoryView(props: {
                       <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
                       {!item.product.imageUrl ? <button className="secondary-action inventory-card-repair-action" type="button" disabled={Boolean(props.imageRepairingId)} onClick={() => props.onRepairImage(item)}><Icon name="refresh" />{props.imageRepairingId === `inventory:${item.id}` ? "Buscando imagen..." : "Reparar imagen"}</button> : null}
                     </div>
-                    {intakeId === item.id ? <InventoryQuickIntake key={item.id} item={item} onSaved={props.onStockSaved} onClose={() => setIntakeId("")} /> : null}
                   </article>
                 );
               })}
@@ -3813,6 +3823,13 @@ function InventoryView(props: {
           ) : <EmptyState title="Sin coincidencias" body="Proba otro nombre, expansion o numero, o revisa los filtros." />}
           {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + inventoryPageSize)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
         </section>
+
+        {intakeItem ? <ResellerAdminDialog title={`Stock: ${intakeItem.product.name}`} busy={intakeSaving} onClose={() => setIntakeId("")}>
+          <div className="inventory-intake-panel">
+            <div className="inventory-intake-summary"><CardArt src={intakeItem.product.imageUrl} alt={intakeItem.product.name} label={intakeItem.product.name} className="inventory-intake-image" fallbackClassName="inventory-intake-image image-placeholder" /><div><strong>{intakeItem.product.name}</strong><span>{intakeItem.product.expansion} #{intakeItem.product.number || "-"}</span><small>{inventoryVariantLabel(intakeItem)}</small><span>Stock actual: {intakeItem.quantityOnHand}</span></div></div>
+            <InventoryQuickIntake key={intakeItem.id} item={intakeItem} onSaved={props.onStockSaved} onBusyChange={setIntakeSaving} onClose={() => setIntakeId("")} />
+          </div>
+        </ResellerAdminDialog> : null}
 
         {sideTab ? <aside className={`workspace-side inventory-detail-drawer ${sideTab === "cart" ? "cart-drawer" : "detail-drawer"} ${sideTab === "contents" ? "folder-drawer" : ""}`} role="dialog" aria-label={sideTab === "cart" ? "Carrito" : "Detalles del item"}>
           <button className="secondary-action drawer-close" onClick={() => setSideTab(null)}><Icon name="close" />Cerrar</button>

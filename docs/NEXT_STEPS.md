@@ -9,6 +9,9 @@ Actualizado: 2026-10-09
 
 ### Consistencia visual y vistas operativas
 
+- Correccion entregada: Stock abre fuera de la grilla; precios completos y
+  disponibilidad central editable sin desbordes. Revisar con datos reales en
+  ambas densidades, sin registrar cargas ficticias para probar.
 - Primera entrega terminada en Inventario: vistas iniciales y personales,
   filtros activos, restauracion al recargar y barra compartida con el equipo
   de Revendedores. Revisar en movil sin confirmar operaciones ficticias.

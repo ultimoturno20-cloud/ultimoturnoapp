@@ -7,6 +7,18 @@ Actualizado: 2026-10-09
 
 ## Resumen vigente
 
+- Correccion de layout de Inventario: Stock abre un dialogo independiente,
+  sin estirar las filas ni mover otras cartas. Mantiene carga y cambio de precio
+  existentes, con foco contenido y cierre bloqueado mientras guarda.
+- Precios ocupan una fila completa de la tarjeta; imagenes y columnas se adaptan
+  al ancho. El editor de disponibilidad central ocupa todo el ancho del detalle,
+  sin botones recortados ni estilos de celda sobre sus controles internos.
+  La paginacion responde al cambio de ancho antes de abrir el editor.
+- QA de esta correccion: Chrome en 1788/1440/1024/768/390/320 px y ambas
+  densidades, posiciones de tarjetas estables y controles/precios contenidos;
+  carga y precio simulados, 20 tests frontend, lint/tipos/build web correctos.
+  Sin cambios de API/schema ni escrituras de prueba en produccion.
+
 - Primera etapa de consistencia operativa: Inventario y equipo de Revendedores
   usan WorkspaceToolbar, con busqueda, orden y controles de altura uniforme.
   Inventario muestra filtros activos removibles y deja visibles exportar/reset.

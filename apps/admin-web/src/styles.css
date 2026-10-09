@@ -1561,7 +1561,7 @@ select option {
   margin: 0;
 }
 
-.detail-grid div {
+.detail-grid > div {
   min-width: 0;
   padding: 11px;
   border: 1px solid var(--border-soft);
@@ -6164,7 +6164,7 @@ select {
   gap: 8px;
 }
 
-.compact-detail-panel .detail-grid div {
+.compact-detail-panel .detail-grid > div {
   padding: 9px;
   border-radius: 9px;
 }

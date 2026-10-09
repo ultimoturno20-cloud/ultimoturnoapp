@@ -1,5 +1,23 @@
 # Traspaso de contexto - UltimoTurno
 
+## Inventario sin saltos ni desbordes - 2026-10-09
+
+InventoryQuickIntake deja de montarse dentro del article: InventoryView abre
+ResellerAdminDialog independiente, con el item desde allItems. Conserva POST
+intake y PUT de precio; onBusyChange bloquea cierre y Escape durante peticiones.
+El guard de Escape respeta defaultPrevented de los dialogos existentes.
+
+inventory-layout.css se carga despues del legacy: imagen proporcional, precio
+en fila completa, controles contenidos y editor central a ancho completo.
+Los selectores detail-grid > div solo estilizan celdas, no divs internos.
+matchMedia actualiza el tamano de pagina al redimensionar, evitando que abrir
+un editor dispare tardamente el cambio de cantidad de tarjetas renderizadas.
+
+Chrome verifica seis anchos (1788/1440/1024/768/390/320), dos densidades,
+posiciones estables al abrir Stock, foco, cierre bloqueado y guardado simulado.
+20 tests frontend, lint/typecheck y build web correctos. Sin cambios de backend,
+schema ni pruebas con escrituras en produccion. Ordenes/Caja/Compras sigue pendiente.
+
 ## Consistencia operativa, primera etapa - 2026-10-09
 
 WorkspaceToolbar (tsx/css) se comparte entre Inventario y busqueda del equipo
