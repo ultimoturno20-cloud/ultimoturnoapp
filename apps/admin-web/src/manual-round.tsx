@@ -1,0 +1,17 @@
+import React, {useState} from 'react';
+import type {TournamentState,TournamentMatch} from '@ultimoturno/domain';
+type Draft={a:string;b:string;result:TournamentMatch['result']};
+export function ManualRoundEditor({state,mode,disabled,onSave,onCancel}:{state:TournamentState;mode:'append'|'replace';disabled:boolean;onSave:(matches:TournamentMatch[])=>void;onCancel:()=>void}) {
+  const players=state.players.filter(p=>p.active);
+  const [rows,setRows]=useState<Draft[]>(()=>mode==='replace'?state.swiss.at(-1)!.map(m=>({a:String(m.a),b:m.b===null?'bye':String(m.b),result:m.result})):[{a:'',b:'',result:null}]);
+  const [error,setError]=useState('');
+  const number=mode==='replace'?state.swiss.length:state.swiss.length+1;
+  function update(index:number,patch:Partial<Draft>){setRows(current=>current.map((r,i)=>i===index?{...r,...patch,...('a' in patch||'b' in patch?{result:patch.b==='bye'?'A':null}:{})}:r));setError('');}
+  const used=new Set(rows.flatMap(r=>[r.a,r.b]));
+  const missing=players.filter(p=>!used.has(String(p.id)));
+  function submit(e:React.FormEvent){e.preventDefault();setError('');if(rows.some(r=>!r.a||!r.b)){setError('Elegí ambos jugadores o BYE en cada mesa.');return;}onSave(rows.map(r=>({a:Number(r.a),b:r.b==='bye'?null:Number(r.b),result:r.b==='bye'?'A':r.result})));}
+  return <form className="manual-round" onSubmit={submit}><h3>{mode==='replace'?'Editar':'Cargar'} ronda Swiss {number} a mano</h3><p>Elegí las mesas y cargá los resultados jugados, o dejalos pendientes. BYE suma 3 puntos. Un jugador sin mesa no recibe puntos ni un resultado ficticio.</p>{mode==='replace'?<p className="tournament-notice">Al guardar se reemplazan las mesas y resultados de la ronda {number} por lo que ves abajo. Las rondas anteriores se conservan. Cambiar un jugador limpia el resultado de esa mesa.</p>:null}
+    <fieldset disabled={disabled}>{rows.map((r,i)=><div className="manual-table" key={i}><strong>Mesa {i+1}</strong><label>Jugador A · mesa {i+1}<select required value={r.a} onChange={e=>update(i,{a:e.target.value})}><option value="">Elegir jugador</option>{players.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label><label>Jugador B · mesa {i+1}<select required value={r.b} onChange={e=>update(i,{b:e.target.value})}><option value="">Elegir jugador</option><option value="bye">BYE · +3 puntos</option>{players.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label><label>Resultado · mesa {i+1}<select value={r.b==='bye'?'A':r.result??''} disabled={r.b==='bye'} onChange={e=>update(i,{result:(e.target.value||null) as TournamentMatch['result']})}><option value="">Pendiente</option><option value="A">Gana A</option><option value="T">Empate</option><option value="B">Gana B</option></select></label><button type="button" className="secondary-action" disabled={rows.length===1} onClick={()=>setRows(rows.filter((_,j)=>j!==i))}>Quitar mesa {i+1}</button></div>)}
+    {missing.length?<p>Sin mesa en esta ronda: {missing.map(p=>p.name).join(', ')}. No suman puntos por esta ronda.</p>:null}
+    {error?<p role="alert">{error}</p>:null}<div className="tournament-actions"><button type="button" className="secondary-action" disabled={rows.length>=64} onClick={()=>setRows([...rows,{a:'',b:'',result:null}])}>Agregar mesa</button><button type="submit" className="primary-action">{mode==='replace'?`Guardar reemplazo de ronda ${number}`:`Guardar ronda manual ${number}`}</button><button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button></div></fieldset></form>;
+}

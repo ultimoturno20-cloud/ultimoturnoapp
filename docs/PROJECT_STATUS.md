@@ -13,6 +13,9 @@ Actualizado: 2026-10-09
 - Migración aditiva `0060_tournament_space.sql`: cuentas, sesiones, límites de
   intentos y torneos privados por cuenta. Contraseñas con scrypt, tokens aleatorios
   guardados como hash y vencimiento de 30 días. No crea usuarios/roles de Stock.
+- Inscripción tardía habilitada hasta top cut: comienza con 0 puntos sin alterar
+  mesas existentes. Editor manual permite crear Swiss o reemplazar solo la ronda
+  actual, elegir participantes, bye y resultados. Ausentes no reciben puntos.
 - Swiss/byes, resultados, bajas, posiciones estilo TOM, top cut y exportaciones.
   Guardado compartido entre PCs con la misma cuenta y control de versión; conflictos
   y respuestas no confirmadas pausan edición hasta recargar.
@@ -20,7 +23,7 @@ Actualizado: 2026-10-09
   protegida. No se asignan registros antiguos a cuentas públicas automáticamente;
   las copias JSON permiten importar eventos en el nuevo espacio.
 - Alcance: una categoría, hasta 128 jugadores, top cuts simétricos. No equivale
-  completamente a TOM ni contempla categorías etarias, ingreso tardío o sanciones.
+  completamente a TOM ni contempla categorías etarias o sanciones.
 - QA: cuentas y sesiones independientes, privacidad, contraseñas, límites,
   motor/DB/exportaciones y Chrome con base temporal: registro, segunda PC,
   restauración, logout, campeón y conflicto 409; anchos 1440/768/390/320 px.

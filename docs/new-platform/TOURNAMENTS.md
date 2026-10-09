@@ -6,7 +6,8 @@ Espacio independiente en `/torneos`, con página de entrada, registro público y
 
 - Alta con nombre, 1–20 rondas Swiss y top cut opcional de 2, 4, 8 o 16.
 - Una categoría/grupo (Flight 1), hasta 128 participantes, Player ID opcional y único.
-- Inscripción cerrada al iniciar Swiss; bajas y reactivaciones entre rondas.
+- Inscripción inicial y tardía hasta iniciar top cut. El ingreso tardío empieza con cero puntos, sin resultados retroactivos ni cambios automáticos en mesas existentes. Bajas y reactivaciones entre rondas.
+- Editor manual para crear la siguiente ronda Swiss o reemplazar solo la actual, antes del top cut. Permite elegir mesas, un bye automático y resultados o pendientes. Un jugador sin mesa no suma puntos; no recibe derrota ficticia. Valida jugadores activos, duplicados y rivales repetidos. La ronda anterior debe estar completa para crear otra. Al reemplazar, el editor conserva los resultados de las mesas sin cambios y limpia el de una mesa cuando se cambia un jugador.
 - Emparejamientos sin repetir rivales, por puntaje cercano, con búsqueda acotada a 200.000 pasos. La primera ronda es aleatoria. El bye prioriza menor cantidad de byes y menor puntaje compatible con un emparejamiento válido.
 - Resultados A/B/empate y correcciones en la ronda actual. Rondas históricas de consulta.
 - Posiciones con las ocho columnas del reporte TOM, récord V/D/E (puntos), baja y ambos porcentajes. Resistencia por victorias/matches, piso 25%, techo 75% para bajas anteriores al final y byes excluidos; el segundo desempate promedia resistencias de oponentes. Empates exactos usan inscripción, por lo que no se afirma equivalencia completa con TOM.

@@ -48,3 +48,15 @@ it('rejects invalid credentials and passwords, duplicate accounts and throttles 
   assert.equal((await db.query('select * from tournament_auth_attempts where action=\'login\'')).rows.length,10);
   assert.equal((await db.query('select * from tournament_accounts')).rows.length,1);
 });
+
+it('late signup and manual rounds persist, reject invalid replacements and preserve versions',async t=>{
+  const db=await fixture(t);const {account}=await registerTournamentAccount(db,{displayName:'Juez',email:'judge@test.local',password:'secure-test-123'});
+  let doc=await createSpaceTournament(db,{id:crypto.randomUUID(),name:'Ronda real',swissCount:3,cutSize:0},account);
+  for(const name of ['Ana','Bruno'])doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'addPlayer',name,playerId:''}},account);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'manualSwiss',mode:'append',matches:[{a:1,b:2,result:null}]}},account);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'addPlayer',name:'Tarde',playerId:''}},account);
+  doc=await commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'manualSwiss',mode:'replace',matches:[{a:1,b:3,result:'B'},{a:2,b:null,result:'A'}]}},account);
+  await assert.rejects(()=>commandSpaceTournament(db,doc.id,{version:doc.version,command:{type:'manualSwiss',mode:'replace',matches:[{a:1,b:3,result:'A'},{a:1,b:2,result:'B'}]}},account),/dos mesas/);
+  assert.deepEqual(await getSpaceTournament(db,doc.id,account),doc);
+  assert.equal(doc.state.players.length,3);assert.equal(doc.state.swiss[0][0].b,3);
+});

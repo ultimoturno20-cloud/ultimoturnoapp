@@ -7,6 +7,10 @@
   un JSON guardado desde el programa de escritorio; la importación crea una copia.
 - Guardar configuración, inscribir jugadores e iniciar Swiss. Cargar resultados
   por mesa y avanzar solo cuando esté completa la ronda. Bajas entre rondas.
+- Para ingresos tardíos, inscribir desde Jugadores. Participan desde la siguiente
+  ronda o se agregan a la actual con Editar ronda actual a mano. Cargar ronda manual
+  permite reconstruir una ronda jugada con sus mesas y resultados. Revisar el editor
+  completo antes de guardar: reemplaza la ronda actual, no las anteriores.
 - Al terminar Swiss, iniciar top cut si corresponde y registrar ganadores hasta
   la final. El campeón y el cuadro son independientes de las posiciones Swiss.
 - Desde otra PC, ingresar con la misma cuenta de Torneos y abrir el torneo

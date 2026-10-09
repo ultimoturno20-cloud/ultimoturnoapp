@@ -55,3 +55,12 @@
 .tournament-heading > div, .tournament-current > div { min-width: 0; max-width: 100%; }
 .tournaments-view h3, .tournaments-view p, .tournaments-view small { overflow-wrap: anywhere; }
 .tournament-table-scroll { width: 100%; min-width: 0; max-width: 100%; }
+.manual-actions { margin-top: 12px; }
+.manual-round { margin: 20px 0; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.manual-round fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.manual-table { display: grid; grid-template-columns: 70px repeat(3,minmax(0,1fr)) auto; align-items: end; gap: 12px; margin: 16px 0; }
+.manual-table > strong { align-self: center; }
+.manual-table label { display: grid; gap: 6px; min-width: 0; font-size: 12px; }
+.manual-table select { width: 100%; min-width: 0; }
+@media(max-width:900px) { .manual-table { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .manual-table > strong { grid-column: 1 / -1; } }
+@media(max-width:480px) { .manual-table { grid-template-columns: minmax(0,1fr); padding-bottom: 16px; border-bottom: 1px solid var(--border); } .manual-round { padding: 12px; } }

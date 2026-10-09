@@ -5,6 +5,7 @@ export type TournamentCommand =
   | { type: 'configure'; name: string; swissCount: number; cutSize: number }
   | { type: 'addPlayer'; name: string; playerId: string }
   | { type: 'setActive'; player: number; active: boolean }
+  | { type: 'manualSwiss'; mode: 'append' | 'replace'; matches: TournamentMatch[] }
   | { type: 'nextSwiss' } | { type: 'startCut' } | { type: 'nextCut' }
   | { type: 'result'; phase: 'swiss' | 'cut'; match: number; result: TournamentMatch['result'] };
 export const tournamentHeaders = ['Standing','Name','Flight','Drop Round','Match Record','Match Points',"Opponents' Win %","Opponents' Opponents' Win %"];
@@ -58,7 +59,7 @@ export function applyTournamentCommand(original: TournamentState, cmd: Tournamen
       if (t.swiss.length) fail('La configuración se cierra al iniciar Swiss.');
       Object.assign(t,settings(cmd.name,cmd.swissCount,cmd.cutSize)); break;
     case 'addPlayer': {
-      if (t.swiss.length) fail('La inscripción está cerrada.');
+      if (t.cut.length) fail('La inscripción se cierra al iniciar top cut.');
       if (t.players.length >= 128) fail('Esta versión admite hasta 128 jugadores.');
       const name = text(cmd.name,100), playerId = text(cmd.playerId,50,false);
       if (playerId && t.players.some(p => p.playerId === playerId)) fail('Player ID duplicado.');
@@ -77,6 +78,28 @@ export function applyTournamentCommand(original: TournamentState, cmd: Tournamen
       if (!m || m.b === null || (cmd.phase === 'swiss' && t.cut.length)) fail('Mesa inválida o ronda cerrada.');
       if (![null,'A','B','T'].includes(cmd.result) || (cmd.phase === 'cut' && cmd.result === 'T')) fail('Resultado inválido. Top cut no admite empate.');
       m.result = cmd.result; break;
+    }
+    case 'manualSwiss': {
+      if (t.cut.length) fail('No se pueden modificar rondas Swiss después de iniciar top cut.');
+      if (!['append','replace'].includes(cmd.mode)) fail('Modo de ronda inválido.');
+      if (cmd.mode === 'replace' && !t.swiss.length) fail('No hay una ronda actual para editar.');
+      if (cmd.mode === 'append' && (t.swiss.length >= t.swissCount || (t.swiss.length && !roundComplete(t.swiss.at(-1)!)))) fail('Completá la ronda actual antes de crear otra; no superes las rondas configuradas.');
+      if (!Array.isArray(cmd.matches) || !cmd.matches.length || cmd.matches.length > 64) fail('Ingresá de 1 a 64 mesas.');
+      const active = new Set(t.players.filter(p=>p.active).map(p=>p.id));
+      const earlier = cmd.mode === 'replace' ? t.swiss.slice(0,-1) : t.swiss;
+      const key = (a:number,b:number)=>[a,b].sort((a,b)=>a-b).join(':');
+      const played = new Set(earlier.flatMap(r=>r.filter(m=>m.b!==null).map(m=>key(m.a,m.b!))));
+      const used = new Set<number>(); let byes=0;
+      const matches = cmd.matches.map(m=>{
+        if (!m || !active.has(m.a) || (m.b!==null && (!active.has(m.b) || m.a===m.b)) || ![null,'A','B','T'].includes(m.result)) fail('Mesa inválida: elegí jugadores activos y un resultado válido.');
+        for (const id of m.b===null?[m.a]:[m.a,m.b]) { if (used.has(id)) fail('Un jugador no puede estar en dos mesas de la misma ronda.'); used.add(id); }
+        if (m.b===null) { if (++byes>1 || m.result!=='A') fail('La ronda admite un solo bye, con victoria automática.'); }
+        else if (played.has(key(m.a,m.b))) fail('Esos jugadores ya se enfrentaron en una ronda anterior.');
+        return {a:m.a,b:m.b,result:m.result};
+      });
+      if (used.size<2) fail('La ronda necesita al menos dos participantes.');
+      if (cmd.mode==='replace') t.swiss[t.swiss.length-1]=matches; else t.swiss.push(matches);
+      break;
     }
     case 'nextSwiss': {
       if (t.cut.length || t.swiss.length >= t.swissCount) fail('Swiss ya terminó.');

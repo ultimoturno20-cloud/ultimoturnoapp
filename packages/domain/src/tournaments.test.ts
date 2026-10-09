@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
-import { newTournament, applyTournamentCommand as act, tournamentStandings, importTournament, tournamentRows, type TournamentState } from './tournaments.js';
+import { newTournament, applyTournamentCommand as act, tournamentStandings, importTournament, tournamentRows, type TournamentState, type TournamentMatch } from './tournaments.js';
 function tournament(n=8,rounds=3,cut=4) {
   let t=newTournament('Local',rounds,cut);
   for(let i=0;i<n;i++)t=act(t,{type:'addPlayer',name:`Jugador ${i}`,playerId:String(i)});
@@ -43,7 +43,6 @@ it('byes rotate and score automatically; dropped players keep record and stop pa
 it('invalid actions preserve original state and pending rounds block progression',()=>{
   let t=act(tournament(),{type:'nextSwiss'});const before=structuredClone(t);
   assert.throws(()=>act(t,{type:'nextSwiss'}));assert.throws(()=>act(t,{type:'startCut'}));
-  assert.throws(()=>act(t,{type:'addPlayer',name:'Nuevo',playerId:''}));
   assert.throws(()=>act(t,{type:'setActive',player:1,active:false}));
   assert.deepEqual(t,before);
   t=tournament(2,2,0);t=finish(act(t,{type:'nextSwiss'}));assert.throws(()=>act(t,{type:'nextSwiss'}),/sin repetir/);
@@ -65,4 +64,43 @@ it('desktop JSON migration validates rounds, results and legacy drop metadata',(
   const bad=structuredClone(desktop);bad.swiss[0][0].b=999;assert.throws(()=>importTournament(bad));
   assert.throws(()=>importTournament({...desktop,swiss:[desktop.swiss[0],desktop.swiss[0]],swiss_count:2}),/repetidos/);
   assert.throws(()=>importTournament({...desktop,players:[desktop.players[0],desktop.players[0]]}),/duplicados/);
+});
+
+it('late arrivals preserve played rounds, start at zero and enter subsequent Swiss',()=>{
+  let t=act(tournament(4,3,0),{type:'nextSwiss'});const first=structuredClone(t.swiss);
+  t=act(t,{type:'addPlayer',name:'Llegó tarde',playerId:'late'});
+  assert.deepEqual(t.swiss,first);const late=t.players.at(-1)!;
+  assert.equal(tournamentStandings(t).find(r=>r.id===late.id)!.points,0);
+  t=finish(t);t=act(t,{type:'nextSwiss'});
+  assert.ok(t.swiss.at(-1)!.some(m=>m.a===late.id||m.b===late.id));
+  assert.deepEqual(importTournament(t),t);
+});
+it('manual Swiss records actual pairings and results and edits only the current round',()=>{
+  let t=tournament(4,2,2);
+  t=act(t,{type:'manualSwiss',mode:'append',matches:[{a:1,b:2,result:'A'}]});
+  t=act(t,{type:'addPlayer',name:'Tarde',playerId:'late'});
+  t=act(t,{type:'manualSwiss',mode:'replace',matches:[{a:1,b:2,result:'T'},{a:3,b:5,result:'B'},{a:4,b:null,result:'A'}]});
+  const points=new Map(tournamentStandings(t).map(r=>[r.id,r.points]));assert.equal(points.get(5),3);assert.equal(points.get(4),3);assert.equal(points.get(1),1);
+  const first=structuredClone(t.swiss[0]);
+  t=act(t,{type:'manualSwiss',mode:'append',matches:[{a:1,b:5,result:null},{a:2,b:4,result:'A'}]});
+  assert.throws(()=>act(t,{type:'manualSwiss',mode:'append',matches:[{a:1,b:3,result:'A'}]}));
+  t=act(t,{type:'manualSwiss',mode:'replace',matches:[{a:1,b:5,result:'A'},{a:2,b:3,result:'B'}]});
+  assert.deepEqual(t.swiss[0],first);assert.deepEqual(importTournament(t),t);
+  t=act(t,{type:'startCut'});
+  assert.throws(()=>act(t,{type:'addPlayer',name:'Fuera',playerId:''}),/top cut/);
+  assert.throws(()=>act(t,{type:'manualSwiss',mode:'replace',matches:[{a:1,b:5,result:'B'}]}),/top cut/);
+});
+it('manual rounds reject duplicates, invalid players, repeated rivals and multiple byes atomically',()=>{
+  const t=tournament(4,3,0);const before=structuredClone(t);
+  for(const matches of [
+    [{a:1,b:2,result:'A'},{a:1,b:3,result:'B'}],
+    [{a:1,b:1,result:'A'}], [{a:1,b:999,result:'A'}],
+    [{a:1,b:null,result:'A'},{a:2,b:null,result:'A'}],
+    [{a:1,b:null,result:null}], [{a:1,b:2,result:'bad'}],[]
+  ])assert.throws(()=>act(t,{type:'manualSwiss',mode:'append',matches:matches as TournamentMatch[]}));
+  assert.deepEqual(t,before);
+  const played=act(t,{type:'manualSwiss',mode:'append',matches:[{a:1,b:2,result:'A'}]});
+  assert.throws(()=>act(played,{type:'manualSwiss',mode:'append',matches:[{a:2,b:1,result:'A'}]}),/ya se enfrentaron/);
+  const dropped=act(played,{type:'setActive',player:3,active:false});
+  assert.throws(()=>act(dropped,{type:'manualSwiss',mode:'append',matches:[{a:3,b:4,result:'A'}]}),/activos/);
 });
