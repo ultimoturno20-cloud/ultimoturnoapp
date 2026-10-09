@@ -1,5 +1,40 @@
 # Traspaso de contexto - UltimoTurno
 
+## Administracion visual de revendedores - 2026-10-09
+
+ResellersAdminView abre en vista de equipo sin seleccionar automaticamente
+el primer perfil. reseller-admin.ts agrupa busqueda/filtros/orden, totales,
+ventas mensuales (Buenos Aires), movimientos reales y validacion de URL.
+reseller-admin.css limita estilos al admin y sus dialogos; portal conserva su UI.
+
+Ficha por pestanas montadas/ocultas para mantener filtros y borradores durante
+la sesion; revendedor/vista en query recuperan ficha al recargar. Cambiar destino
+descarta borradores con confirmacion. Owner solo dispone de resumen/mercaderia.
+Mercaderia reutiliza ResellerStockBrowser/Card; entrega por lote desplegable,
+detalles visuales y opcion de consultar agotadas. Precios se etiquetan centrales.
+
+ResellerAdminDialog contiene foco, restaura foco/scroll y bloquea cierre durante
+operacion. Alta, devolucion, rendicion y anulacion usan endpoints existentes.
+Ref/version de mutaciones evita doble envio y refrescos antiguos. Si una
+respuesta POST no se confirma, no se habilita reenvio del dialogo; revisar
+movimientos antes de registrar otra vez. PUT de cupo/precio puede reintentarse.
+No se agrega idempotencia a singles; lotes conservan su mecanismo anterior.
+
+Cuenta muestra debitos netos de ventas confirmadas y creditos de settlements,
+sin asociar retrospectivamente pagos a ventas ni reconstruir saldos historicos.
+No hay migracion ni modificacion de reglas stock/cuenta. Proximas etapas:
+comprobantes/historial de entregas/devoluciones, pagos por ventas seleccionadas,
+configuracion ampliada; no implementar botones ficticios ni backfills financieros.
+
+Validacion: lint/typecheck, 119 tests, db:verify y build completos. Chrome local
+1440/390/320 px cubre equipo, ficha, dialogos, foco, Atras/reload, borradores,
+alta, aprobacion, entrega, venta, devolucion, anulacion y rendicion. Respuesta
+perdida de pago bloquea reenvio; PUT de precio/cupo permite recuperacion.
+Portal conserva imagenes y bloqueo de venta para cartas reservadas.
+No hubo escrituras en produccion. Fixtures/capturas quedan ignorados en .work.
+Si PGlite aborta al crear temporales, revisar espacio en C: esta ejecucion uso
+TEMP/TMP=D:/UltimoTurno/Stock/.work/reseller-admin-temp, sin borrar archivos.
+
 ## Lotes de revendedores - 2026-10-08
 
 `packages/db/src/reseller-batches.ts` expone solicitudes, entregas directas y

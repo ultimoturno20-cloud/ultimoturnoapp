@@ -1,11 +1,32 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-08
+Actualizado: 2026-10-09
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
 ## Resumen vigente
+
+- Revendedores abre con una vista del equipo: busqueda, filtros por solicitudes,
+  saldo, disponibilidad limitada y estado; orden por nombre, mercaderia, saldo
+  o ventas del mes. Los totales separan valor en mano de deuda a rendir.
+- Cada ficha tiene Resumen, Mercaderia, Solicitudes, Ventas, Cuenta corriente
+  y Configuracion, con enlaces recuperables al recargar y navegacion Atras.
+  Los propietarios conservan solo las vistas y acciones de consignacion.
+- Mercaderia comparte el catalogo visual del portal, grilla/lista y filtros;
+  muestra en mano/vendibles y permite incluir agotadas. La entrega por lote
+  se despliega a pedido, sin ocupar permanentemente el sector.
+- Alta, detalle, devolucion, rendicion y anulacion usan dialogos con validacion,
+  foco contenido y bloqueo durante la operacion. Una respuesta no confirmada
+  en pagos/devoluciones/anulaciones exige revisar movimientos antes de reenviar.
+  El precio editable se identifica como central; no es un precio por revendedor.
+- Cuenta corriente muestra ventas netas confirmadas y rendiciones existentes,
+  sin asignar pagos historicos a ventas ni inventar saldos retroactivos. Ventas
+  mensuales usan calendario de Buenos Aires. Cupo reutiliza el endpoint actual.
+  Esta etapa no cambia esquema, endpoints ni reglas financieras/stock.
+- Pendiente: comprobantes e historial agrupado de entregas/devoluciones,
+  rendiciones aplicadas a ventas seleccionadas y edicion ampliada de perfiles.
+  No se presentan estas mejoras futuras como funciones ya implementadas.
 
 - Revendedores permite solicitar y asignar hasta 100 cartas por lote, con imagenes,
   cantidades editables, totales y revision previa. La seleccion del portal se

@@ -1,11 +1,31 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-08
+Actualizado: 2026-10-09
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Pilotear la nueva administracion de revendedores
+
+- Abrir Revendedores y comparar mercaderia en mano, solicitudes y saldos con
+  los datos reales, sin cargar operaciones ficticias. Buscar por nombre/email
+  y revisar filtros de deuda, pendientes y disponibilidad limitada.
+- Abrir una ficha, alternar las pestanas y revisar imagenes/variantes en
+  Mercaderia. Incluir agotadas solo para consultar; no permite devolver cero.
+- En la proxima entrega real, desplegar Asignar mercaderia y revisar el lote.
+  Los borradores sobreviven a cambiar de pestana, no a recargar; cambiar de
+  revendedor pide confirmar su descarte.
+- Consultar Ventas y Cuenta corriente: ventas netas y rendiciones son registros
+  existentes, no pagos imputados por venta. Usar Registrar rendicion solo ante
+  un cobro real y revisar los movimientos si la respuesta no se confirma.
+- Revisar cupo en Configuracion; el campo vacio conserva Sin limite.
+  El precio de Detalles sigue modificando inventario central, no un precio propio.
+- Siguiente etapa: comprobantes/historial de entregas y devoluciones, luego
+  rendiciones por ventas seleccionadas y configuracion ampliada de perfiles.
+  Estas requieren diseno financiero/backend adicional; no migrar datos actuales
+  ni reinterpretar rendiciones anteriores automaticamente.
 
 ### Pilotear catalogo y lotes de revendedores
 

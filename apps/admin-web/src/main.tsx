@@ -6,6 +6,8 @@ import "./styles.css";
 import "./reseller-catalog.css";
 import { ResellerBatchKeys, resellerBatchProblem, resellerBatchTotals, type ResellerBatchDraftLine } from "./reseller-batch.js";
 import "./reseller-batch.css";
+import { filterResellerTeam, resellerAccountMovements, resellerAdminLocation, resellerMonthlySales, resellerTeamTotals, type ResellerAdminTab, type ResellerTeamFilter, type ResellerTeamSort } from "./reseller-admin.js";
+import "./reseller-admin.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -6189,9 +6191,58 @@ function ResellerBatchReview({ lines, busy, title, command, onQuantity, onRemove
   </section>;
 }
 
+function ResellerAdminDialog({ title, busy, onClose, children }: { title: string; busy: boolean; onClose: () => void; children: React.ReactNode }) {
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const frame = requestAnimationFrame(() => (root.current?.querySelector<HTMLElement>("input, select, textarea") || root.current?.querySelector<HTMLElement>("button"))?.focus());
+    return () => { cancelAnimationFrame(frame); document.body.style.overflow = previousOverflow; if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) { event.preventDefault(); onClose(); }
+      if (event.key !== "Tab") return;
+      const controls = [...(root.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') || [])].filter((element) => element.getClientRects().length > 0);
+      const first = controls[0]; const last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); root.current?.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || !root.current?.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !root.current?.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, [busy, onClose]);
+  return <div className="modal-backdrop ra-backdrop" onMouseDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}>
+    <section className="ra-dialog" role="dialog" aria-modal="true" aria-labelledby="ra-dialog-title" tabIndex={-1} ref={root}>
+      <header><h2 id="ra-dialog-title">{title}</h2><button className="icon-action" disabled={busy} title="Cerrar" aria-label="Cerrar dialogo" onClick={onClose}><Icon name="close" /></button></header>
+      {children}
+    </section>
+  </div>;
+}
+
 function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock: StockRow[]; assignmentOnly?: boolean; blueRate: BlueExchangeRate }) {
   const [resellers, setResellers] = useState<ResellerDashboard[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => resellerAdminLocation(window.location.search, assignmentOnly).id);
+  const [activeTab, setActiveTab] = useState<ResellerAdminTab>(() => resellerAdminLocation(window.location.search, assignmentOnly).tab);
+  const [teamQuery, setTeamQuery] = useState("");
+  const [teamFilter, setTeamFilter] = useState<ResellerTeamFilter>("all");
+  const [teamSort, setTeamSort] = useState<ResellerTeamSort>("name");
+  const [dialog, setDialog] = useState<"create" | "stock" | "return" | "settle" | "sale" | "cancel" | null>(null);
+  const [detailItemId, setDetailItemId] = useState("");
+  const [detailSaleId, setDetailSaleId] = useState("");
+  const [returnQuantity, setReturnQuantity] = useState("1");
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementNote, setSettlementNote] = useState("");
+  const [dialogError, setDialogError] = useState("");
+  const [uncertainAction, setUncertainAction] = useState(false);
+  const [mutation, setMutation] = useState(false);
+  const mutationInFlight = useRef(false);
+  const mutationVersion = useRef(0);
+  const [includeClosedStock, setIncludeClosedStock] = useState(false);
+  const [assignmentOpen, setAssignmentOpen] = useState(assignmentOnly);
+  const [salesQuery, setSalesQuery] = useState("");
+  const [salesStatus, setSalesStatus] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20, creditLimitArs: "" });
@@ -6208,30 +6259,56 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   const [savingCreditLimit, setSavingCreditLimit] = useState(false);
   const [assignmentPriceDrafts, setAssignmentPriceDrafts] = useState<Record<string, string>>({});
   const [savingAssignmentPriceId, setSavingAssignmentPriceId] = useState("");
-  const selected = resellers.find((item) => item.reseller.userId === selectedId) || resellers[0];
+  const selected = resellers.find((item) => item.reseller.userId === selectedId);
+  const busy = batch.busy || mutation;
+  const team = filterResellerTeam(resellers, teamQuery, teamFilter, teamSort);
+  const totals = resellerTeamTotals(resellers);
+  const stockDetail = selected?.assignments.find((item) => item.inventoryItemId === detailItemId);
+  const saleDetail = selected?.sales.find((sale) => sale.id === detailSaleId);
+  const ownedStock = selected?.assignments.filter((item) => includeClosedStock || item.remaining > 0) || [];
+  const visibleSales = selected?.sales.filter((sale) => (salesStatus === "all" || sale.status === salesStatus) && [sale.customerName, ...sale.lines.map((line) => line.name)].join(" ").toLowerCase().includes(salesQuery.trim().toLowerCase())) || [];
+  const account = selected ? resellerAccountMovements(selected) : [];
+  function closeDialog() { if (!batch.isBusy() && !mutationInFlight.current) { setDialog(null); setDialogError(""); setUncertainAction(false); setForm((current) => ({ ...current, password: "" })); } }
+  function navigateProfile(id: string, tab: ResellerAdminTab = "resumen") {
+    if (batch.isBusy() || mutationInFlight.current) return;
+    if (id !== selectedId && (Object.keys(assignmentBatch).length || selectedRequests.length || Object.keys(requestDrafts).length) && !window.confirm("Cambiar de ficha descartara los borradores pendientes. Continuar?")) return;
+    const url = new URL(window.location.href);
+    if (id) { url.searchParams.set("revendedor", id); url.searchParams.set("vista", tab); }
+    else { url.searchParams.delete("revendedor"); url.searchParams.delete("vista"); }
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setSelectedId(id); setActiveTab(tab); closeDialog(); setError("");
+  }
   useEffect(() => {
-    setAssignmentBatch({}); setSelectedRequests([]); setAssignItemId(""); setStockQuery(""); setRequestDrafts({}); setBatchNotice(""); batch.reset();
+    const onPopState = () => {
+      const location = resellerAdminLocation(window.location.search, assignmentOnly);
+      const discard = location.id !== selectedId && (Object.keys(assignmentBatch).length || selectedRequests.length || Object.keys(requestDrafts).length);
+      if (batch.isBusy() || mutationInFlight.current || (discard && !window.confirm("Cambiar de ficha descartara los borradores pendientes. Continuar?"))) {
+        const url = new URL(window.location.href);
+        if (selectedId) { url.searchParams.set("revendedor", selectedId); url.searchParams.set("vista", activeTab); }
+        else { url.searchParams.delete("revendedor"); url.searchParams.delete("vista"); }
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+        return;
+      }
+      setSelectedId(location.id); setActiveTab(location.tab); closeDialog();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [assignmentOnly, selectedId, activeTab, assignmentBatch, selectedRequests, requestDrafts]);
+  useEffect(() => {
+    setAssignmentBatch({}); setSelectedRequests([]); setAssignItemId(""); setStockQuery(""); setRequestDrafts({}); setBatchNotice(""); setAssignmentPriceDrafts({}); setIncludeClosedStock(false); setAssignmentOpen(assignmentOnly); setSalesQuery(""); setSalesStatus("all"); setDialog(null); setUncertainAction(false); setDialogError(""); batch.reset();
   }, [selected?.reseller.userId]);
   const stockById = useMemo(() => new Map(stock.map((item) => [item.id, item])), [stock]);
-  const monthlySalesArs = (dashboard: ResellerDashboard) => {
-    const now = new Date();
-    return dashboard.sales.reduce((sum, sale) => {
-      const soldAt = new Date(sale.soldAt);
-      return sale.status === "confirmed" && soldAt.getFullYear() === now.getFullYear() && soldAt.getMonth() === now.getMonth()
-        ? sum + sale.grossTotalArs
-        : sum;
-    }, 0);
-  };
+  const monthlySalesArs = resellerMonthlySales;
 
   const load = async (quiet = false) => {
-    if (batch.isBusy()) return;
+    if (batch.isBusy() || mutationInFlight.current) return;
     const version = batch.version();
+    const operationVersion = mutationVersion.current;
     if (!quiet) setLoading(true);
     try {
       const data = await api<{ resellers: ResellerDashboard[] }>("/resellers");
-      if (batch.isBusy() || batch.version() !== version) return;
+      if (batch.isBusy() || batch.version() !== version || mutationInFlight.current || mutationVersion.current !== operationVersion) return;
       setResellers(data.resellers);
-      setSelectedId((current) => current || data.resellers[0]?.reseller.userId || "");
       setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { if (!quiet) setLoading(false); }
@@ -6244,6 +6321,23 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   const replace = (dashboard: ResellerDashboard) => {
     setResellers((current) => current.map((item) => item.reseller.userId === dashboard.reseller.userId ? dashboard : item));
   };
+  async function runAdminChange(work: () => Promise<ResellerDashboard>, message: string, close = true, replaySafe = false) {
+    if (mutationInFlight.current || batch.isBusy() || uncertainAction) return false;
+    mutationInFlight.current = true; mutationVersion.current++; setMutation(true); setDialogError("");
+    try {
+      replace(await work()); setBatchNotice(message); setError(""); setUncertainAction(false);
+      if (close) setDialog(null);
+      return true;
+    } catch (nextError) {
+      const status = nextError && typeof nextError === "object" ? (nextError as { status?: number }).status : undefined;
+      const uncertain = !replaySafe && (!status || status >= 500);
+      const message = uncertain ? "Respuesta no confirmada. Revisa los movimientos antes de registrar nuevamente." : errorMessage(nextError);
+      setDialogError(message); setError(message); setUncertainAction(uncertain);
+      return false;
+    } finally {
+      mutationInFlight.current = false; mutationVersion.current++; setMutation(false); void load(true);
+    }
+  }
   const normalizedStockQuery = stockQuery.trim().toLowerCase();
   const visibleStock = normalizedStockQuery
     ? stock.filter((item) => item.freeQuantity > 0 && item.inventoryStatus !== "not_for_sale" && [item.product.name, item.product.expansion, item.product.number, item.sku].join(" ").toLowerCase().includes(normalizedStockQuery)).slice(0, 8)
@@ -6258,17 +6352,24 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
 
   async function create(event: React.FormEvent) {
     event.preventDefault();
+    if (mutationInFlight.current || batch.isBusy() || uncertainAction) return;
+    mutationInFlight.current = true; mutationVersion.current++; setMutation(true); setDialogError("");
     try {
       const result = await api<{ reseller: ResellerDashboard }>("/resellers", { method: "POST", body: { ...form, creditLimitArs: form.creditLimitArs === "" ? null : Number(form.creditLimitArs) } });
       setResellers((current) => [result.reseller, ...current]);
-      setSelectedId(result.reseller.reseller.userId);
+      setDialog(null);
+      const url = new URL(window.location.href);
+      url.searchParams.set("revendedor", result.reseller.reseller.userId); url.searchParams.set("vista", "resumen");
+      window.history.pushState({}, "", `${url.pathname}${url.search}`);
+      setSelectedId(result.reseller.reseller.userId); setActiveTab("resumen");
       setForm({ displayName: "", email: "", password: "", phone: "", commissionPercent: 20, creditLimitArs: "" });
       setError("");
-    } catch (nextError) { setError(errorMessage(nextError)); }
+    } catch (nextError) { setDialogError(errorMessage(nextError)); }
+    finally { mutationInFlight.current = false; mutationVersion.current++; setMutation(false); }
   }
 
   async function assign() {
-    if (!selected || !assignItem || batch.busy) return;
+    if (!selected || !assignItem || mutationInFlight.current || batch.isBusy()) return;
     const quantity = Number(assignmentBatch[assignItem.id] || 0) + assignQuantity;
     if (!Number.isSafeInteger(assignQuantity) || assignQuantity <= 0 || quantity > assignItem.freeQuantity) { setError(`El lote puede contener hasta ${assignItem.freeQuantity} unidades de ${assignItem.product.name}.`); return; }
     if (!assignmentBatch[assignItem.id] && Object.keys(assignmentBatch).length >= 100) { setError("El lote ya contiene 100 cartas."); return; }
@@ -6278,7 +6379,7 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   }
 
   async function submitAssignments() {
-    if (!selected || resellerBatchProblem(assignmentLines)) return;
+    if (!selected || mutationInFlight.current || batch.isBusy() || resellerBatchProblem(assignmentLines)) return;
     const target = selected.reseller.userId;
     try {
       const result = await batch.submit(`/resellers/${target}/assignments/batch`, { lines: assignmentLines.map((line) => ({ inventoryItemId: line.id, quantity: Number(line.quantity) })) });
@@ -6288,7 +6389,7 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   }
 
   async function resolveRequestBatch(action: "approve" | "reject") {
-    if (!selected || !requestsForBatch.length || batch.busy || resolvingRequestId) return;
+    if (!selected || !requestsForBatch.length || mutationInFlight.current || batch.isBusy() || resolvingRequestId) return;
     if (selectedRequests.length !== requestsForBatch.length) { setError("Una solicitud ya no esta pendiente. Actualiza la seleccion."); return; }
     if (action === "reject" && !window.confirm(`Rechazar ${requestsForBatch.length} solicitudes de ${selected.reseller.displayName}?`)) return;
     const lines = requestsForBatch.map((request) => ({ requestId: request.id, ...(action === "approve" ? { quantity: Number(requestDrafts[request.id]?.quantity ?? request.quantityRequested), priceArs: Number(requestDrafts[request.id]?.priceArs ?? request.currentPriceArs) } : {}) }));
@@ -6296,12 +6397,14 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
     try {
       const result = await batch.submit(`/resellers/${selected.reseller.userId}/assignment-requests/batch`, { action, lines });
       if (!result) return;
-      replace(result.dashboard); setSelectedRequests([]); setBatchNotice(`${result.processedCount} solicitudes ${action === "approve" ? "aprobadas" : "rechazadas"}.`); setError("");
+      replace(result.dashboard); setSelectedRequests([]);
+      setRequestDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !selectedRequests.includes(id))));
+      setBatchNotice(`${result.processedCount} solicitudes ${action === "approve" ? "aprobadas" : "rechazadas"}.`); setError("");
     } catch (nextError) { setError(errorMessage(nextError)); }
   }
 
   async function resolveStockRequest(request: ResellerStockRequest, action: "approve" | "reject") {
-    if (!selected || batch.busy || resolvingRequestId) return;
+    if (!selected || mutationInFlight.current || batch.isBusy() || resolvingRequestId) return;
     const draft = requestDrafts[request.id];
     const quantity = Number(draft?.quantity ?? request.quantityRequested);
     const priceArs = Number(draft?.priceArs ?? request.currentPriceArs);
@@ -6318,168 +6421,219 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
   }
 
   async function saveCreditLimit() {
-    if (!selected) return;
+    if (!selected || busy) return;
     const draft = creditLimitDrafts[selected.reseller.userId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs));
     setSavingCreditLimit(true);
     try {
-      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/credit-limit`, { method: "PUT", body: { creditLimitArs: draft === "" ? null : Number(draft) } }));
-      setError("");
+      await runAdminChange(() => api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/credit-limit`, { method: "PUT", body: { creditLimitArs: draft === "" ? null : Number(draft) } }), "Cupo de mercaderia actualizado.", false, true);
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSavingCreditLimit(false); }
   }
 
   async function saveAssignmentPrice(item: ResellerAssignment) {
-    if (!selected) return;
+    if (!selected || busy) return;
     const priceArs = Number(assignmentPriceDrafts[item.inventoryItemId] ?? item.priceArs);
     setSavingAssignmentPriceId(item.inventoryItemId);
     try {
-      replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments/${item.inventoryItemId}/price`, { method: "PUT", body: { priceArs } }));
-      setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: String(priceArs) }));
-      setError("");
+      const saved = await runAdminChange(() => api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/assignments/${item.inventoryItemId}/price`, { method: "PUT", body: { priceArs } }), `Precio central actualizado: ${item.name}.`, false, true);
+      if (saved) setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: String(priceArs) }));
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setSavingAssignmentPriceId(""); }
   }
 
-  async function registerReturn(item: ResellerAssignment) {
-    if (!selected) return;
-    const raw = window.prompt(`Unidades devueltas de ${item.name}`, "1");
-    if (!raw) return;
-    try { replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/returns`, { method: "POST", body: { inventoryItemId: item.inventoryItemId, quantity: Number(raw) } })); }
-    catch (nextError) { setError(errorMessage(nextError)); }
+  function registerReturn(item: ResellerAssignment) {
+    if (!selected || busy || item.remaining <= 0) return;
+    setDetailItemId(item.inventoryItemId); setReturnQuantity("1"); setDialogError(""); setUncertainAction(false); setDialog("return");
   }
 
-  async function settle() {
-    if (!selected) return;
-    const raw = window.prompt("Importe recibido en ARS", String(Math.round(selected.summary.outstandingArs)));
-    if (!raw) return;
-    const note = window.prompt("Nota de la rendicion", "Rendicion de cuenta") || "";
-    try { replace(await api<ResellerDashboard>(`/resellers/${selected.reseller.userId}/settlements`, { method: "POST", body: { amountArs: Number(raw), note } })); }
-    catch (nextError) { setError(errorMessage(nextError)); }
+  function settle() {
+    if (!selected || busy || selected.summary.outstandingArs <= 0) return;
+    setSettlementAmount(String(selected.summary.outstandingArs)); setSettlementNote(""); setDialogError(""); setUncertainAction(false); setDialog("settle");
   }
 
-  async function cancelSale(sale: ResellerSale) {
-    if (!window.confirm(`Anular la venta a ${sale.customerName} y reponer ${sale.lines.reduce((sum, line) => sum + line.quantity, 0)} unidad(es)?`)) return;
-    try { replace(await api<ResellerDashboard>(`/resellers/sales/${sale.id}/cancel`, { method: "POST" })); }
-    catch (nextError) { setError(errorMessage(nextError)); }
+  function cancelSale(sale: ResellerSale) {
+    if (busy) return;
+    setDetailSaleId(sale.id); setDialogError(""); setUncertainAction(false); setDialog("cancel");
   }
 
+  const requestSection = selected && !assignmentOnly ? <section className="ra-section reseller-request-panel">
+                <div className="section-heading"><div><h3>Solicitudes pendientes</h3></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
+                {selected.stockRequests.length ? <div className="reseller-batch-bar">
+                  <label className="reseller-batch-check"><input type="checkbox" aria-label="Seleccionar todas las solicitudes" disabled={busy} checked={selected.stockRequests.every((request) => selectedRequests.includes(request.id))} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests(event.target.checked ? selected.stockRequests.map((request) => request.id) : []); }} />Todas</label>
+                  <strong>{requestsForBatch.length} seleccionadas · {formatArs(requestBatchValue)}</strong>
+                  <button className="clear-action" disabled={busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>Limpiar seleccion</button>
+                  <button className="secondary-action" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("reject")}>Rechazar seleccionadas</button>
+                  <button className="primary-action" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("approve")}><Icon name="check" />{busy ? "Procesando..." : "Aprobar seleccionadas"}</button>
+                </div> : null}
+                {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
+                  const draft = requestDrafts[request.id];
+                  const stockItem = stockById.get(request.inventoryItemId);
+                  const referencePrices = stockItem ? (["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => ({ source, ...inventoryPriceDisplay(stockItem, source, blueRate) })) : [];
+                  const useReferencePrice = (priceArs: number | null) => {
+                    if (!priceArs) return;
+                    setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: String(Math.round(priceArs)) } }));
+                  };
+                  return <article key={request.id}>
+                    <CardArt src={request.imageUrl || stockItem?.product.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                    <div className="reseller-request-copy"><label className="reseller-batch-check"><input type="checkbox" aria-label={`Seleccionar solicitud ${request.name}`} disabled={busy} checked={selectedRequests.includes(request.id)} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests((current) => event.target.checked ? [...current, request.id] : current.filter((id) => id !== request.id)); }} />Seleccionar</label><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
+                    <div className="reseller-request-prices" aria-label="Precios de referencia">
+                      {referencePrices.map((price) => <button type="button" key={price.source} disabled={busy || !price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => useReferencePrice(price.ars)}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
+                    </div>
+                    <label>Cantidad<input disabled={busy} type="number" min="1" max={Math.min(request.quantityRequested, Math.max(1, request.availableQuantity))} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
+                    <label>Precio central ARS<input type="number" min="0" step="100" disabled={busy} value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
+                    <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>
+                    <div className="reseller-request-actions"><button className="secondary-action" disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
+                  </article>;
+                })}</div> : <EmptyState title="Sin solicitudes pendientes" body="Cuando un revendedor pida una carta desde el stock global aparecera aca." />}
+              </section> : null;
+  const assignmentSection = selected && assignmentOpen ? (<section className="ra-section ra-assign-section">
+                <div className="section-heading"><div><h3>Preparar entrega</h3></div></div>
+                <div className="reseller-assign-controls">
+                  <label className="reseller-stock-search"><span>Buscar carta</span><input disabled={busy} placeholder="Nombre, expansion, numero o SKU" value={stockQuery} onChange={(event) => { setStockQuery(event.target.value); setAssignItemId(""); }} /></label>
+                  <label><span>Cantidad</span><input type="number" min="1" disabled={busy} max={assignItem?.freeQuantity} value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} /></label>
+                  <button className="secondary-action" onClick={() => void assign()} disabled={!assignItemId || busy}><Icon name="plus" />Agregar al lote</button>
+                </div>
+                {assignItem ? <div className="reseller-stock-selected">
+                  <CardArt src={assignItem.product.imageUrl} alt={assignItem.product.name} label={assignItem.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                  <div><span>Seleccionada</span><strong>{assignItem.product.name}</strong><small>{assignItem.product.expansion} #{assignItem.product.number || "-"} · {assignItem.variant.language} / {assignItem.variant.finish}</small></div>
+                  <b>{assignItem.freeQuantity} libres</b>
+                  <button type="button" className="secondary-action" onClick={() => setAssignItemId("")}>Cambiar</button>
+                </div> : normalizedStockQuery ? <div className="reseller-stock-results" role="listbox" aria-label="Resultados de inventario">
+                  {visibleStock.length ? visibleStock.map((item) => <button type="button" role="option" aria-selected="false" key={item.id} onClick={() => setAssignItemId(item.id)}>
+                    <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
+                    <span><strong>{item.product.name}</strong><small>{item.product.expansion} #{item.product.number || "-"}</small><small>{item.variant.language} · {item.variant.condition} · {item.variant.finish}</small></span>
+                    <b>{item.freeQuantity} libres</b>
+                  </button>) : <p className="muted">No hay cartas con stock para esa busqueda.</p>}
+                </div> : <p className="reseller-stock-hint">Sin cartas seleccionadas.</p>}
+                <ResellerBatchReview title="Lote de asignacion" command={`Asignar lote a ${selected.reseller.displayName}`} lines={assignmentLines} busy={busy} onQuantity={(id, quantity) => setAssignmentBatch((current) => ({ ...current, [id]: quantity }))} onRemove={(id) => setAssignmentBatch((current) => { const { [id]: _removed, ...rest } = current; return rest; })} onClear={() => setAssignmentBatch({})} onSubmit={() => void submitAssignments()} />
+              </section> ) : null;
+  const dialogContent = dialog === "create" && !assignmentOnly ? <ResellerAdminDialog key={dialog} title="Nuevo revendedor" busy={busy} onClose={closeDialog}>
+    <form className="ra-dialog-body ra-form" onSubmit={create}>
+      <label>Nombre<input required disabled={busy} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
+      <label>Email<input required disabled={busy} type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+      <label>Password inicial<input required disabled={busy} minLength={8} type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+      <label>Telefono<input disabled={busy} type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+      <div className="ra-form-pair"><label>Comision %<input required disabled={busy} type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label><label>Limite mercaderia ARS<input disabled={busy} type="number" min="0" step="0.01" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label></div>
+      {dialogError ? <p className="feedback error" role="alert">{dialogError}</p> : null}
+      <footer className="ra-dialog-footer"><button type="button" className="secondary-action" disabled={busy} onClick={closeDialog}>Cancelar</button><button className="primary-action" disabled={busy}><Icon name="plus" />{busy ? "Creando..." : "Crear usuario"}</button></footer>
+    </form>
+  </ResellerAdminDialog> : dialog === "stock" && stockDetail ? <ResellerAdminDialog key={dialog} title={stockDetail.name} busy={busy} onClose={closeDialog}>
+    <div className="ra-dialog-body">
+      <div className="ra-stock-detail"><CardArt src={stockDetail.imageUrl} fallbackSrc={stockDetail.imageFallbackUrl} alt={stockDetail.name} label={stockDetail.name} className="ra-detail-art" fallbackClassName="ra-detail-art image-placeholder" /><div><strong>{stockDetail.expansion} #{stockDetail.number || "-"}</strong><span>{[stockDetail.language, stockDetail.condition, stockDetail.finish].filter(Boolean).join(" / ")}</span><small>{stockDetail.sku}</small><dl className="ra-detail-units">{[["Entregadas", stockDetail.assigned], ["Vendidas", stockDetail.sold], ["Devueltas", stockDetail.returned], ["En mano", stockDetail.remaining], ["Vendibles", stockDetail.sellable]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></div></div>
+      {!assignmentOnly ? <>
+        <div className="ra-reference-prices" aria-label="Precios de referencia">{(["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => {
+          const item = stockById.get(stockDetail.inventoryItemId);
+          if (!item) return null;
+          const price = inventoryPriceDisplay(item, source, blueRate);
+          return <button key={source} disabled={busy || !price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => setAssignmentPriceDrafts((current) => ({ ...current, [stockDetail.inventoryItemId]: String(Math.round(price.ars || 0)) }))}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>;
+        })}</div>
+        <form className="ra-central-price ra-form" onSubmit={(event) => { event.preventDefault(); void saveAssignmentPrice(stockDetail); }}><label>Precio del inventario central ARS<input required type="number" min="0" step="0.01" disabled={busy} value={assignmentPriceDrafts[stockDetail.inventoryItemId] ?? String(stockDetail.priceArs)} onChange={(event) => setAssignmentPriceDrafts((current) => ({ ...current, [stockDetail.inventoryItemId]: event.target.value }))} /></label><button className="primary-action" disabled={busy || uncertainAction || savingAssignmentPriceId === stockDetail.inventoryItemId}><Icon name="check" />{busy ? "Guardando..." : "Guardar precio central"}</button></form>
+        {dialogError ? <p className="feedback error" role="alert">{dialogError}</p> : null}
+      </> : <strong>{formatArs(stockDetail.priceArs)}</strong>}
+      <footer className="ra-dialog-footer"><button className="secondary-action" disabled={busy} onClick={closeDialog}>Cerrar</button>{!assignmentOnly ? <button className="secondary-action" disabled={busy || !stockDetail.remaining} onClick={() => registerReturn(stockDetail)}><Icon name="inventory" />Registrar devolucion</button> : null}</footer>
+    </div>
+  </ResellerAdminDialog> : dialog === "return" && stockDetail && selected && !assignmentOnly ? <ResellerAdminDialog key={dialog} title="Registrar devolucion" busy={busy} onClose={closeDialog}>
+    <form className="ra-dialog-body ra-form" onSubmit={(event) => {
+      event.preventDefault(); const quantity = Number(returnQuantity);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > stockDetail.remaining) { setDialogError("La cantidad supera las unidades en mano."); return; }
+      void runAdminChange(() => api<ResellerDashboard>(`/resellers/${selectedId}/returns`, { method: "POST", body: { inventoryItemId: stockDetail.inventoryItemId, quantity } }), `Devolucion registrada: ${quantity} ${stockDetail.name}.`);
+    }}>
+      <div className="ra-return-card"><CardArt src={stockDetail.imageUrl} fallbackSrc={stockDetail.imageFallbackUrl} alt={stockDetail.name} label={stockDetail.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><div><strong>{stockDetail.name}</strong><small>{stockDetail.expansion} #{stockDetail.number} · {stockDetail.remaining} en mano</small></div></div>
+      <label>Unidades a devolver<input required disabled={busy || uncertainAction} type="number" min="1" max={stockDetail.remaining} step="1" value={returnQuantity} onChange={(event) => setReturnQuantity(event.target.value)} /></label>
+      {dialogError ? <p className="feedback error" role="alert">{dialogError}</p> : null}
+      <footer className="ra-dialog-footer"><button type="button" className="secondary-action" disabled={busy} onClick={closeDialog}>Cancelar</button><button className="primary-action" disabled={busy || uncertainAction}><Icon name="check" />{busy ? "Guardando..." : "Confirmar devolucion"}</button></footer>
+    </form>
+  </ResellerAdminDialog> : dialog === "settle" && selected && !assignmentOnly ? <ResellerAdminDialog key={dialog} title="Registrar rendicion" busy={busy} onClose={closeDialog}>
+    <form className="ra-dialog-body ra-form" onSubmit={(event) => {
+      event.preventDefault(); const amountArs = Number(settlementAmount);
+      if (!Number.isFinite(amountArs) || amountArs <= 0 || amountArs > selected.summary.outstandingArs) { setDialogError("El importe debe ser positivo y no superar el saldo a rendir."); return; }
+      void runAdminChange(() => api<ResellerDashboard>(`/resellers/${selectedId}/settlements`, { method: "POST", body: { amountArs, note: settlementNote } }), `Rendicion registrada: ${formatArs(amountArs)}.`);
+    }}>
+      <dl className="ra-profile-data"><div><dt>Revendedor</dt><dd>{selected.reseller.displayName}</dd></div><div><dt>Saldo a rendir</dt><dd>{formatArs(selected.summary.outstandingArs)}</dd></div></dl>
+      <label>Importe recibido ARS<input required disabled={busy || uncertainAction} type="number" min="0.01" max={selected.summary.outstandingArs} step="0.01" value={settlementAmount} onChange={(event) => setSettlementAmount(event.target.value)} /></label>
+      <label>Nota<textarea disabled={busy || uncertainAction} rows={3} value={settlementNote} onChange={(event) => setSettlementNote(event.target.value)} /></label>
+      {dialogError ? <p className="feedback error" role="alert">{dialogError}</p> : null}
+      <footer className="ra-dialog-footer"><button type="button" className="secondary-action" disabled={busy} onClick={closeDialog}>Cancelar</button><button className="primary-action" disabled={busy || uncertainAction}><Icon name="check" />{busy ? "Guardando..." : "Confirmar rendicion"}</button></footer>
+    </form>
+  </ResellerAdminDialog> : (dialog === "sale" || dialog === "cancel") && saleDetail && selected && !assignmentOnly ? <ResellerAdminDialog key={dialog} title={dialog === "cancel" ? "Anular venta" : "Detalle de venta"} busy={busy} onClose={closeDialog}>
+    <div className="ra-dialog-body"><dl className="ra-profile-data"><div><dt>Cliente</dt><dd>{saleDetail.customerName || "Venta sin nombre"}</dd></div><div><dt>Fecha</dt><dd>{formatDate(saleDetail.soldAt)}</dd></div><div><dt>Estado</dt><dd>{saleDetail.status === "confirmed" ? "Confirmada" : "Anulada"}</dd></div></dl>
+      <div className="ra-sale-lines">{saleDetail.lines.map((line) => <div key={line.inventoryItemId}><CardArt src={stockById.get(line.inventoryItemId)?.product.imageUrl || selected.assignments.find((item) => item.inventoryItemId === line.inventoryItemId)?.imageUrl} alt={line.name} label={line.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><span><strong>{line.name}</strong><small>{line.quantity} × {formatArs(line.unitPriceArs)}</small></span><b>{formatArs(line.lineTotalArs)}</b></div>)}</div>
+      <dl className="ra-profile-data"><div><dt>Venta</dt><dd>{formatArs(saleDetail.grossTotalArs)}</dd></div><div><dt>Comision ({saleDetail.commissionPercent}%)</dt><dd>{formatArs(saleDetail.commissionArs)}</dd></div><div><dt>Neto</dt><dd>{formatArs(saleDetail.netDueArs)}</dd></div>{saleDetail.notes ? <div><dt>Notas</dt><dd>{saleDetail.notes}</dd></div> : null}</dl>
+      {dialog === "cancel" ? <p className="warning-text">Se anulara esta venta y se repondran {saleDetail.lines.reduce((sum, line) => sum + line.quantity, 0)} unidades.</p> : null}
+      {dialogError ? <p className="feedback error" role="alert">{dialogError}</p> : null}
+      <footer className="ra-dialog-footer"><button className="secondary-action" disabled={busy} onClick={closeDialog}>Cerrar</button>{saleDetail.status === "confirmed" ? dialog === "cancel" ? <button className="primary-action" disabled={busy || uncertainAction} onClick={() => void runAdminChange(() => api<ResellerDashboard>(`/resellers/sales/${saleDetail.id}/cancel`, { method: "POST" }), "Venta anulada y unidades repuestas.")}>{busy ? "Procesando..." : "Confirmar anulacion"}</button> : <button className="secondary-action ra-danger" disabled={busy} onClick={() => cancelSale(saleDetail)}>Anular venta</button> : null}</footer>
+    </div>
+  </ResellerAdminDialog> : null;
+  const tabs: Array<{ id: ResellerAdminTab; label: string; count?: number }> = [
+    { id: "resumen", label: "Resumen" }, { id: "mercaderia", label: "Mercaderia", count: selected?.summary.remainingUnits },
+    ...(!assignmentOnly ? [{ id: "solicitudes" as const, label: "Solicitudes", count: selected?.stockRequests.length }, { id: "ventas" as const, label: "Ventas" }, { id: "cuenta" as const, label: "Cuenta corriente" }, { id: "configuracion" as const, label: "Configuracion" }] : [])
+  ];
+  const openStockDetail = (item: ResellerAssignment) => { setDetailItemId(item.inventoryItemId); setDialogError(""); setUncertainAction(false); setDialog("stock"); };
+  const openSaleDetail = (sale: ResellerSale) => { setDetailSaleId(sale.id); setDialogError(""); setUncertainAction(false); setDialog("sale"); };
+  const stat = (label: string, value: React.ReactNode, helper?: string) => <div key={label}><dt>{label}</dt><dd>{value}</dd>{helper ? <small>{helper}</small> : null}</div>;
   return (
-    <section className="view reseller-admin-view">
-      <div className="section-heading"><div><h2>{assignmentOnly ? "Asignar a revendedores" : "Revendedores"}</h2><p>Consignacion sin reserva: UltimoTurno conserva prioridad sobre todo el stock.</p></div>{!assignmentOnly ? <a className="secondary-action" href="/portal-revendedor" target="_blank" rel="noreferrer">Abrir portal</a> : null}</div>
-      {error ? <div className="feedback error">{error}</div> : null}
-      {batchNotice ? <div className="feedback success" role="status">{batchNotice}</div> : null}
-      <div className="reseller-layout">
-        <aside className="panel reseller-sidebar">
-          <h3>Equipo</h3>
-          {loading ? <p className="muted">Cargando...</p> : null}
-          {resellers.length ? <label className="reseller-mobile-picker"><span>Revendedor</span><select disabled={batch.busy} value={selected?.reseller.userId || ""} onChange={(event) => setSelectedId(event.target.value)}>{resellers.map((item) => <option key={item.reseller.userId} value={item.reseller.userId}>{item.reseller.displayName}{item.stockRequests.length ? ` · ${item.stockRequests.length} solicitud${item.stockRequests.length === 1 ? "" : "es"}` : ""}</option>)}</select><small>{selected ? `${formatArs(selected.summary.assignedValueArs)} asignado · ${formatArs(selected.summary.outstandingArs)} a rendir` : ""}</small></label> : null}
-          <div className="reseller-sidebar-list">{resellers.map((item) => <button key={item.reseller.userId} disabled={batch.busy} className={selected?.reseller.userId === item.reseller.userId ? "active" : ""} onClick={() => setSelectedId(item.reseller.userId)}><strong>{item.reseller.displayName}{item.stockRequests.length ? <em>{item.stockRequests.length} solicitud{item.stockRequests.length === 1 ? "" : "es"}</em> : null}</strong><div className="reseller-sidebar-values"><span><small>Asignado</small><b>{formatArs(item.summary.assignedValueArs)}</b></span><span><small>A rendir</small><b>{formatArs(item.summary.outstandingArs)}</b></span><span><small>Ventas mes</small><b>{formatArs(monthlySalesArs(item))}</b></span></div></button>)}</div>
-          {!assignmentOnly ? <form className="reseller-create" onSubmit={create}>
-            <h3>Nuevo revendedor</h3>
-            <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
-            <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            <input required minLength={8} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-            <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-            <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
-            <label>Limite mercaderia ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label>
-            <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
-          </form> : null}
-          {!assignmentOnly ? <details className="reseller-mobile-create"><summary><Icon name="plus" />Nuevo revendedor</summary><form className="reseller-create" onSubmit={create}>
-            <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
-            <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            <input required minLength={8} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-            <input placeholder="Telefono" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-            <label>Comision %<input required type="number" min="0" max="100" step="0.01" value={form.commissionPercent} onChange={(event) => setForm({ ...form, commissionPercent: Number(event.target.value) })} /></label>
-            <label>Limite mercaderia ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={form.creditLimitArs} onChange={(event) => setForm({ ...form, creditLimitArs: event.target.value })} /></label>
-            <button className="primary-action" type="submit"><Icon name="plus" />Crear usuario</button>
-          </form></details> : null}
-        </aside>
-        <div className="reseller-workspace">
-          {!selected ? <EmptyState title="Sin revendedores" body={assignmentOnly ? "Un administrador debe crear primero un usuario revendedor." : "Crea el primer usuario para comenzar a asignar mercaderia."} /> : <>
-            <section className="metrics reseller-metrics">
-              <Metric label="Consignadas" value={selected.summary.remainingUnits} helper="unidades pendientes" />
-              <Metric label="Vendibles ahora" value={selected.summary.sellableUnits} helper="segun stock real" />
-              <Metric label="Valor asignado" value={formatArs(selected.summary.assignedValueArs)} helper="mercaderia en mano" />
-              <Metric label="Limite" value={selected.reseller.creditLimitArs == null ? "Sin limite" : formatArs(selected.reseller.creditLimitArs)} helper={selected.summary.pendingRequestValueArs ? `${formatArs(selected.summary.pendingRequestValueArs)} solicitado` : "sin solicitudes computadas"} />
-              {!assignmentOnly ? <><Metric label="Ventas del mes" value={formatArs(monthlySalesArs(selected))} helper="bruto confirmado este mes" />
-              <Metric label="Comision" value={formatArs(selected.summary.commissionArs)} helper={`${selected.reseller.commissionPercent}%`} />
-              <Metric label="A rendir" value={formatArs(selected.summary.outstandingArs)} helper={`${formatArs(selected.summary.settledArs)} rendido`} /></> : null}
-            </section>
-            {!assignmentOnly ? <section className="panel reseller-credit-control"><div><h3>Limite de mercaderia</h3><p>Las cartas en mano y las solicitudes pendientes consumen este cupo. Dejalo vacio para no limitar.</p></div><label>Limite ARS<input type="number" min="0" step="1000" placeholder="Sin limite" value={creditLimitDrafts[selected.reseller.userId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs))} onChange={(event) => setCreditLimitDrafts((current) => ({ ...current, [selected.reseller.userId]: event.target.value }))} /></label><button className="primary-action" disabled={savingCreditLimit} onClick={() => void saveCreditLimit()}>{savingCreditLimit ? "Guardando..." : "Guardar limite"}</button><div className="reseller-credit-breakdown"><span>Asignado <b>{formatArs(selected.summary.assignedValueArs)}</b></span><span>Pendiente <b>{formatArs(selected.summary.pendingRequestValueArs)}</b></span><span>Disponible <b>{selected.summary.availableCreditArs == null ? "Sin limite" : formatArs(selected.summary.availableCreditArs)}</b></span></div></section> : null}
-            {!assignmentOnly ? <section className="panel reseller-request-panel">
-              <div className="section-heading"><div><h3>Solicitudes de asignacion</h3><p>Revisa cantidad y precio antes de entregar la mercaderia.</p></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
-              {selected.stockRequests.length ? <div className="reseller-batch-bar">
-                <label className="reseller-batch-check"><input type="checkbox" aria-label="Seleccionar todas las solicitudes" disabled={batch.busy} checked={selected.stockRequests.every((request) => selectedRequests.includes(request.id))} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests(event.target.checked ? selected.stockRequests.map((request) => request.id) : []); }} />Todas</label>
-                <strong>{requestsForBatch.length} seleccionadas · {formatArs(requestBatchValue)}</strong>
-                <button className="clear-action" disabled={batch.busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>Limpiar seleccion</button>
-                <button className="secondary-action" disabled={batch.busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("reject")}>Rechazar seleccionadas</button>
-                <button className="primary-action" disabled={batch.busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("approve")}><Icon name="check" />{batch.busy ? "Procesando..." : "Aprobar seleccionadas"}</button>
-              </div> : null}
-              {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
-                const draft = requestDrafts[request.id];
-                const stockItem = stockById.get(request.inventoryItemId);
-                const referencePrices = stockItem ? (["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => ({ source, ...inventoryPriceDisplay(stockItem, source, blueRate) })) : [];
-                const useReferencePrice = (priceArs: number | null) => {
-                  if (!priceArs) return;
-                  setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: String(Math.round(priceArs)) } }));
-                };
-                return <article key={request.id}>
-                  <CardArt src={request.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                  <div className="reseller-request-copy"><label className="reseller-batch-check"><input type="checkbox" aria-label={`Seleccionar solicitud ${request.name}`} disabled={batch.busy} checked={selectedRequests.includes(request.id)} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests((current) => event.target.checked ? [...current, request.id] : current.filter((id) => id !== request.id)); }} />Seleccionar</label><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
-                  <div className="reseller-request-prices" aria-label="Precios de referencia">
-                    {referencePrices.map((price) => <button type="button" key={price.source} disabled={!price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => useReferencePrice(price.ars)}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
-                  </div>
-                  <label>Cantidad<input disabled={batch.busy} type="number" min="1" max={Math.min(request.quantityRequested, Math.max(1, request.availableQuantity))} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
-                  <label>Precio ARS<input type="number" min="0" step="100" disabled={batch.busy} value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
-                  <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>
-                  <div className="reseller-request-actions"><button className="secondary-action" disabled={batch.busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={batch.busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
-                </article>;
-              })}</div> : <EmptyState title="Sin solicitudes pendientes" body="Cuando un revendedor pida una carta desde el stock global aparecera aca." />}
-            </section> : null}
-            <section className="panel">
-              <div className="section-heading"><div><h3>Asignar stock</h3><p>La asignacion controla tenencia, pero no quita disponibilidad central.</p></div></div>
-              <div className="reseller-assign-controls">
-                <label className="reseller-stock-search"><span>Buscar carta</span><input disabled={batch.busy} placeholder="Nombre, expansion, numero o SKU" value={stockQuery} onChange={(event) => { setStockQuery(event.target.value); setAssignItemId(""); }} /></label>
-                <label><span>Cantidad</span><input type="number" min="1" disabled={batch.busy} max={assignItem?.freeQuantity} value={assignQuantity} onChange={(event) => setAssignQuantity(Number(event.target.value))} /></label>
-                <button className="secondary-action" onClick={() => void assign()} disabled={!assignItemId || batch.busy}><Icon name="plus" />Agregar al lote</button>
-              </div>
-              {assignItem ? <div className="reseller-stock-selected">
-                <CardArt src={assignItem.product.imageUrl} alt={assignItem.product.name} label={assignItem.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                <div><span>Seleccionada</span><strong>{assignItem.product.name}</strong><small>{assignItem.product.expansion} #{assignItem.product.number || "-"} · {assignItem.variant.language} / {assignItem.variant.finish}</small></div>
-                <b>{assignItem.freeQuantity} libres</b>
-                <button type="button" className="secondary-action" onClick={() => setAssignItemId("")}>Cambiar</button>
-              </div> : normalizedStockQuery ? <div className="reseller-stock-results" role="listbox" aria-label="Resultados de inventario">
-                {visibleStock.length ? visibleStock.map((item) => <button type="button" role="option" aria-selected="false" key={item.id} onClick={() => setAssignItemId(item.id)}>
-                  <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                  <span><strong>{item.product.name}</strong><small>{item.product.expansion} #{item.product.number || "-"}</small><small>{item.variant.language} · {item.variant.condition} · {item.variant.finish}</small></span>
-                  <b>{item.freeQuantity} libres</b>
-                </button>) : <p className="muted">No hay cartas con stock para esa busqueda.</p>}
-              </div> : <p className="reseller-stock-hint">Escribi para ver y elegir resultados directamente.</p>}
-              <ResellerBatchReview title="Lote de asignacion" command={`Asignar lote a ${selected.reseller.displayName}`} lines={assignmentLines} busy={batch.busy} onQuantity={(id, quantity) => setAssignmentBatch((current) => ({ ...current, [id]: quantity }))} onRemove={(id) => setAssignmentBatch((current) => { const { [id]: _removed, ...rest } = current; return rest; })} onClear={() => setAssignmentBatch({})} onSubmit={() => void submitAssignments()} />
-            </section>
-            <section className="panel"><div className="section-heading"><div><h3>Mercaderia en consignacion</h3><p>“Vendible” puede bajar si UltimoTurno vende primero. Toca una referencia para usarla como precio.</p></div></div>
-              <div className="reseller-table">{selected.assignments.map((item) => {
-                const stockItem = stockById.get(item.inventoryItemId);
-                const referencePrices = stockItem ? (["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => ({ source, ...inventoryPriceDisplay(stockItem, source, blueRate) })) : [];
-                return <div className="reseller-row reseller-assignment-row" key={item.inventoryItemId}>
-                  <CardArt src={item.imageUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                  <div><strong>{item.name}</strong><span>{item.expansion} #{item.number || "-"}</span></div>
-                  <span>{item.remaining} en mano</span>
-                  <b className={item.sellable < item.remaining ? "warning-text" : ""}>{item.sellable} vendible</b>
-                  <div className="reseller-request-prices reseller-assignment-references" aria-label={`Precios de referencia de ${item.name}`}>
-                    {referencePrices.map((price) => <button type="button" key={price.source} disabled={!price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => { if (price.ars) setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: String(Math.round(price.ars || 0)) })); }}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
-                  </div>
-                  {!assignmentOnly ? <div className="reseller-assignment-price"><label>Precio ARS<input type="number" min="0" step="100" value={assignmentPriceDrafts[item.inventoryItemId] ?? String(item.priceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setAssignmentPriceDrafts((current) => ({ ...current, [item.inventoryItemId]: event.target.value }))} /></label><button className="secondary-action" disabled={savingAssignmentPriceId === item.inventoryItemId} onClick={() => void saveAssignmentPrice(item)}>{savingAssignmentPriceId === item.inventoryItemId ? "Guardando..." : "Guardar precio"}</button></div> : <strong>{formatArs(item.priceArs)}</strong>}
-                  {!assignmentOnly ? <button className="secondary-action" disabled={!item.remaining} onClick={() => void registerReturn(item)}>Devolucion</button> : null}
-                </div>;
-              })}</div>
-            </section>
-            {!assignmentOnly ? <section className="panel"><div className="section-heading"><div><h3>Ventas y rendiciones</h3><p>Saldo neto luego de comision.</p></div><button className="primary-action" disabled={!selected.summary.outstandingArs} onClick={() => void settle()}>Registrar rendicion</button></div>
-              <div className="reseller-table">{selected.sales.map((sale) => <div className="reseller-row sale" key={sale.id}><div><strong>{sale.customerName}</strong><span>{formatDate(sale.soldAt)} · {sale.lines.map((line) => `${line.quantity} ${line.name}`).join(", ")}</span></div><span>{formatArs(sale.grossTotalArs)} bruto</span><b>{formatArs(sale.netDueArs)} neto</b><span className={`status-pill ${sale.status}`}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span>{sale.status === "confirmed" ? <button className="secondary-action" onClick={() => void cancelSale(sale)}>Anular</button> : <span />}</div>)}</div>
-            </section> : null}
-          </>}
+    <section className="view reseller-admin-view ra-admin">
+      <header className="ra-page-heading"><div>{selected ? <button className="ra-back" disabled={busy} onClick={() => navigateProfile("")}><Icon name="arrow-right" />Equipo de revendedores</button> : null}<h2>{selected ? selected.reseller.displayName : "Revendedores"}</h2>{selected ? <div className="ra-identity"><span className={selected.reseller.active ? "ra-status active" : "ra-status inactive"}>{selected.reseller.active ? "Activo" : "Inactivo"}</span><span>{selected.reseller.email}</span>{selected.reseller.phone ? <span>{selected.reseller.phone}</span> : null}</div> : null}</div>
+        <div className="ra-heading-actions">{selected ? <label className="ra-switch"><span>Revendedor</span><select aria-label="Cambiar revendedor" disabled={busy} value={selectedId} onChange={(event) => navigateProfile(event.target.value, activeTab)}>{resellers.map((record) => <option key={record.reseller.userId} value={record.reseller.userId}>{record.reseller.displayName}</option>)}</select></label> : !assignmentOnly ? <button className="primary-action" disabled={busy} onClick={() => { setDialogError(""); setUncertainAction(false); setDialog("create"); }}><Icon name="plus" />Nuevo revendedor</button> : null}
+        <button className="icon-action" disabled={busy || loading} title="Actualizar revendedores" aria-label="Actualizar revendedores" onClick={() => void load()}><Icon name="refresh" /></button>{!assignmentOnly ? <a className="icon-action" title="Abrir portal" aria-label="Abrir portal" href="/portal-revendedor" target="_blank" rel="noreferrer"><Icon name="external" /></a> : null}</div>
+      </header>
+      {error ? <div className="feedback error" role="alert">{error}</div> : null}
+      {batchNotice ? <div className="feedback success" role="status">{batchNotice}<button className="icon-action" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={() => setBatchNotice("")}><Icon name="close" /></button></div> : null}
+      {!selected ? <>
+        <dl className="ra-stats">{stat("Mercaderia en mano", formatArs(totals.stockValueArs), `${totals.units} unidades`)}{stat("Solicitudes pendientes", totals.requests)}{!assignmentOnly ? <>{stat("Ventas del mes", formatArs(totals.monthlySalesArs))}{stat("Saldo a rendir", formatArs(totals.outstandingArs))}</> : null}</dl>
+        <div className="ra-team-toolbar"><label className="ra-search"><Icon name="search" /><input aria-label="Buscar revendedores" placeholder="Nombre, email o telefono" value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} /></label>
+          <label>Estado<select aria-label="Filtrar equipo" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value as ResellerTeamFilter)}><option value="all">Todos</option><option value="pending">Con solicitudes</option><option value="restricted">Disponibilidad limitada</option>{!assignmentOnly ? <option value="balance">Con saldo a rendir</option> : null}<option value="inactive">Inactivos</option></select></label>
+          <label>Ordenar<select aria-label="Ordenar equipo" value={teamSort} onChange={(event) => setTeamSort(event.target.value as ResellerTeamSort)}><option value="name">Nombre</option><option value="stock">Mercaderia</option>{!assignmentOnly ? <><option value="balance">Saldo a rendir</option><option value="sales">Ventas del mes</option></> : null}</select></label><span className="ra-result-count">{team.length} de {resellers.length}</span>
         </div>
-      </div>
+        {loading && !resellers.length ? <p className="muted" role="status">Cargando revendedores...</p> : team.length ? <table className="ra-team-table"><caption className="sr-only">Equipo de revendedores</caption><thead><tr><th>Revendedor</th><th>En mano</th><th>Solicitudes</th>{!assignmentOnly ? <th>Ventas del mes</th> : null}<th>Cupo disponible</th>{!assignmentOnly ? <th>A rendir</th> : null}<th><span className="sr-only">Abrir ficha</span></th></tr></thead><tbody>{team.map((record) => <tr key={record.reseller.userId}>
+          <td className="ra-team-name"><strong>{record.reseller.displayName}</strong><small>{record.reseller.email}</small><span className={record.reseller.active ? "ra-status active" : "ra-status inactive"}>{record.reseller.active ? "Activo" : "Inactivo"}</span></td>
+          <td><span className="ra-cell-label">En mano</span><strong>{formatArs(record.summary.assignedValueArs)}</strong><small>{record.summary.remainingUnits} unidades{record.summary.sellableUnits < record.summary.remainingUnits ? ` · ${record.summary.sellableUnits} vendibles` : ""}</small></td>
+          <td><span className="ra-cell-label">Solicitudes</span><button className={record.stockRequests.length ? "ra-count pending" : "ra-count"} disabled={assignmentOnly && !record.stockRequests.length} onClick={() => navigateProfile(record.reseller.userId, assignmentOnly ? "mercaderia" : "solicitudes")} aria-label={`Ver solicitudes de ${record.reseller.displayName}`}>{record.stockRequests.length}</button></td>
+          {!assignmentOnly ? <td><span className="ra-cell-label">Ventas del mes</span><strong>{formatArs(monthlySalesArs(record))}</strong></td> : null}
+          <td><span className="ra-cell-label">Cupo disponible</span><strong>{record.summary.availableCreditArs == null ? "Sin limite" : formatArs(record.summary.availableCreditArs)}</strong>{record.reseller.creditLimitArs != null ? <small>de {formatArs(record.reseller.creditLimitArs)}</small> : null}</td>
+          {!assignmentOnly ? <td><span className="ra-cell-label">A rendir</span><strong className={record.summary.outstandingArs > 0 ? "ra-money-due" : ""}>{formatArs(record.summary.outstandingArs)}</strong></td> : null}
+          <td className="ra-team-open"><button className="icon-action" title={`Abrir ${record.reseller.displayName}`} aria-label={`Abrir ficha de ${record.reseller.displayName}`} onClick={() => navigateProfile(record.reseller.userId, assignmentOnly ? "mercaderia" : "resumen")}><Icon name="arrow-right" /></button></td>
+        </tr>)}</tbody></table> : <EmptyState title={resellers.length ? "Sin coincidencias" : "Sin revendedores"} body={resellers.length ? "Ninguna cuenta coincide con los filtros." : "No hay cuentas registradas."} />}
+      </> : <>
+        <dl className="ra-stats">{stat("En mano", selected.summary.remainingUnits, `${selected.summary.sellableUnits} vendibles`)}{stat("Valor mercaderia", formatArs(selected.summary.assignedValueArs))}{stat("Cupo disponible", selected.summary.availableCreditArs == null ? "Sin limite" : formatArs(selected.summary.availableCreditArs), `${formatArs(selected.summary.pendingRequestValueArs)} solicitado`)}{!assignmentOnly ? stat("A rendir", formatArs(selected.summary.outstandingArs), `${formatArs(selected.summary.settledArs)} rendido`) : null}</dl>
+        <nav className="ra-tabs" role="tablist" aria-label="Ficha del revendedor">{tabs.map((tab, index) => <button key={tab.id} role="tab" id={`ra-tab-${tab.id}`} aria-controls={`ra-panel-${tab.id}`} aria-selected={activeTab === tab.id} tabIndex={activeTab === tab.id ? 0 : -1} disabled={busy} onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+          navigateProfile(selectedId, tabs[next].id);
+          document.getElementById(`ra-tab-${tabs[next].id}`)?.focus();
+        }} onClick={() => navigateProfile(selectedId, tab.id)}>{tab.label}{tab.count != null ? <span className={tab.id === "solicitudes" && tab.count > 0 ? "pending" : ""}>{tab.count}</span> : null}</button>)}</nav>
+        <section className="ra-tab-panel" role="tabpanel" id="ra-panel-resumen" aria-labelledby="ra-tab-resumen" hidden={activeTab !== "resumen"}>
+          <div className="ra-summary-actions"><button className="primary-action" disabled={busy || !selected.reseller.active} onClick={() => { navigateProfile(selectedId, "mercaderia"); setAssignmentOpen(true); }}><Icon name="plus" />Asignar mercaderia</button>{!assignmentOnly ? <><button className="secondary-action" disabled={busy} onClick={() => navigateProfile(selectedId, "solicitudes")}><Icon name="orders" />Solicitudes ({selected.stockRequests.length})</button><button className="secondary-action" disabled={busy || !selected.summary.outstandingArs} onClick={settle}><Icon name="sales" />Registrar rendicion</button></> : null}</div>
+          <div className="ra-summary-columns"><section className="ra-section"><div className="ra-section-heading"><h3>Disponibilidad limitada</h3><span>{ownedStock.filter((item) => item.remaining > item.sellable).length} cartas</span></div>
+            {ownedStock.some((item) => item.remaining > item.sellable) ? <div className="ra-compact-list">{ownedStock.filter((item) => item.remaining > item.sellable).slice(0, 5).map((item) => <button key={item.inventoryItemId} onClick={() => openStockDetail(item)}><CardArt src={item.imageUrl} fallbackSrc={item.imageFallbackUrl} alt={item.name} label={item.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" /><span><strong>{item.name}</strong><small>{item.expansion} #{item.number}</small></span><b>{item.sellable}/{item.remaining}</b></button>)}</div> : <p className="muted">Toda la mercaderia en mano esta vendible.</p>}</section>
+            {!assignmentOnly ? <section className="ra-section"><div className="ra-section-heading"><h3>Ultimas ventas</h3><span>{formatArs(monthlySalesArs(selected))} este mes</span></div>{selected.sales.length ? <div className="ra-compact-list">{selected.sales.slice(0, 5).map((sale) => <button key={sale.id} onClick={() => openSaleDetail(sale)}><Icon name="sales" /><span><strong>{sale.customerName || "Venta sin nombre"}</strong><small>{formatDate(sale.soldAt)} · {sale.status === "confirmed" ? "Confirmada" : "Anulada"}</small></span><b>{formatArs(sale.grossTotalArs)}</b></button>)}</div> : <p className="muted">Sin ventas registradas.</p>}</section> : null}
+          </div>
+        </section>
+        <section className="ra-tab-panel" role="tabpanel" id="ra-panel-mercaderia" aria-labelledby="ra-tab-mercaderia" hidden={activeTab !== "mercaderia"}>
+          <div className="ra-section-heading"><h3>Mercaderia en consignacion</h3><div className="ra-heading-actions"><label className="reseller-batch-check"><input type="checkbox" checked={includeClosedStock} onChange={(event) => setIncludeClosedStock(event.target.checked)} />Incluir agotadas</label><button className="primary-action" disabled={busy || !selected.reseller.active} aria-expanded={assignmentOpen} onClick={() => setAssignmentOpen((open) => !open)}><Icon name="plus" />{assignmentOpen ? "Cerrar entrega" : "Asignar mercaderia"}</button></div></div>
+          {assignmentSection}
+          <ResellerStockBrowser key={selectedId} items={ownedStock} owned renderItem={(item) => <ResellerStockCard key={item.inventoryItemId} item={item} quantities={[{ label: "En mano", value: item.remaining }, { label: "Vendibles", value: item.sellable, warning: item.sellable < item.remaining }]}><button className="secondary-action" onClick={() => openStockDetail(item)}><Icon name="external" />Detalles</button>{!assignmentOnly ? <button className="secondary-action" disabled={busy || !item.remaining} onClick={() => registerReturn(item)}><Icon name="inventory" />Devolver</button> : null}</ResellerStockCard>} />
+        </section>
+        {!assignmentOnly ? <>
+          <section className="ra-tab-panel" role="tabpanel" id="ra-panel-solicitudes" aria-labelledby="ra-tab-solicitudes" hidden={activeTab !== "solicitudes"}>{requestSection}</section>
+          <section className="ra-tab-panel" role="tabpanel" id="ra-panel-ventas" aria-labelledby="ra-tab-ventas" hidden={activeTab !== "ventas"}>
+            <div className="ra-team-toolbar"><label className="ra-search"><Icon name="search" /><input aria-label="Buscar ventas del revendedor" placeholder="Cliente o carta" value={salesQuery} onChange={(event) => setSalesQuery(event.target.value)} /></label><label>Estado<select aria-label="Estado de ventas" value={salesStatus} onChange={(event) => setSalesStatus(event.target.value)}><option value="all">Todas</option><option value="confirmed">Confirmadas</option><option value="cancelled">Anuladas</option></select></label><span className="ra-result-count">{visibleSales.length} ventas</span></div>
+            {visibleSales.length ? <div className="ra-sales-list">{visibleSales.map((sale) => <article key={sale.id}><div><strong>{sale.customerName || "Venta sin nombre"}</strong><small>{formatDate(sale.soldAt)}</small><span>{sale.lines.reduce((sum, line) => sum + line.quantity, 0)} unidades</span></div><div><small>Venta</small><b>{formatArs(sale.grossTotalArs)}</b></div><div><small>Comision</small><b>{formatArs(sale.commissionArs)}</b></div><div><small>Neto</small><b>{formatArs(sale.netDueArs)}</b></div><span className={sale.status === "confirmed" ? "ra-status active" : "ra-status inactive"}>{sale.status === "confirmed" ? "Confirmada" : "Anulada"}</span><button className="icon-action" title="Detalle de venta" aria-label={`Detalle de venta a ${sale.customerName}`} onClick={() => openSaleDetail(sale)}><Icon name="arrow-right" /></button></article>)}</div> : <EmptyState title="Sin ventas" body="No hay ventas que coincidan con esta vista." />}
+          </section>
+          <section className="ra-tab-panel" role="tabpanel" id="ra-panel-cuenta" aria-labelledby="ra-tab-cuenta" hidden={activeTab !== "cuenta"}>
+            <div className="ra-section-heading"><h3>Cuenta corriente</h3><button className="primary-action" disabled={busy || !selected.summary.outstandingArs} onClick={settle}><Icon name="sales" />Registrar rendicion</button></div>
+            <dl className="ra-stats ra-account-totals">{stat("Ventas netas", formatArs(selected.summary.netDueArs))}{stat("Rendido", formatArs(selected.summary.settledArs))}{stat("Saldo a rendir", formatArs(selected.summary.outstandingArs))}</dl>
+            {account.length ? <div className="ra-account-list">{account.map((movement) => <article key={movement.id}><Icon name={movement.kind === "payment" ? "check" : "sales"} /><div><strong>{movement.kind === "payment" ? "Rendicion" : "Venta neta"}</strong><span>{movement.label}</span><small>{formatDate(movement.date)}</small></div><b className={movement.kind === "payment" ? "ra-money-paid" : "ra-money-due"}>{movement.kind === "payment" ? "-" : "+"}{formatArs(movement.credit || movement.debit)}</b></article>)}</div> : <EmptyState title="Sin movimientos" body="No hay ventas confirmadas ni rendiciones." />}
+          </section>
+          <section className="ra-tab-panel" role="tabpanel" id="ra-panel-configuracion" aria-labelledby="ra-tab-configuracion" hidden={activeTab !== "configuracion"}>
+            <div className="ra-settings"><section className="ra-section"><h3>Datos de la cuenta</h3><dl className="ra-profile-data"><div><dt>Email</dt><dd>{selected.reseller.email}</dd></div><div><dt>Telefono</dt><dd>{selected.reseller.phone || "-"}</dd></div><div><dt>Comision</dt><dd>{selected.reseller.commissionPercent}%</dd></div><div><dt>Estado</dt><dd>{selected.reseller.active ? "Activo" : "Inactivo"}</dd></div>{selected.reseller.notes ? <div><dt>Notas</dt><dd>{selected.reseller.notes}</dd></div> : null}</dl></section>
+              <form className="ra-section ra-form" onSubmit={(event) => { event.preventDefault(); void saveCreditLimit(); }}><h3>Cupo de mercaderia</h3><label>Limite ARS<input aria-label="Limite de mercaderia ARS" type="number" min="0" step="0.01" disabled={busy} placeholder="Sin limite" value={creditLimitDrafts[selectedId] ?? (selected.reseller.creditLimitArs == null ? "" : String(selected.reseller.creditLimitArs))} onChange={(event) => setCreditLimitDrafts((current) => ({ ...current, [selectedId]: event.target.value }))} /></label><dl className="ra-profile-data"><div><dt>En mano</dt><dd>{formatArs(selected.summary.assignedValueArs)}</dd></div><div><dt>Solicitado</dt><dd>{formatArs(selected.summary.pendingRequestValueArs)}</dd></div><div><dt>Disponible</dt><dd>{selected.summary.availableCreditArs == null ? "Sin limite" : formatArs(selected.summary.availableCreditArs)}</dd></div></dl><button className="primary-action" disabled={busy || savingCreditLimit}><Icon name="check" />{savingCreditLimit ? "Guardando..." : "Guardar cupo"}</button></form>
+            </div>
+          </section>
+        </> : null}
+      </>}
+      {dialogContent}
     </section>
   );
 }
