@@ -14,6 +14,10 @@ Actualizado: 2026-10-09
   y revisar filtros de deuda, pendientes y disponibilidad limitada.
 - Abrir una ficha, alternar las pestanas y revisar imagenes/variantes en
   Mercaderia. Incluir agotadas solo para consultar; no permite devolver cero.
+- En Solicitudes, revisar las filas compactas: imagen, pedidas/disponibles,
+  referencias y cantidad/precio central quedan agrupados. Aprobar individual
+  mantiene asignacion inmediata; aprobar menos resuelve la solicitud completa.
+  En celular, Rechazar/Aprobar de la barra actuan sobre la seleccion indicada.
 - En la proxima entrega real, desplegar Asignar mercaderia y revisar el lote.
   Los borradores sobreviven a cambiar de pestana, no a recargar; cambiar de
   revendedor pide confirmar su descarte.

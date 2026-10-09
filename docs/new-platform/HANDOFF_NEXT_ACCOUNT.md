@@ -1,5 +1,22 @@
 # Traspaso de contexto - UltimoTurno
 
+## Solicitudes compactas - 2026-10-09
+
+Se reemplazo el markup reseller-request-* del admin por ra-request-* aislado
+en reseller-admin.css, sin afectar estilos del portal. La cascada legacy fijaba
+referencias a ancho completo y acciones a 210 px, generando filas de ~260 px y
+botones partidos. Ahora filas desktop de ~130 px, imagen 72x101, ancho maximo
+1280, referencias compactas y campos/acciones juntos. Tablet/movil reorganizan
+areas sin scroll horizontal; comandos de lote abreviados solo en movil.
+CardArt usa globalStock enriquecido/fallback y placeholder Sin imagen discreto.
+Se mantienen endpoints, validacion, idempotencia, borradores y precio central.
+
+QA local con cuatro solicitudes, precios largos y referencias mixtas en
+1788/1440/1280/1024/820/768/390/320 px. Se verificaron limites de cada control,
+altura de fila, copia de referencia, seleccion, persistencia entre pestanas,
+aprobacion parcial y rechazo; ninguna escritura en produccion.
+Lint/typecheck, 12 tests de frontend y build web. No cambios de DB/schema.
+
 ## Administracion visual de revendedores - 2026-10-09
 
 ResellersAdminView abre en vista de equipo sin seleccionar automaticamente

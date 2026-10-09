@@ -7,6 +7,13 @@ Actualizado: 2026-10-09
 
 ## Resumen vigente
 
+- Solicitudes de revendedores usa filas compactas con imagen de 72 px,
+  variantes/disponibilidad, referencias, cantidad/precio y acciones agrupadas.
+  Se retiro la grilla anterior de tres filas que estiraba precios y cortaba
+  Aprobar y asignar. Ancho de lectura acotado y layout especifico para movil.
+  Las imagenes priorizan el catalogo enriquecido y su fallback; sin imagen
+  muestra un placeholder discreto. No cambia aprobacion, stock ni precios.
+
 - Revendedores abre con una vista del equipo: busqueda, filtros por solicitudes,
   saldo, disponibilidad limitada y estado; orden por nombre, mercaderia, saldo
   o ventas del mes. Los totales separan valor en mano de deuda a rendir.

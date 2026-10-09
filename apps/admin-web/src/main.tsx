@@ -6456,35 +6456,47 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
     setDetailSaleId(sale.id); setDialogError(""); setUncertainAction(false); setDialog("cancel");
   }
 
-  const requestSection = selected && !assignmentOnly ? <section className="ra-section reseller-request-panel">
-                <div className="section-heading"><div><h3>Solicitudes pendientes</h3></div><span className="count-badge">{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
-                {selected.stockRequests.length ? <div className="reseller-batch-bar">
+  const requestSection = selected && !assignmentOnly ? <section className="ra-section ra-requests">
+                <div className="ra-section-heading"><h3>Solicitudes pendientes</h3><span>{selected.stockRequests.length} pendiente{selected.stockRequests.length === 1 ? "" : "s"}</span></div>
+                {selected.stockRequests.length ? <div className="ra-request-toolbar">
                   <label className="reseller-batch-check"><input type="checkbox" aria-label="Seleccionar todas las solicitudes" disabled={busy} checked={selected.stockRequests.every((request) => selectedRequests.includes(request.id))} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests(event.target.checked ? selected.stockRequests.map((request) => request.id) : []); }} />Todas</label>
                   <strong>{requestsForBatch.length} seleccionadas · {formatArs(requestBatchValue)}</strong>
-                  <button className="clear-action" disabled={busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}>Limpiar seleccion</button>
-                  <button className="secondary-action" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("reject")}>Rechazar seleccionadas</button>
-                  <button className="primary-action" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("approve")}><Icon name="check" />{busy ? "Procesando..." : "Aprobar seleccionadas"}</button>
+                  <div className="ra-request-batch-actions">
+                    <button className="icon-action" title="Limpiar seleccion" aria-label="Limpiar seleccion" disabled={busy || !selectedRequests.length} onClick={() => setSelectedRequests([])}><Icon name="close" /></button>
+                    <button className="secondary-action" aria-label="Rechazar seleccionadas" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("reject")}><span className="ra-request-batch-full">Rechazar seleccionadas</span><span className="ra-request-batch-short" aria-hidden="true">Rechazar</span></button>
+                    <button className="primary-action" aria-label="Aprobar seleccionadas" disabled={busy || !requestsForBatch.length} onClick={() => void resolveRequestBatch("approve")}><Icon name="check" /><span className="ra-request-batch-full">{busy ? "Procesando..." : "Aprobar seleccionadas"}</span><span className="ra-request-batch-short" aria-hidden="true">{busy ? "Procesando..." : "Aprobar"}</span></button>
+                  </div>
                 </div> : null}
-                {selected.stockRequests.length ? <div className="reseller-request-list">{selected.stockRequests.map((request) => {
+                {selected.stockRequests.length ? <div className="ra-request-list">{selected.stockRequests.map((request) => {
                   const draft = requestDrafts[request.id];
                   const stockItem = stockById.get(request.inventoryItemId);
+                  const catalogItem = selected.globalStock.find((item) => item.inventoryItemId === request.inventoryItemId);
                   const referencePrices = stockItem ? (["sale", "tcgplayer", "pricecharting", "coolstuff"] as InventoryPriceSource[]).map((source) => ({ source, ...inventoryPriceDisplay(stockItem, source, blueRate) })) : [];
                   const useReferencePrice = (priceArs: number | null) => {
                     if (!priceArs) return;
                     setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: String(Math.round(priceArs)) } }));
                   };
-                  return <article key={request.id}>
-                    <CardArt src={request.imageUrl || stockItem?.product.imageUrl} alt={request.name} label={request.name} className="reseller-thumb" fallbackClassName="reseller-thumb image-placeholder" />
-                    <div className="reseller-request-copy"><label className="reseller-batch-check"><input type="checkbox" aria-label={`Seleccionar solicitud ${request.name}`} disabled={busy} checked={selectedRequests.includes(request.id)} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests((current) => event.target.checked ? [...current, request.id] : current.filter((id) => id !== request.id)); }} />Seleccionar</label><strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><small>{request.language} · {request.condition} · {request.finish}</small><small>Solicitado {formatDate(request.createdAt)}</small></div>
-                    <div className="reseller-request-prices" aria-label="Precios de referencia">
+                  return <article className={selectedRequests.includes(request.id) ? "ra-request-row is-selected" : "ra-request-row"} key={request.id} aria-label={`Solicitud ${request.name}`}>
+                    <label className="ra-request-select"><input type="checkbox" aria-label={`Seleccionar solicitud ${request.name}`} disabled={busy} checked={selectedRequests.includes(request.id)} onChange={(event) => { if (!selectedRequests.length) batch.reset(`/resellers/${selected.reseller.userId}/assignment-requests/batch`); setSelectedRequests((current) => event.target.checked ? [...current, request.id] : current.filter((id) => id !== request.id)); }} /></label>
+                    <CardArt src={catalogItem?.imageUrl || request.imageUrl || stockItem?.product.imageUrl} fallbackSrc={catalogItem?.imageFallbackUrl || stockItem?.product.imageUrl} alt={request.name} label="" className="ra-request-art" fallbackClassName="ra-request-art image-placeholder" />
+                    <div className="ra-request-copy">
+                      <strong>{request.name}</strong><span>{request.expansion} #{request.number || "-"}</span><span>{request.language} · {request.condition} · {request.finish}</span>
+                      <span className={request.availableQuantity > 0 ? "ra-request-availability" : "ra-request-availability warning-text"}>{request.quantityRequested} pedidas · {request.availableQuantity} disponibles</span>
+                      <small>{formatDate(request.createdAt)}</small>
+                    </div>
+                    <div className="ra-request-references">
+                    <div className="ra-request-prices" aria-label="Precios de referencia">
                       {referencePrices.map((price) => <button type="button" key={price.source} disabled={busy || !price.hasPrice} title={price.hasPrice ? `Usar ${price.label}` : `${price.label}: sin precio`} onClick={() => useReferencePrice(price.ars)}><span>{price.label}</span><strong>{price.hasPrice ? formatArs(price.ars || 0) : "Sin precio"}</strong><small>{price.usd ? formatUsd(price.usd) : price.helper}</small></button>)}
                     </div>
-                    <label>Cantidad<input disabled={busy} type="number" min="1" max={Math.min(request.quantityRequested, Math.max(1, request.availableQuantity))} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
-                    <label>Precio central ARS<input type="number" min="0" step="100" disabled={busy} value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
-                    <div className="reseller-request-stock"><b>{request.availableQuantity}</b><span>disponibles</span><small>Precio al pedir: {formatArs(request.priceArsSnapshot)}</small></div>
-                    <div className="reseller-request-actions"><button className="secondary-action" disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button><button className="primary-action" disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar y asignar"}</button></div>
+                    <small>Al pedir: {formatArs(request.priceArsSnapshot)}</small>
+                    </div>
+                    <div className="ra-request-fields">
+                      <label>Cantidad<input disabled={busy} type="number" min="1" max={Math.min(request.quantityRequested, Math.max(1, request.availableQuantity))} value={draft?.quantity ?? String(request.quantityRequested)} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: event.target.value, priceArs: current[request.id]?.priceArs ?? String(request.currentPriceArs) } }))} /></label>
+                      <label>Precio central ARS<input type="number" min="0" step="100" disabled={busy} value={draft?.priceArs ?? String(request.currentPriceArs)} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setRequestDrafts((current) => ({ ...current, [request.id]: { quantity: current[request.id]?.quantity ?? String(request.quantityRequested), priceArs: event.target.value } }))} /></label>
+                    </div>
+                    <div className="ra-request-actions"><button className="primary-action" title="Aprobar y asignar mercaderia" aria-label={`Aprobar solicitud ${request.name}`} disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "approve")}><Icon name="check" />{resolvingRequestId === request.id ? "Procesando..." : "Aprobar"}</button><button className="secondary-action" aria-label={`Rechazar solicitud ${request.name}`} disabled={busy || Boolean(resolvingRequestId)} onClick={() => void resolveStockRequest(request, "reject")}>Rechazar</button></div>
                   </article>;
-                })}</div> : <EmptyState title="Sin solicitudes pendientes" body="Cuando un revendedor pida una carta desde el stock global aparecera aca." />}
+                })}</div> : <p className="muted">Sin solicitudes pendientes.</p>}
               </section> : null;
   const assignmentSection = selected && assignmentOpen ? (<section className="ra-section ra-assign-section">
                 <div className="section-heading"><div><h3>Preparar entrega</h3></div></div>
