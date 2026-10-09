@@ -1,5 +1,32 @@
 # Traspaso de contexto - UltimoTurno
 
+## Consistencia operativa, primera etapa - 2026-10-09
+
+WorkspaceToolbar (tsx/css) se comparte entre Inventario y busqueda del equipo
+de Revendedores. No cambia fichas/solicitudes ni logica financiera. CSS posterior
+al legacy limita overrides al componente; inventario sin toolbar/section cards
+flotantes y controles/densidad compactos, con limites verificados en movil.
+
+inventory-views.ts concentra defaults, presets y preferencias versionadas.
+Clave localStorage por businessId + userId de /auth/me; solo filtros/densidad y
+20 vistas con nombre, IDs validados y limites. Lectura/escritura sanitizadas,
+sin guardar tokens, items, cantidades ni carrito. Fallos de storage no bloquean
+inventario; guardar muestra error y mantiene el dialogo. No hay sync en nube.
+Bootstrap restaura una vez por scope antes de habilitar persistencia; cambios
+de filtros no borran vistas. Save captura busqueda pendiente; salir del sector
+aplica el borrador pendiente antes de desmontar. QuickOrder/calidad usan defaults
+completos para no heredar propietario/categoria/tipo/idioma ocultos.
+
+UI: presets En stock, Disponibles, Coleccion / no venta (not_for_sale en stock),
+Reservadas; guardar/abrir/actualizar/eliminar vistas, confirmacion en dialogo
+accesible existente; chips con quitar filtro, export/reset y densidad visibles.
+No hay migracion, endpoints nuevos ni cambios de datos en produccion.
+
+check:new completo: 127 tests, DB temporal en D, lint/tipos/build. QA local
+Chrome en 1788/1440/768/390/320 px sin escrituras operativas. Siguiente alcance:
+Ordenes/Caja/Compras y vistas operativas propias, no presentar todo el punto 1
+como terminado ni prometer sincronizacion de vistas entre dispositivos.
+
 ## Solicitudes compactas - 2026-10-09
 
 Se reemplazo el markup reseller-request-* del admin por ra-request-* aislado

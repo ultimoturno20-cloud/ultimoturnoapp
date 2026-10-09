@@ -7,6 +7,23 @@ Actualizado: 2026-10-09
 
 ## Resumen vigente
 
+- Primera etapa de consistencia operativa: Inventario y equipo de Revendedores
+  usan WorkspaceToolbar, con busqueda, orden y controles de altura uniforme.
+  Inventario muestra filtros activos removibles y deja visibles exportar/reset.
+- Inventario incorpora vistas En stock, Disponibles, Coleccion / no venta y
+  Reservadas; permite guardar hasta 20 vistas personales, abrirlas, actualizar
+  sus filtros y eliminarlas con confirmacion. No crea categorias ni cambia datos.
+  Coleccion / no venta filtra el estado existente not_for_sale, no todas las carpetas.
+- Busqueda, filtros, fuente de precio, orden y densidad se recuperan al recargar;
+  la busqueda pendiente se conserva al salir hacia Cargar stock y volver.
+  Preferencias locales por negocio/usuario, solo en ese navegador: no hay
+  sincronizacion entre dispositivos, carrito persistido ni secretos nuevos.
+  Accesos rapidos de venta/calidad limpian tambien filtros ocultos anteriores.
+- Sin cambios de API/schema/stock/precios. Validacion completa check:new con
+  127 tests; Chrome en 1788/1440/768/390/320 px verifica vistas, filtros, foco,
+  navegacion y limites de controles sin mutaciones de inventario. Se continua
+  la unificacion de Ordenes/Caja/Compras en entregas siguientes.
+
 - Solicitudes de revendedores usa filas compactas con imagen de 72 px,
   variantes/disponibilidad, referencias, cantidad/precio y acciones agrupadas.
   Se retiro la grilla anterior de tres filas que estiraba precios y cortaba

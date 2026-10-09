@@ -7,6 +7,19 @@ Actualizado: 2026-10-09
 
 ## Prioridades vigentes
 
+### Consistencia visual y vistas operativas
+
+- Primera entrega terminada en Inventario: vistas iniciales y personales,
+  filtros activos, restauracion al recargar y barra compartida con el equipo
+  de Revendedores. Revisar en movil sin confirmar operaciones ficticias.
+- Las vistas personales son locales por negocio/usuario/navegador. Guardar
+  una vista no registra stock, no habilita venta y no persiste el carrito.
+- Proxima entrega: aplicar el patron de barra y estados a Ordenes/Caja/Compras,
+  conservando reglas financieras y permisos. Pendientes de entregar corresponde
+  a Ordenes; no se implementa como un filtro inventado sobre inventario.
+- Evaluar sincronizacion de vistas entre dispositivos como etapa separada,
+  con almacenamiento autenticado por negocio/usuario y migracion aditiva.
+
 ### Pilotear la nueva administracion de revendedores
 
 - Abrir Revendedores y comparar mercaderia en mano, solicitudes y saldos con

@@ -1,0 +1,79 @@
+.workspace-toolbar { min-width: 0; padding: 12px 0; border-block: 1px solid #303036; }
+.workspace-toolbar-main { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; min-width: 0; }
+.workspace-toolbar-search { flex: 1 1 280px; min-width: 0; }
+.workspace-toolbar-search > label { width: 100%; margin: 0; }
+.workspace-toolbar-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; min-width: 0; }
+.workspace-toolbar :is(input, select, button) { min-height: 40px; border-radius: 5px; }
+.workspace-toolbar label { min-width: 0; color: #b9b9c2; font-size: 12px; font-weight: 600; }
+.workspace-toolbar label > select { display: block; width: 100%; max-width: 100%; margin-top: 4px; min-height: 40px; }
+.workspace-toolbar input { width: 100%; }
+.workspace-toolbar-search .ra-search { display: flex; align-items: center; min-height: 40px; }
+.workspace-toolbar-search .ra-search input { flex: 1; min-width: 0; }
+.workspace-toolbar-search .ra-search svg { flex: 0 0 18px; width: 18px; }
+.workspace-toolbar-filters { display: grid; gap: 12px; margin-top: 12px; }
+.workspace-toolbar.inventory-toolbar { position: static; grid-column: 1 / -1; max-height: none; padding: 12px 0; border-radius: 0; background: transparent; overflow: visible; }
+.workspace-toolbar .inventory-search input { height: 40px; }
+.workspace-toolbar .inventory-result-count { align-self: center; font-size: 12px; white-space: nowrap; }
+.workspace-toolbar .sort-control { width: 150px; font-size: 12px; display: block; }
+.workspace-toolbar .inventory-cart-button { width: 40px; height: 40px; flex: 0 0 40px; position: relative; overflow: visible; }
+.workspace-toolbar .inventory-quick-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 0; overflow: visible; }
+.workspace-toolbar .availability-filter-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.workspace-toolbar .availability-filter-row button { min-height: 34px; padding: 6px 9px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
+.workspace-toolbar .inventory-quick-select { display: flex; align-items: center; gap: 8px; }
+.workspace-toolbar .inventory-quick-select > select { margin-top: 0; width: auto; max-width: 200px; }
+.workspace-toolbar .filter-toggle { margin-left: auto; }
+.inventory-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.inventory-view-controls label { display: flex; align-items: center; gap: 8px; }
+.inventory-view-controls label > select { width: 225px; max-width: 100%; margin: 0; }
+.inventory-view-controls .icon-action { width: 40px; padding: 0; flex: 0 0 40px; }
+.inventory-view-controls .density-toggle { margin-left: auto; width: auto; min-width: 0; display: inline-flex; }
+.inventory-view-controls .density-toggle button { width: 40px; min-width: 40px; padding: 0; }
+.inventory-view-controls .density-toggle svg { width: 18px; height: 18px; }
+.inventory-active-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inventory-active-filters button { min-height: 30px; max-width: 100%; display: flex; align-items: center; gap: 6px; border: 1px solid #38383f; background: #202025; color: #dedee4; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+.inventory-active-filters button span { overflow-wrap: anywhere; text-align: left; }
+.inventory-active-filters button svg { width: 14px; height: 14px; flex-shrink: 0; }
+.workspace-toolbar .inventory-filter-options { margin: 0; border: 0; border-top: 1px solid #303036; border-radius: 0; padding: 12px 0 0; background: transparent; max-height: none; overflow: visible; }
+.workspace-toolbar .advanced-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; }
+.workspace-toolbar .advanced-filters label > select { min-width: 0; }
+.workspace-toolbar .inventory-advanced-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+.stock-layout .inventory-browse-workspace > .product-list-panel { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+.inventory-view-error { margin: 0; color: #ffb0b9; font-size: 13px; }
+.inventory-saved-view-list { list-style: none; padding: 0; margin: 0; }
+.inventory-saved-view-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #303036; }
+.inventory-saved-view-list strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.inventory-saved-view-list li > div { display: flex; gap: 6px; flex-shrink: 0; }
+.inventory-view-confirmation { padding-top: 12px; }
+.inventory-view-confirmation p { overflow-wrap: anywhere; }
+.shell:not(.stock-intake-mode):has(.stock-layout) .operations-dock { display: none; }
+@media (max-width: 760px) {
+  .shell:has(.stock-layout) .header-actions { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-start; }
+  .shell:has(.stock-layout) .header-badges { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; min-width: 0; max-width: 100%; }
+  .shell:has(.stock-layout) .live-sync-status { flex: 1 1 auto; }
+  .shell:has(.stock-layout) .header-actions > button { width: auto; min-width: 0; flex: 0 0 auto; }
+  .shell:has(.stock-layout) .header-actions > .header-refresh { width: 40px; padding: 0; font-size: 0; }
+  .shell:has(.stock-layout) .header-refresh svg { width: 18px; height: 18px; }
+  .workspace-toolbar-main { gap: 10px; }
+  .workspace-toolbar-search { flex-basis: 100%; }
+  .workspace-toolbar-actions { width: 100%; }
+  .workspace-toolbar .sort-control { flex: 1 1 120px; width: auto; }
+  .workspace-toolbar-actions > .primary-action { flex: 0 1 auto; white-space: nowrap; font-size: 13px; }
+  .workspace-toolbar.inventory-toolbar .sort-control { flex: 1 1 80px; }
+  .workspace-toolbar.inventory-toolbar .workspace-toolbar-actions { gap: 6px; }
+  .workspace-toolbar.inventory-toolbar .sort-control > select { padding-inline: 8px; }
+  .workspace-toolbar.inventory-toolbar .workspace-toolbar-actions > .primary-action { padding-inline: 8px; }
+  .workspace-toolbar .inventory-result-count { order: 4; flex-basis: 100%; }
+  .workspace-toolbar .availability-filter-row { width: 100%; }
+  .workspace-toolbar .language-group-row { flex-wrap: wrap; }
+  .workspace-toolbar .filter-toggle { margin-left: 0; }
+  .inventory-view-controls { gap: 6px; }
+  .inventory-view-controls > .secondary-action { padding-inline: 8px; font-size: 12px; }
+  .inventory-view-controls > label { flex: 1 1 100%; }
+  .inventory-view-controls .density-toggle button { flex: 0 0 40px; width: 40px; }
+  .inventory-view-controls .density-toggle { max-width: 90px; padding: 3px; }
+  .inventory-view-controls label > select { width: 100%; min-width: 0; flex: 1; }
+  .workspace-toolbar .advanced-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-toolbar .inventory-quick-select > select { max-width: 180px; }
+  .workspace-toolbar:not(.inventory-toolbar) .workspace-toolbar-actions > label { flex: 1 1 120px; }
+  .inventory-saved-view-list li { flex-wrap: wrap; }
+}

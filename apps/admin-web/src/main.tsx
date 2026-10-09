@@ -8,6 +8,9 @@ import { ResellerBatchKeys, resellerBatchProblem, resellerBatchTotals, type Rese
 import "./reseller-batch.css";
 import { filterResellerTeam, resellerAccountMovements, resellerAdminLocation, resellerMonthlySales, resellerTeamTotals, type ResellerAdminTab, type ResellerTeamFilter, type ResellerTeamSort } from "./reseller-admin.js";
 import "./reseller-admin.css";
+import { defaultInventoryFilters, inventoryPreferencesKey, inventoryPresets, inventoryStatesEqual, maxInventoryViews, readInventoryPreferences, writeInventoryPreferences, type InventoryFilters, type SavedInventoryView } from "./inventory-views.js";
+import { WorkspaceToolbar } from "./workspace-toolbar.js";
+import "./workspace-toolbar.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -92,24 +95,6 @@ type OrderFilter = "all" | "pending" | "packed" | "paid" | "debt" | "no_message"
 type OrderSort = "current" | "money_desc" | "money_asc" | "units_desc" | "units_asc";
 type CardType = 'pokemon' | 'supporter' | 'item' | 'stadium' | 'tool' | 'energy' | 'unknown';
 const cardTypeLabels: Record<CardType, string> = { pokemon: 'Pokémon', supporter: 'Supporter', item: 'Item', stadium: 'Stadium', tool: 'Tool', energy: 'Energy', unknown: 'Sin clasificar' };
-
-type InventoryFilters = {
-  cardType: string;
-  query: string;
-  expansion: string;
-  language: string;
-  languageGroup: LanguageGroupFilter;
-  condition: string;
-  location: string;
-  intakeBatch: string;
-  inventoryStatus: string;
-  tag: string;
-  owner: string;
-  availability: AvailabilityFilter;
-  priceSource: InventoryPriceSource;
-  sortMode: SortMode;
-  issue: IssueFilter;
-};
 
 type AppEnvironment = {
   dataProfile: string;
@@ -1136,6 +1121,31 @@ function App() {
   const [inventoryDensity, setInventoryDensity] = useState<InventoryDensity>("comfortable");
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [issue, setIssue] = useState<IssueFilter>("all");
+  const [inventoryPreferenceScope, setInventoryPreferenceScope] = useState("");
+  const inventoryRestoredScope = useRef("");
+  const inventoryFilters: InventoryFilters = { query, expansion, language, languageGroup, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, cardType: cardTypeFilter, owner: ownerFilter, availability, priceSource: inventoryPriceSource, sortMode, issue };
+  const inventoryPreferenceState = JSON.stringify({ filters: inventoryFilters, density: inventoryDensity });
+  useEffect(() => {
+    if (!inventoryPreferenceScope) return;
+    writeInventoryPreferences(inventoryPreferenceStorage(), inventoryPreferenceScope, { current: JSON.parse(inventoryPreferenceState) });
+  }, [inventoryPreferenceScope, inventoryPreferenceState]);
+  function applyInventoryFilters(patch: Partial<InventoryFilters>) {
+    if (patch.query !== undefined) setQuery(patch.query);
+    if (patch.expansion !== undefined) setExpansion(patch.expansion);
+    if (patch.language !== undefined) setLanguage(patch.language);
+    if (patch.languageGroup !== undefined) setLanguageGroup(patch.languageGroup);
+    if (patch.condition !== undefined) setCondition(patch.condition);
+    if (patch.location !== undefined) setLocationFilter(patch.location);
+    if (patch.intakeBatch !== undefined) setBatchFilter(patch.intakeBatch);
+    if (patch.inventoryStatus !== undefined) setInventoryStatusFilter(patch.inventoryStatus);
+    if (patch.tag !== undefined) setTagFilter(patch.tag);
+    if (patch.cardType !== undefined) setCardTypeFilter(patch.cardType);
+    if (patch.owner !== undefined) setOwnerFilter(patch.owner);
+    if (patch.availability !== undefined) setAvailability(patch.availability);
+    if (patch.priceSource !== undefined) setInventoryPriceSource(patch.priceSource);
+    if (patch.sortMode !== undefined) setSortMode(patch.sortMode);
+    if (patch.issue !== undefined) setIssue(patch.issue);
+  }
   const [form, setForm] = useState<InventoryFormState>(() => blankForm());
   const [editingId, setEditingId] = useState("");
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -1163,12 +1173,20 @@ function App() {
 
   async function bootstrap(seedExamplesIfEmpty = false) {
     const [me, rate] = await Promise.all([
-      api<{ user: { id: string; displayName: string; roles?: string[] }; roles?: string[]; environment?: AppEnvironment }>("/auth/me"),
+      api<{ user: { id: string; businessId: string; displayName: string; roles?: string[] }; roles?: string[]; environment?: AppEnvironment }>("/auth/me"),
       api<BlueExchangeRate>("/exchange-rate/blue").catch(() => fallbackBlueRate())
     ]);
     const nextEnvironment = me.environment || { dataProfile: "EJEMPLOS", allowExamples: true };
     setUserName(me.user.displayName);
     setUserId(me.user.id);
+    const preferenceScope = inventoryPreferencesKey(me.user.businessId, me.user.id);
+    if (preferenceScope && inventoryRestoredScope.current !== preferenceScope) {
+      const preferences = readInventoryPreferences(inventoryPreferenceStorage(), preferenceScope);
+      applyInventoryFilters(preferences.current.filters);
+      setInventoryDensity(preferences.current.density);
+      inventoryRestoredScope.current = preferenceScope;
+      setInventoryPreferenceScope(preferenceScope);
+    }
     const nextRoles = me.roles || me.user.roles || ["admin"];
     const ownerRestricted = nextRoles.includes("stock_owner") && !nextRoles.includes("admin");
     const targetView = ownerRestricted && !stockOwnerViewAllowed(view) ? "stock-intake" : view;
@@ -2677,17 +2695,7 @@ function App() {
   const startQuickOrder = (mode: "sale" | "reservation") => {
     setCartMode(mode);
     setSaleChannel("mostrador");
-    setQuery("");
-    setExpansion("all");
-    setLanguage("all");
-    setCondition("all");
-    setLocationFilter("all");
-    setBatchFilter("all");
-    setInventoryStatusFilter("all");
-    setAvailability("in_stock");
-    setInventoryPriceSource("sale");
-    setSortMode("name");
-    setIssue("all");
+    applyInventoryFilters(defaultInventoryFilters);
     setView("inventory");
     setCartFocusNonce((value) => value + 1);
     showMessage(mode === "reservation" ? "Orden suelta lista: agrega cartas y crea la reserva." : "Venta directa lista: agrega cartas y confirma el cobro.");
@@ -2731,7 +2739,7 @@ function App() {
             <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`} title={blueRate.source}>Dólar {formatArs(blueRate.sell)}</span>
           </div>
           <span className={`live-sync-status ${viewRefreshing ? "syncing" : ""}`}><i />{viewRefreshing ? "Sincronizando" : lastSyncedAt ? `En vivo · ${new Date(lastSyncedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : "En vivo"}</span>
-          <button className="secondary-action header-refresh" disabled={viewRefreshing} onClick={() => void refreshViewData(view).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
+          <button className="secondary-action header-refresh" title="Actualizar sector" aria-label={viewRefreshing ? "Actualizando" : "Actualizar sector"} disabled={viewRefreshing} onClick={() => void refreshViewData(view).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
           {readLocalStorage(adminSessionTokenKey) ? <button className="secondary-action" onClick={() => void logoutPanel()}>Salir</button> : null}
         </div>
       </header>
@@ -2813,18 +2821,7 @@ function App() {
           onGoOrders={() => setView("orders")}
           onGoSales={() => setView("sales")}
           onOpenInventoryIssue={(nextIssue) => {
-            setQuery("");
-            setExpansion("all");
-            setLanguage("all");
-            setLanguageGroup("all");
-            setCondition("all");
-            setLocationFilter("all");
-            setBatchFilter("all");
-            setInventoryStatusFilter("all");
-            setAvailability("all");
-            setInventoryPriceSource("sale");
-            setSortMode("name");
-            setIssue(nextIssue);
+            applyInventoryFilters({ ...defaultInventoryFilters, availability: "all", issue: nextIssue });
             setView("inventory");
           }}
           onSelectItem={(item) => {
@@ -2842,7 +2839,8 @@ function App() {
           selected={selected}
           selectedMovements={selectedMovements}
           options={options}
-          filters={{ query, expansion, language, languageGroup, condition, location: locationFilter, intakeBatch: batchFilter, inventoryStatus: inventoryStatusFilter, tag: tagFilter, cardType: cardTypeFilter, owner: ownerFilter, availability, priceSource: inventoryPriceSource, sortMode, issue }}
+          filters={inventoryFilters}
+          preferenceScope={inventoryPreferenceScope}
           density={inventoryDensity}
           quality={quality}
           adjustment={adjustment}
@@ -2854,40 +2852,8 @@ function App() {
           imageRepairingId={imageRepairingId}
           resellers={orderResellers}
           onCartFocusHandled={() => setCartFocusNonce(0)}
-          onFilterChange={(patch) => {
-            if (patch.query !== undefined) setQuery(patch.query);
-            if (patch.expansion !== undefined) setExpansion(patch.expansion);
-            if (patch.language !== undefined) setLanguage(patch.language);
-            if (patch.languageGroup !== undefined) setLanguageGroup(patch.languageGroup);
-            if (patch.condition !== undefined) setCondition(patch.condition);
-            if (patch.location !== undefined) setLocationFilter(patch.location);
-            if (patch.intakeBatch !== undefined) setBatchFilter(patch.intakeBatch);
-            if (patch.inventoryStatus !== undefined) setInventoryStatusFilter(patch.inventoryStatus);
-            if (patch.tag !== undefined) setTagFilter(patch.tag);
-            if (patch.cardType !== undefined) setCardTypeFilter(patch.cardType);
-            if (patch.owner !== undefined) setOwnerFilter(patch.owner);
-            if (patch.availability !== undefined) setAvailability(patch.availability);
-            if (patch.priceSource !== undefined) setInventoryPriceSource(patch.priceSource);
-            if (patch.sortMode !== undefined) setSortMode(patch.sortMode);
-            if (patch.issue !== undefined) setIssue(patch.issue);
-          }}
-          onClearFilters={() => {
-            setQuery("");
-            setExpansion("all");
-            setLanguage("all");
-            setLanguageGroup("all");
-            setCondition("all");
-            setLocationFilter("all");
-            setBatchFilter("all");
-            setInventoryStatusFilter("all");
-            setTagFilter("all");
-            setCardTypeFilter('all');
-            setOwnerFilter("all");
-            setAvailability("in_stock");
-            setInventoryPriceSource("sale");
-            setSortMode("name");
-            setIssue("all");
-          }}
+          onFilterChange={applyInventoryFilters}
+          onClearFilters={() => applyInventoryFilters(defaultInventoryFilters)}
           onDensityChange={setInventoryDensity}
           onBatchUpdate={(items, patch) => void updateInventoryBatch(items, patch)}
           onSelect={(item) => setSelectedId(item.id)}
@@ -3361,14 +3327,16 @@ function StockQualityPanel({ quality, onIssue }: { quality: StockQualitySummary;
   );
 }
 
-function InventorySearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function InventorySearchField({ value, onChange, onDraftChange }: { value: string; onChange: (value: string) => void; onDraftChange: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
   const changeRef = useRef(onChange);
   const appliedValueRef = useRef(value);
+  const draftValueRef = useRef(value);
   changeRef.current = onChange;
   useEffect(() => {
     if (value === appliedValueRef.current) return;
     appliedValueRef.current = value;
+    draftValueRef.current = value;
     setDraft(value);
   }, [value]);
   useEffect(() => {
@@ -3379,7 +3347,62 @@ function InventorySearchField({ value, onChange }: { value: string; onChange: (v
     }, 300);
     return () => window.clearTimeout(timer);
   }, [draft]);
-  return <label className="inventory-search"><span className="visually-hidden">Buscar en el inventario</span><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Buscar carta, expansion, numero..." /></label>;
+  useEffect(() => () => {
+    if (draftValueRef.current !== appliedValueRef.current) changeRef.current(draftValueRef.current);
+  }, []);
+  return <label className="inventory-search"><span className="visually-hidden">Buscar en el inventario</span><input value={draft} onChange={(event) => { draftValueRef.current = event.target.value; setDraft(event.target.value); onDraftChange(event.target.value); }} placeholder="Buscar carta, expansion, numero..." /></label>;
+}
+
+function inventoryPreferenceStorage() {
+  try { return window.localStorage; } catch { return undefined; }
+}
+
+function InventoryViewsControl({ scope, filters, density, onApply, onDensityChange, onBeforeSave }: { scope: string; filters: InventoryFilters; density: InventoryDensity; onApply: (view: SavedInventoryView) => void; onDensityChange: (value: InventoryDensity) => void; onBeforeSave: () => void }) {
+  const [views, setViews] = useState(() => readInventoryPreferences(inventoryPreferenceStorage(), scope).views);
+  const [dialog, setDialog] = useState<"save" | "manage" | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState<{ view: SavedInventoryView; action: "update" | "delete" } | null>(null);
+  const current = { filters, density };
+  const matching = [...views, ...inventoryPresets].find((view) => inventoryStatesEqual(view, current));
+  const persistViews = (next: SavedInventoryView[]) => {
+    if (!writeInventoryPreferences(inventoryPreferenceStorage(), scope, { views: next, current })) {
+      setError("No se pudo guardar en este navegador. Revisa el almacenamiento disponible.");
+      return false;
+    }
+    setViews(next); setError(""); return true;
+  };
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    const cleanName = name.trim();
+    if (!cleanName) { setError("Ingresa un nombre para la vista."); return; }
+    const existing = views.find((view) => view.name.toLocaleLowerCase() === cleanName.toLocaleLowerCase());
+    if (existing) { setError("Ya existe una vista con ese nombre. Podes actualizarla desde Gestionar vistas."); return; }
+    if (views.length >= maxInventoryViews) { setError(`Podes guardar hasta ${maxInventoryViews} vistas.`); return; }
+    if (persistViews([...views, { id: `custom-${crypto.randomUUID()}`, name: cleanName, ...current }])) setDialog(null);
+  };
+  return <>
+    <div className="inventory-view-controls">
+      <label>Vista<select aria-label="Vista de inventario" value={matching?.id || "custom"} title={matching?.name || "Vista personalizada"} onChange={(event) => { const view = [...inventoryPresets, ...views].find((entry) => entry.id === event.target.value); if (view) onApply(view); }}>
+        <option value="custom" disabled>Personalizada</option>
+        <optgroup label="Vistas iniciales">{inventoryPresets.map((view) => <option value={view.id} key={view.id}>{view.name}</option>)}</optgroup>
+        {views.length ? <optgroup label="Mis vistas">{views.map((view) => <option value={view.id} key={view.id}>{view.name}</option>)}</optgroup> : null}
+      </select></label>
+      <button className="secondary-action" type="button" disabled={!scope || views.length >= maxInventoryViews} onClick={() => { onBeforeSave(); setName(""); setError(""); setDialog("save"); }}><Icon name="plus" />Guardar vista</button>
+      <button className="icon-action" type="button" disabled={!views.length} title="Gestionar vistas" aria-label="Gestionar vistas" onClick={() => { setError(""); setConfirmation(null); setDialog("manage"); }}><Icon name="settings" /></button>
+      <div className="density-toggle" role="group" aria-label="Densidad de inventario">
+        <button className={density === "comfortable" ? "active" : ""} type="button" aria-pressed={density === "comfortable"} aria-label="Vista amplia" title="Vista amplia" onClick={() => onDensityChange("comfortable")}><Icon name="image" /></button>
+        <button className={density === "compact" ? "active" : ""} type="button" aria-pressed={density === "compact"} aria-label="Vista compacta" title="Vista compacta" onClick={() => onDensityChange("compact")}><Icon name="palette" /></button>
+      </div>
+    </div>
+    {dialog ? <ResellerAdminDialog title={dialog === "save" ? "Guardar vista" : "Mis vistas"} busy={false} onClose={() => setDialog(null)}>
+      {dialog === "save" ? <form onSubmit={save}><label>Nombre<input required maxLength={60} value={name} onChange={(event) => setName(event.target.value)} placeholder="151 en ingles" /></label>{error ? <p className="inventory-view-error" role="alert">{error}</p> : null}<footer><button className="secondary-action" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="primary-action" type="submit"><Icon name="check" />Guardar</button></footer></form> : <>
+        <ul className="inventory-saved-view-list">{views.map((view) => <li key={view.id}><strong>{view.name}</strong><div><button className="secondary-action" type="button" onClick={() => { onApply(view); setDialog(null); }}>Abrir</button><button className="icon-action" type="button" title={`Actualizar ${view.name} con la vista actual`} aria-label={`Actualizar vista ${view.name}`} onClick={() => setConfirmation({ view, action: "update" })}><Icon name="refresh" /></button><button className="icon-action" type="button" title={`Eliminar vista ${view.name}`} aria-label={`Eliminar vista ${view.name}`} onClick={() => setConfirmation({ view, action: "delete" })}><Icon name="close" /></button></div></li>)}</ul>
+        {confirmation ? <div className="inventory-view-confirmation"><p>{confirmation.action === "delete" ? `Eliminar la vista "${confirmation.view.name}"?` : `Actualizar "${confirmation.view.name}" con los filtros actuales?`}</p><footer><button className="secondary-action" type="button" onClick={() => setConfirmation(null)}>Cancelar</button><button className="primary-action" type="button" onClick={() => { const next = confirmation.action === "delete" ? views.filter((view) => view.id !== confirmation.view.id) : views.map((view) => view.id === confirmation.view.id ? { ...view, ...current } : view); if (persistViews(next)) setConfirmation(null); }}><Icon name="check" />{confirmation.action === "delete" ? "Eliminar" : "Actualizar"}</button></footer></div> : null}
+        {!views.length ? <p>No hay vistas guardadas.</p> : null}{error ? <p className="inventory-view-error" role="alert">{error}</p> : null}
+      </>}
+    </ResellerAdminDialog> : null}
+  </>;
 }
 
 function InventoryQuickIntake({ item, onSaved, onClose }: { item: StockRow; onSaved: (item: StockRow) => void; onClose: () => void }) {
@@ -3449,6 +3472,7 @@ function InventoryView(props: {
   selectedMovements: MovementRow[];
   options: { expansions: string[]; languages: string[]; conditions: string[]; locations: string[]; intakeBatches: string[]; inventoryStatuses: string[]; tags: string[] };
   filters: InventoryFilters;
+  preferenceScope: string;
   density: InventoryDensity;
   quality: StockQualitySummary;
   adjustment: { quantityDelta: number; note: string };
@@ -3484,6 +3508,8 @@ function InventoryView(props: {
   blueRate: BlueExchangeRate;
 }) {
   const { items, allItems, selected, selectedMovements, options, filters } = props;
+  const searchDraft = useRef(filters.query);
+  useEffect(() => { searchDraft.current = filters.query; }, [filters.query]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sideTab, setSideTab] = useState<"detail" | "contents" | "cart" | null>(null);
   const [intakeId, setIntakeId] = useState("");
@@ -3521,6 +3547,17 @@ function InventoryView(props: {
   const [batchTags, setBatchTags] = useState("");
   const [batchPriceSource, setBatchPriceSource] = useState<"none" | InventoryPriceSource>("none");
   const advancedFilterCount = [filters.expansion, filters.language, filters.condition, filters.location, filters.intakeBatch, filters.inventoryStatus, filters.tag, filters.cardType, filters.issue].filter((value) => value !== "all").length;
+  const filterLabels: Partial<Record<keyof InventoryFilters, string>> = { query: "Busqueda", expansion: "Expansion", language: "Idioma", languageGroup: "Grupo de idioma", condition: "Condicion", location: "Ubicacion", intakeBatch: "Lote", inventoryStatus: "Estado", tag: "Categoria", cardType: "Tipo", owner: "Propietario", issue: "Calidad" };
+  const activeFilters = (Object.keys(filterLabels) as Array<keyof InventoryFilters>).filter((key) => filters[key] !== defaultInventoryFilters[key]);
+  const activeFilterText = (key: keyof InventoryFilters) => {
+    const value = filters[key];
+    if (key === "inventoryStatus") return inventoryStatusLabel(value);
+    if (key === "cardType") return cardTypeLabels[value as CardType] || value;
+    if (key === "owner") return value === "ultimoturno" ? "UltimoTurno" : allItems.find((item) => item.ownerUserId === value)?.ownerName || value;
+    if (key === "languageGroup") return ({ english: "Ingles", japanese: "Japones", chinese: "Chino" } as Record<string, string>)[value] || value;
+    if (key === "issue") return ({ missingImage: "Sin imagen", missingPriceCharting: "Sin PriceCharting", zeroPrice: "Precio cero", lowStock: "Stock bajo", duplicates: "Duplicados" } as Record<string, string>)[value] || value;
+    return value;
+  };
   const ownerOptions = useMemo(() => unique(allItems.filter((item) => item.ownerUserId).map((item) => `${item.ownerUserId}\t${item.ownerName}`)), [allItems]);
   const availabilityCounts = useMemo(() => ({
     all: allItems.length,
@@ -3639,24 +3676,26 @@ function InventoryView(props: {
       <datalist id="inventory-tag-suggestions">
         {inventoryTagSuggestions.map((tag) => <option value={tag} key={tag} />)}
       </datalist>
-      <div className="panel inventory-toolbar compact-inventory-toolbar">
-        <div className="inventory-command-row">
-          <InventorySearchField value={filters.query} onChange={(query) => props.onFilterChange({ query })} />
+      <WorkspaceToolbar className="inventory-toolbar" label="Controles de inventario"
+        search={<InventorySearchField value={filters.query} onDraftChange={(query) => { searchDraft.current = query; }} onChange={(query) => props.onFilterChange({ query })} />}
+        actions={<>
           <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
-          <label className="sort-control">Ordenar<select value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
+          <label className="sort-control">Ordenar<select aria-label="Ordenar inventario" value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
           <button className={`secondary-action inventory-cart-button ${props.cart.length ? "has-items" : ""}`} type="button" aria-label={`Abrir carrito, ${props.cart.length} carta(s)`} title="Abrir carrito" onClick={() => setSideTab("cart")}><Icon name="cart" /><span className="inventory-cart-count">{props.cart.length}</span></button>
           <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
-        </div>
+        </>}>
+        <InventoryViewsControl key={props.preferenceScope} scope={props.preferenceScope} filters={filters} density={props.density} onBeforeSave={() => props.onFilterChange({ query: searchDraft.current })} onApply={(view) => { props.onFilterChange(view.filters); props.onDensityChange(view.density); }} onDensityChange={props.onDensityChange} />
         <div className="inventory-quick-filter-bar">
           <div className="availability-filter-row" aria-label="Disponibilidad">
             {([
+              ["all", "Todas", availabilityCounts.all],
               ["in_stock", "En stock", availabilityCounts.inStock],
               ["available", "Disponibles", availabilityCounts.available],
               ["assigned", "Asignadas", availabilityCounts.assigned],
               ["reserved", "Reservadas", availabilityCounts.reserved],
               ["out", "Sin stock", availabilityCounts.out]
             ] as const).map(([value, label, count]) => (
-              <button className={filters.availability === value ? "active" : ""} type="button" key={value} onClick={() => props.onFilterChange({ availability: value })}>{label}<span>{count}</span></button>
+              <button className={filters.availability === value ? "active" : ""} type="button" aria-pressed={filters.availability === value} key={value} onClick={() => props.onFilterChange({ availability: value })}>{label}<span>{count}</span></button>
             ))}
           </div>
           <LanguageGroupSelector value={filters.languageGroup} onChange={(value) => props.onFilterChange({ languageGroup: value })} />
@@ -3668,13 +3707,12 @@ function InventoryView(props: {
             <option value="coolstuff">CoolStuff ({priceSourceCounts.coolstuff})</option>
           </select></label>
           <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{advancedFilterCount ? ` (${advancedFilterCount})` : ""}</button>
+          <button className="icon-action" type="button" disabled={!items.length} title="Exportar vista" aria-label="Exportar vista" onClick={() => exportInventoryCsv(items)}><Icon name="download" /></button>
+          <button className="icon-action" type="button" title="Restablecer filtros" aria-label="Restablecer filtros" onClick={props.onClearFilters}><Icon name="refresh" /></button>
         </div>
+        {activeFilters.length ? <div className="inventory-active-filters" aria-label="Filtros activos">{activeFilters.map((key) => <button type="button" key={key} title={`Quitar filtro ${filterLabels[key]}`} aria-label={`Quitar filtro ${filterLabels[key]}`} onClick={() => props.onFilterChange({ [key]: defaultInventoryFilters[key] })}><span>{filterLabels[key]}: {activeFilterText(key)}</span><Icon name="close" /></button>)}</div> : null}
         {filtersOpen ? <div id="inventory-filter-options" className="inventory-filter-options">
           <div className="inventory-display-options inventory-advanced-actions">
-            <div className="density-toggle" aria-label="Densidad de inventario">
-              <button className={props.density === "comfortable" ? "active" : ""} type="button" onClick={() => props.onDensityChange("comfortable")}>Grande</button>
-              <button className={props.density === "compact" ? "active" : ""} type="button" onClick={() => props.onDensityChange("compact")}>Compacta</button>
-            </div>
             <label className="inventory-quick-select">Calidad<select value={filters.issue} onChange={(event) => props.onFilterChange({ issue: event.target.value as IssueFilter })}>
               <option value="all">Todas</option>
               <option value="missingImage">Sin imagen ({props.quality.missingImage})</option>
@@ -3683,8 +3721,6 @@ function InventoryView(props: {
               <option value="lowStock">Stock bajo ({props.quality.lowStock})</option>
               <option value="duplicates">Duplicados ({props.quality.duplicates})</option>
             </select></label>
-            <button className="secondary-action" disabled={!items.length} onClick={() => exportInventoryCsv(items)}><Icon name="download" />Exportar vista</button>
-            <button className="clear-action" type="button" onClick={props.onClearFilters}>Restablecer</button>
           </div>
         <div className="advanced-filters">
           <label>Expansion<select value={filters.expansion} onChange={(event) => props.onFilterChange({ expansion: event.target.value })}><option value="all">Todas</option>{options.expansions.map((value) => <option key={value}>{value}</option>)}</select></label>
@@ -3697,7 +3733,7 @@ function InventoryView(props: {
           <label>Tipo de carta<select aria-label="Tipo de carta" value={filters.cardType} onChange={(event) => props.onFilterChange({ cardType: event.target.value })}><option value="all">Todos</option>{Object.entries(cardTypeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         </div>
         </div> : null}
-      </div>
+      </WorkspaceToolbar>
 
       <div className="stock-content inventory-workspace inventory-browse-workspace">
         <section className="panel product-list-panel">
@@ -6593,10 +6629,10 @@ function ResellersAdminView({ stock, assignmentOnly = false, blueRate }: { stock
       {batchNotice ? <div className="feedback success" role="status">{batchNotice}<button className="icon-action" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={() => setBatchNotice("")}><Icon name="close" /></button></div> : null}
       {!selected ? <>
         <dl className="ra-stats">{stat("Mercaderia en mano", formatArs(totals.stockValueArs), `${totals.units} unidades`)}{stat("Solicitudes pendientes", totals.requests)}{!assignmentOnly ? <>{stat("Ventas del mes", formatArs(totals.monthlySalesArs))}{stat("Saldo a rendir", formatArs(totals.outstandingArs))}</> : null}</dl>
-        <div className="ra-team-toolbar"><label className="ra-search"><Icon name="search" /><input aria-label="Buscar revendedores" placeholder="Nombre, email o telefono" value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} /></label>
+        <WorkspaceToolbar label="Controles de revendedores" search={<label className="ra-search"><Icon name="search" /><input aria-label="Buscar revendedores" placeholder="Nombre, email o telefono" value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} /></label>} actions={<>
           <label>Estado<select aria-label="Filtrar equipo" value={teamFilter} onChange={(event) => setTeamFilter(event.target.value as ResellerTeamFilter)}><option value="all">Todos</option><option value="pending">Con solicitudes</option><option value="restricted">Disponibilidad limitada</option>{!assignmentOnly ? <option value="balance">Con saldo a rendir</option> : null}<option value="inactive">Inactivos</option></select></label>
           <label>Ordenar<select aria-label="Ordenar equipo" value={teamSort} onChange={(event) => setTeamSort(event.target.value as ResellerTeamSort)}><option value="name">Nombre</option><option value="stock">Mercaderia</option>{!assignmentOnly ? <><option value="balance">Saldo a rendir</option><option value="sales">Ventas del mes</option></> : null}</select></label><span className="ra-result-count">{team.length} de {resellers.length}</span>
-        </div>
+        </>} />
         {loading && !resellers.length ? <p className="muted" role="status">Cargando revendedores...</p> : team.length ? <table className="ra-team-table"><caption className="sr-only">Equipo de revendedores</caption><thead><tr><th>Revendedor</th><th>En mano</th><th>Solicitudes</th>{!assignmentOnly ? <th>Ventas del mes</th> : null}<th>Cupo disponible</th>{!assignmentOnly ? <th>A rendir</th> : null}<th><span className="sr-only">Abrir ficha</span></th></tr></thead><tbody>{team.map((record) => <tr key={record.reseller.userId}>
           <td className="ra-team-name"><strong>{record.reseller.displayName}</strong><small>{record.reseller.email}</small><span className={record.reseller.active ? "ra-status active" : "ra-status inactive"}>{record.reseller.active ? "Activo" : "Inactivo"}</span></td>
           <td><span className="ra-cell-label">En mano</span><strong>{formatArs(record.summary.assignedValueArs)}</strong><small>{record.summary.remainingUnits} unidades{record.summary.sellableUnits < record.summary.remainingUnits ? ` · ${record.summary.sellableUnits} vendibles` : ""}</small></td>
