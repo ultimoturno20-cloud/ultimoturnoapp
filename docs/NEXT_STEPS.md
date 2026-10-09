@@ -1,5 +1,21 @@
 # UltimoTurno - proximos pasos
 
+
+## Usar el apartado Torneos
+
+- Entrar como administrador y abrir `/torneos`. Crear un torneo real o importar
+  un JSON guardado desde el programa de escritorio; la importación crea una copia.
+- Guardar configuración, inscribir jugadores e iniciar Swiss. Cargar resultados
+  por mesa y avanzar solo cuando esté completa la ronda. Bajas entre rondas.
+- Al terminar Swiss, iniciar top cut si corresponde y registrar ganadores hasta
+  la final. El campeón y el cuadro son independientes de las posiciones Swiss.
+- Desde otra PC, entrar con administrador del mismo negocio y abrir el torneo
+  guardado. Pulsar Recargar datos antes de editar cambios de otra persona.
+- Ante conflicto de versión o respuesta no confirmada, recargar y comprobar si
+  la acción ya quedó aplicada antes de reenviar. No crear pruebas en producción.
+- Detalles: `docs/new-platform/TOURNAMENTS.md`.
+
+
 Actualizado: 2026-10-09
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del

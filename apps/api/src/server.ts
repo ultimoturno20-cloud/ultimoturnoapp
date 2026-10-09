@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
+  listTournaments, getTournament, createTournament, commandTournament,
   getOrderBoards,
   changeOrderBoard,
   assignOrderToReseller,
@@ -151,6 +152,7 @@ import {
   type TcgplayerPriceCacheInput,
   type UpsertInventoryInput
 } from "@ultimoturno/db";
+import type { TournamentCommand } from '@ultimoturno/domain';
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 
@@ -4209,6 +4211,26 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/users" && request.method === "GET") {
       if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
       sendJson(response, 200, await listManagedUsers(db, user.businessId));
+      return;
+    }
+
+    if (url.pathname === "/tournaments" && request.method === "GET") {
+      sendJson(response, 200, { tournaments: await listTournaments(db,user) });
+      return;
+    }
+    if (url.pathname === "/tournaments" && request.method === "POST") {
+      const body = await readJson<{ id: string; name?: string; swissCount?: number; cutSize?: number; imported?: unknown }>(request);
+      sendJson(response, 201, { tournament: await createTournament(db,body,user) });
+      return;
+    }
+    const tournamentRoute = url.pathname.match(/^\/tournaments\/([^/]+)$/);
+    if (tournamentRoute && request.method === "GET") {
+      sendJson(response, 200, { tournament: await getTournament(db,tournamentRoute[1],user) });
+      return;
+    }
+    if (tournamentRoute && request.method === "PUT") {
+      const body = await readJson<{ version: number; command: TournamentCommand }>(request);
+      sendJson(response, 200, { tournament: await commandTournament(db,tournamentRoute[1],body,user) });
       return;
     }
 

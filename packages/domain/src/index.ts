@@ -535,3 +535,6 @@ export const fixtureImports: ImportRun[] = [
     note: "Snapshot ficticio para probar conciliacion visual."
   }
 ];
+
+export { newTournament, applyTournamentCommand, importTournament, tournamentStandings, tournamentRows, tournamentHeaders, roundComplete } from './tournaments.js';
+export type { TournamentState, TournamentCommand, TournamentMatch, TournamentPlayer } from './tournaments.js';

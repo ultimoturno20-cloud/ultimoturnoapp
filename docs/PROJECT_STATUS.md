@@ -7,6 +7,19 @@ Actualizado: 2026-10-09
 
 ## Resumen vigente
 
+- Se incorpora `Torneos` en `/torneos`, con acceso de administrador y datos por
+  negocio: inscripción, Swiss/byes, resultados, bajas, posiciones estilo TOM,
+  top cut sembrado y exportación/importación JSON, CSV y tabla imprimible.
+- Persistencia compartida en PostgreSQL/Supabase mediante migración aditiva
+  `0059_tournaments.sql`; no altera stock, claims, caja ni ventas. Las acciones
+  validan versión para impedir sobrescrituras entre PCs; un conflicto o respuesta
+  no confirmada pausa edición hasta recargar. No hay reenvíos automáticos offline.
+- Alcance: una categoría, hasta 128 jugadores, top cuts simétricos. No equivale
+  completamente a TOM ni contempla categorías etarias, ingreso tardío o sanciones.
+- QA: motor/DB/exportaciones y recorrido Chrome con datos simulados, campeón,
+  segunda sesión y conflicto HTTP 409; sin overflow en 1440/768/390/320 px.
+  Detalles operativos en `docs/new-platform/TOURNAMENTS.md`.
+
 - Correccion de layout de Inventario: Stock abre un dialogo independiente,
   sin estirar las filas ni mover otras cartas. Mantiene carga y cambio de precio
   existentes, con foco contenido y cierre bloqueado mientras guarda.
