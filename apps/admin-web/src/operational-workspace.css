@@ -1,0 +1,72 @@
+.operational-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-width: 0; }
+.operational-heading h2 { margin: 0; font-size: 22px; }
+.operational-heading > span { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .operations-dock { display: none; }
+.operational-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-soft); border-radius: 5px; background: var(--field-bg, #0b0b0e); padding: 0 10px; }
+.operational-search > .ui-icon { flex: 0 0 18px; width: 18px; height: 18px; }
+.operational-search > input { min-width: 0; border: 0; background: transparent; padding-inline: 0; }
+.operational-reset { width: 40px; flex: 0 0 40px; padding: 0; }
+.operational-reset svg { width: 18px; height: 18px; }
+.operational-checkbox { display: flex; align-items: center; gap: 8px; width: fit-content; }
+.workspace-toolbar .operational-checkbox input { min-height: 0; width: 16px; height: 16px; margin: 0; }
+.operational-mode-switch { display: flex; padding-bottom: 10px; }
+.operational-load-more { justify-self: start; margin-block: 12px; max-width: 100%; white-space: normal; }
+.operational-disclosure { min-width: 0; border-top: 1px solid var(--border-soft); padding-block: 12px; }
+.operational-disclosure > summary { cursor: pointer; font-size: 14px; font-weight: 600; padding-block: 6px; }
+.operational-disclosure[open] > summary { margin-bottom: 12px; }
+.operational-disclosure > .panel { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.operational-orders .trello-toolbar,
+.operational-order-list .orders-header-panel { position: static; max-height: none; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.operational-orders .workspace-toolbar { margin-block: 12px; }
+.operational-orders .trello-tabs { margin-block: 12px; }
+.operational-orders .trello-tabs button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.operational-orders .trello-work-summary { margin-block: 12px; }
+.operational-orders .trello-board-tools { flex-wrap: wrap; }
+.operational-orders .trello-board-tools > span { min-width: 0; overflow-wrap: anywhere; }
+.operational-order-list .orders-header-panel { display: grid; gap: 12px; }
+.operational-order-list .orders-tools { min-width: 0; }
+.operational-order-list .orders-filters { flex-wrap: wrap; }
+.operational-cash > .cash-hero { padding: 12px 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.operational-cash .cash-hero h2 { font-size: 18px; }
+.operational-cash > .cash-grid,
+.operational-cash > .sales-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+.operational-cash :is(.cash-grid, .sales-grid) > .panel,
+.operational-purchases > .purchases-top,
+.operational-purchases > .sale-picker,
+.operational-purchases .purchase-history-panel { border: 0; border-radius: 0; box-shadow: none; background: transparent; padding: 0; min-width: 0; }
+.operational-cash :is(.cash-row, .sold-card-row) { min-width: 0; }
+.operational-cash :is(.cash-row, .sold-card-row) > div { min-width: 0; }
+.operational-cash :is(.cash-row, .sold-card-row, .channel-row) :is(strong, span, small, em) { overflow-wrap: anywhere; white-space: normal; }
+.operational-purchases .stock-side { min-width: 0; }
+.operational-purchases .purchase-cart-panel { border-radius: 7px; }
+.operational-purchases .sale-stock-list { margin-top: 12px; }
+.operational-purchases :is(.purchase-stock-row, .purchase-line) > div { min-width: 0; }
+.operational-purchases :is(.purchase-stock-row, .purchase-line) :is(strong, span, small, em) { overflow-wrap: anywhere; white-space: normal; }
+@media (max-width: 980px) {
+  .orders-mode .operational-orders .trello-work-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .orders-mode .operational-orders .trello-work-summary > span { min-width: 0; display: grid; gap: 4px; }
+  .orders-mode .operational-orders .trello-work-summary :is(small, strong) { white-space: normal; overflow-wrap: anywhere; }
+}
+@media (max-width: 760px) {
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .app-header { flex-direction: column; align-items: stretch; }
+  .operational-orders .workspace-toolbar-actions > label,
+  .operational-order-list .workspace-toolbar-actions > label,
+  .operational-cash .workspace-toolbar-actions > label { flex: 1 1 160px; }
+  .operational-orders .workspace-toolbar-actions > label > select,
+  .operational-order-list .workspace-toolbar-actions > label > select { padding-inline: 8px; }
+  .orders-mode .operational-orders .trello-work-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .orders-mode .operational-orders .trello-work-summary > span { min-width: 0; display: grid; gap: 4px; }
+  .orders-mode .operational-orders .trello-work-summary :is(small, strong) { white-space: normal; overflow-wrap: anywhere; }
+  .operational-orders .trello-mobile-column { min-width: 0; }
+  .operational-orders .trello-mobile-column select { width: 100%; max-width: 100%; }
+  .operational-purchases .purchase-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operational-cash .cash-row { grid-template-columns: minmax(0, 1fr) minmax(0, 100px); gap: 10px; }
+  .operational-cash .sold-card-row { grid-template-columns: 46px minmax(0, 1fr); gap: 10px; }
+  .operational-cash .sold-card-row > div:last-child { grid-column: 2; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .header-actions { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; margin-left: 0; overflow: visible; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .live-sync-status { flex: 1 1 auto; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .header-badges { display: flex; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; max-width: 100%; gap: 6px; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .header-actions > button { width: auto; min-width: 0; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .header-actions > .header-refresh { width: 40px; padding: 0; font-size: 0; }
+  .shell:has(.operational-orders, .operational-order-list, .operational-cash, .operational-purchases) .header-refresh svg { width: 18px; height: 18px; }
+}

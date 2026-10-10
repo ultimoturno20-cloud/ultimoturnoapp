@@ -1,11 +1,32 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-09
+Actualizado: 2026-10-10
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
 ## Resumen vigente
+
+- Segunda entrega de consistencia operativa: Ordenes (tablero/lista), Caja y
+  Compras reutilizan WorkspaceToolbar y recuperan sus filtros al recargar o
+  volver al sector. Preferencias locales por negocio/usuario/navegador, sin
+  guardar carritos, pagos, seleccion de ordenes ni borradores financieros.
+- Ordenes ofrece Todas, Por embalar, Por entregar, Contactar y Con deuda.
+  Por entregar usa estado paid; Por embalar usa lineas sin embalar; Con deuda
+  reutiliza el saldo ARS/USD existente. Las vistas de tareas excluyen cerradas.
+  Tablero y lista conservan preferencias independientes y acciones actuales.
+- Caja filtra movimientos por cliente/proveedor/carta/nota, tipo y fecha del
+  registro (Todo/Hoy/Este mes en Buenos Aires). Los resumenes generales no
+  se recalculan al filtrar. Valuacion y carga de costos se despliegan a pedido;
+  compras registradas no se presentan como deuda confirmada con proveedores.
+- Compras conserva busqueda/vista (catalogo, stock bajo, comprados antes) y
+  permite ver mas de los primeros 18 resultados sin borrar la compra en carga.
+  Se reducen accesos duplicados; indicadores y encabezados caben en movil.
+- QA local: seis anchos 1788/1440/1024/768/390/320 px, filtros de tareas,
+  recarga, aislamiento entre usuarios, storage lleno, paginacion y borradores;
+  lecturas simuladas y escrituras operativas bloqueadas. 26 tests frontend,
+  lint/typecheck/build web correctos; regression de Inventario/Revendedores.
+  Sin cambios de API/schema/reglas financieras, ni mutaciones en produccion.
 
 - `UltimoTurno Torneos` tiene espacio independiente en `/torneos`: entrada,
   registro público y cuenta propia, sin administrador ni sesión de Stock.
@@ -60,7 +81,7 @@ Actualizado: 2026-10-09
 - Sin cambios de API/schema/stock/precios. Validacion completa check:new con
   127 tests; Chrome en 1788/1440/768/390/320 px verifica vistas, filtros, foco,
   navegacion y limites de controles sin mutaciones de inventario. Se continua
-  la unificacion de Ordenes/Caja/Compras en entregas siguientes.
+  la unificacion en la segunda entrega documentada arriba.
 
 - Solicitudes de revendedores usa filas compactas con imagen de 72 px,
   variantes/disponibilidad, referencias, cantidad/precio y acciones agrupadas.

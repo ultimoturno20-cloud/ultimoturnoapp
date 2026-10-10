@@ -1,5 +1,35 @@
 # Traspaso de contexto - UltimoTurno
 
+## Consistencia operativa, segunda entrega - 2026-10-10
+
+Ordenes tablero/lista, Caja y Compras usan WorkspaceToolbar. Los archivos
+operational-preferences.ts y use-operational-preferences.ts pasan de pendientes
+a integrados: preferencias sanitizadas/versionadas por scope business/user y
+sector; sin carritos, seleccion, tokens ni borradores. Hook evita persistir el
+scope anterior al cambiar de usuario; vistas se montan con key del scope.
+No hay vistas con nombre ni sincronizacion de preferencias entre dispositivos.
+
+Ordenes agrega vistas de tareas con estados/lineas y saleOwed existente para
+ARS/USD. Elegir tarea en lista limpia el filtro secundario; usar un filtro
+secundario limpia la tarea para evitar intersecciones ocultas. Mantiene boards,
+drag/drop, acciones, seleccion y reglas. Board/lista recuperan estados separados.
+
+Caja filtra solo movimientos; resumenes generales y formulas se conservan.
+Fecha del registro usa createdAt en saldos/compras y completedAt o createdAt
+en ventas cobradas. Calendario Buenos Aires para Hoy/Este mes. Ver mas aumenta
+el limite de las listas; se excluyen compras canceladas. Compras registradas
+no equivale a deuda del proveedor. MoneyOverview y CostFillPanel en details,
+sin retirar funciones existentes. Compras pagina catalogo de 18 en 18 sin
+alterar la compra en preparacion; su carrito sigue sin persistencia local.
+
+operational-workspace.css posterior al legacy, scoped a los tres sectores:
+bandas sin paneles flotantes, dock duplicado oculto, encabezados sin solaparse
+e indicadores visibles en tablet/movil. No modifica estilos de Torneos.
+QA Chrome en seis anchos, fixtures de lectura y bloqueo de escrituras; tareas,
+recarga/scope/storage lleno, resultados extra y borrador conservado. 26 tests
+frontend, lint/typecheck/build web y QA previa de Inventario/Revendedores.
+Sin modificaciones de backend/schema ni operaciones ficticias en produccion.
+
 ## Inventario sin saltos ni desbordes - 2026-10-09
 
 InventoryQuickIntake deja de montarse dentro del article: InventoryView abre

@@ -20,7 +20,7 @@
 - Detalles: `docs/new-platform/TOURNAMENTS.md`.
 
 
-Actualizado: 2026-10-09
+Actualizado: 2026-10-10
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
@@ -37,9 +37,17 @@ Actualizado: 2026-10-09
   de Revendedores. Revisar en movil sin confirmar operaciones ficticias.
 - Las vistas personales son locales por negocio/usuario/navegador. Guardar
   una vista no registra stock, no habilita venta y no persiste el carrito.
-- Proxima entrega: aplicar el patron de barra y estados a Ordenes/Caja/Compras,
-  conservando reglas financieras y permisos. Pendientes de entregar corresponde
-  a Ordenes; no se implementa como un filtro inventado sobre inventario.
+- Segunda entrega terminada en Ordenes/Caja/Compras. Pilotear las vistas de
+  tareas en Ordenes, busqueda/fecha/tipo en Caja y Ver mas items en Compras.
+  Por entregar significa paid sin entregar; Con deuda incluye saldos USD.
+  Preferencias de tablero y lista son independientes. Los filtros de Caja
+  solo afectan movimientos, no sus resumenes generales. Fecha usa creacion
+  para saldos/compras y completedAt (o creacion) para ventas cobradas.
+- En Compras, filtrar/restablecer no borra el ingreso en preparacion. El
+  borrador no se guarda en localStorage ni sobrevive a recargar la pagina.
+  No registrar pagos, compras o entregas ficticias para probar en produccion.
+- Proxima mejora a evaluar: vistas personales con nombre en estos sectores,
+  aparte de la recuperacion automatica actual; no prometerlas ya disponibles.
 - Evaluar sincronizacion de vistas entre dispositivos como etapa separada,
   con almacenamiento autenticado por negocio/usuario y migracion aditiva.
 

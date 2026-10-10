@@ -12,6 +12,9 @@ import { defaultInventoryFilters, inventoryPreferencesKey, inventoryPresets, inv
 import { WorkspaceToolbar } from "./workspace-toolbar.js";
 import "./workspace-toolbar.css";
 import "./inventory-layout.css";
+import { matchesOperationalPeriod, orderMatchesOperationalView, type OrderOperationalView } from "./operational-preferences.js";
+import { useOperationalPreferences } from "./use-operational-preferences.js";
+import "./operational-workspace.css";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -2904,10 +2907,12 @@ function App() {
       {view === "claims" ? <ClaimsView workspace={claims} stockItems={stock.items} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} claimClosing={claimClosing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search, languageGroup) => void searchPriceChartingCache(search, languageGroup)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
-      {view === "orders" ? <OrdersView sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
-      {view === "sales" ? <SalesView sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} costSaving={costSaving} onFillCosts={fillInventoryCosts} /> : null}
+      {view === "orders" ? <OrdersView key={inventoryPreferenceScope} preferenceScope={inventoryPreferenceScope} sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
+      {view === "sales" ? <SalesView key={inventoryPreferenceScope} preferenceScope={inventoryPreferenceScope} sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} costSaving={costSaving} onFillCosts={fillInventoryCosts} /> : null}
       {view === "purchases" ? (
         <PurchasesView
+          key={inventoryPreferenceScope}
+          preferenceScope={inventoryPreferenceScope}
           items={stock.items}
           purchases={purchases}
           cart={purchaseCart}
@@ -4797,13 +4802,20 @@ type OrderWorkspace = {
   cards: Array<{saleId:string;columnId:string;position:number}>;
 };
 
+function OrderViewPicker({ value, onChange }: { value: OrderOperationalView; onChange: (value: OrderOperationalView) => void }) {
+  return <label>Vista<select aria-label="Vista operativa de ordenes" value={value} onChange={event => onChange(event.target.value as OrderOperationalView)}><option value="all">Todas</option><option value="to_pack">Por embalar</option><option value="to_deliver">Por entregar</option><option value="contact">Contactar</option><option value="debt">Con deuda</option></select></label>;
+}
+
 function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const [workspace,setWorkspace] = useState<OrderWorkspace | null>(null);
-  const [boardId,setBoardId] = useState("");
-  const [query,setQuery] = useState("");
-  const [orderSort,setOrderSort] = useState<OrderSort>("current");
-  const [history,setHistory] = useState(false);
-  const [list,setList] = useState(false);
+  const [preferences, patchPreferences, resetPreferences] = useOperationalPreferences(props.preferenceScope, "orders");
+  const { boardId, query, sort: orderSort, history, list, mobileColumnId, view: operationalView } = preferences;
+  const setBoardId = (boardId: string) => patchPreferences({ boardId });
+  const setQuery = (query: string) => patchPreferences({ query });
+  const setOrderSort = (sort: OrderSort) => patchPreferences({ sort });
+  const setHistory = (history: boolean) => patchPreferences({ history });
+  const setList = (list: boolean) => patchPreferences({ list });
+  const setMobileColumnId = (mobileColumnId: string) => patchPreferences({ mobileColumnId });
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
   const [busy,setBusy] = useState(false);
@@ -4814,7 +4826,6 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const [dragId,setDragId] = useState("");
   const [over,setOver] = useState("");
   const [destination,setDestination] = useState("");
-  const [mobileColumnId,setMobileColumnId] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const load = () => { setError(""); void api<OrderWorkspace>("/order-boards").then(setWorkspace).catch(e=>setError(String(e.message || e))); };
   useEffect(load,[]);
@@ -4832,7 +4843,10 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   const isCompletedBoard = (board?: {name:string}) => normalize(board?.name || "") === normalize("Completas");
   const boardShowsSale = (board: {name:string} | undefined, sale: SaleRecord) => isCompletedBoard(board) ? ["delivered","cancelled"].includes(sale.status) : sale.status!=="cancelled" && (history || sale.status!=="delivered");
   const allOrders = props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(selectedBoard,s));
-  const orders = allOrders.filter(s=>normalize([s.customerName,s.internalNote,...s.lines.map(l=>l.name+" "+l.sku)].join(" ")).includes(normalize(query)));
+  const orders = allOrders.filter(s=>{
+    const owed = saleOwed(s);
+    return normalize([s.customerName,s.internalNote,...s.lines.map(l=>l.name+" "+l.sku)].join(" ")).includes(normalize(query)) && orderMatchesOperationalView(s, operationalView, owed.ars > 0 || owed.usd > 0);
+  });
   const openOrder = props.sales.find(s=>s.id===openId);
   const boardDebtArs = allOrders.reduce((sum, order) => sum + Math.max(0, order.totalArs - (order.amountPaidArs || 0)), 0);
   const boardNoMessage = allOrders.filter((order) => !order.messageSentAt && order.status !== "delivered").length;
@@ -4919,10 +4933,18 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
     void change({action:"move",saleId,columnId,...(beforeSaleId?{beforeSaleId}:{})});
   }
   const open = (id:string) => {setDestination(columnOf(id) || "");setOpenId(id);};
-  if(list) return <><button className="secondary-action" onClick={()=>setList(false)}>Volver a tableros</button><OrdersListView {...props}/></>;
-  return <section className="view trello-orders">
+  if(list) return <><div className="operational-mode-switch"><button className="secondary-action" onClick={()=>setList(false)}><Icon name="orders" />Volver a tableros</button></div><OrdersListView {...props}/></>;
+  return <section className="view trello-orders operational-orders">
     <header className="panel trello-toolbar">
-      <div className="trello-heading"><div className="trello-title-block"><h2>Ordenes</h2><span>{selectedBoard?.name || "Tablero"} · {orders.length}/{allOrders.length} visibles</span></div><label className="trello-search"><Icon name="search" /><input aria-label="Buscar ordenes" placeholder="Buscar comprador, carta o nota" value={query} onChange={e=>setQuery(e.target.value)}/></label><select className="trello-sort" aria-label="Ordenar ordenes" value={orderSort} onChange={e=>setOrderSort(e.target.value as OrderSort)}><option value="current">Orden del tablero</option><option value="money_desc">Mayor importe</option><option value="money_asc">Menor importe</option><option value="units_desc">Mas cartas</option><option value="units_asc">Menos cartas</option></select><label className="trello-history"><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Entregadas</label><button className="secondary-action" onClick={()=>setList(true)}>Vista de lista</button></div>
+      <div className="operational-heading"><h2>Ordenes</h2><span>{selectedBoard?.name || "Tablero"} · {orders.length}/{allOrders.length} visibles</span></div>
+      <WorkspaceToolbar label="Controles de ordenes" search={<label className="operational-search"><Icon name="search" /><input aria-label="Buscar ordenes" placeholder="Comprador, carta o nota" value={query} onChange={e=>setQuery(e.target.value)}/></label>} actions={<>
+        <OrderViewPicker value={operationalView} onChange={view=>patchPreferences({ view })} />
+        <label>Orden<select aria-label="Ordenar ordenes" value={orderSort} onChange={e=>setOrderSort(e.target.value as OrderSort)}><option value="current">Orden del tablero</option><option value="money_desc">Mayor importe</option><option value="money_asc">Menor importe</option><option value="units_desc">Mas cartas</option><option value="units_asc">Menos cartas</option></select></label>
+        <button className="secondary-action" onClick={()=>setList(true)}><Icon name="inventory" />Lista</button>
+        <button className="secondary-action operational-reset" title="Restablecer vista" aria-label="Restablecer vista de ordenes" onClick={resetPreferences}><Icon name="refresh" /></button>
+      </>}>
+        <label className="operational-checkbox"><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>Incluir entregadas</label>
+      </WorkspaceToolbar>
       <nav className="trello-tabs" aria-label="Tableros de ordenes">{workspace?.boards.map(board=>{
         const first=workspace.columns.find(c=>c.boardId===board.id);
         const count=props.sales.filter(s=>s.saleType==="reservation" && boardShowsSale(board,s) && workspace.columns.some(c=>c.boardId===board.id && c.id===columnOf(s.id))).length;
@@ -4959,14 +4981,16 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
   </section>;
 }
 
-function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string, amountPaidUsd?: number) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
+function OrdersListView({ preferenceScope, sales, claims, stockItems, blueRate, resellers, onAssignReseller, onComplete, onCancel, onPacked, onDelivered, onPayment, onNote, onMessageSent, onLinePacked, onLines }: { preferenceScope: string; sales: SaleRecord[]; claims: ClaimsWorkspace; stockItems: StockRow[]; blueRate: BlueExchangeRate; resellers: Array<{ userId: string; displayName: string }>; onAssignReseller: (id: string, resellerUserId: string) => Promise<void>; onComplete: (id: string) => Promise<void>; onCancel: (id: string) => Promise<void>; onPacked: (id: string) => Promise<void>; onDelivered: (id: string) => Promise<void>; onPayment: (id: string, amount: number, paymentDueAt?: string, amountPaidUsd?: number) => Promise<void>; onNote: (id: string, note: string) => Promise<void>; onMessageSent: (id: string, sent: boolean) => Promise<void>; onLinePacked: (id: string, packed: boolean) => Promise<void>; onLines: (id: string, lines: OrderLineUpdate[]) => Promise<void> }) {
   const reservations = sales.filter((sale) => sale.saleType === "reservation");
   const activeOrders = reservations.filter((sale) => sale.status !== "delivered" && sale.status !== "cancelled");
   const deliveredOrders = reservations.filter((sale) => sale.status === "delivered");
-  const [orderSearch, setOrderSearch] = useState("");
-  const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
-  const [orderSort, setOrderSort] = useState<OrderSort>("current");
-  const [selectedBoard, setSelectedBoard] = useState("all");
+  const [preferences, patchPreferences, resetPreferences] = useOperationalPreferences(preferenceScope, "orderList");
+  const { query: orderSearch, filter: orderFilter, sort: orderSort, board: selectedBoard, view: operationalView } = preferences;
+  const setOrderSearch = (query: string) => patchPreferences({ query });
+  const setOrderFilter = (filter: OrderFilter) => patchPreferences({ filter, view: "all" });
+  const setOrderSort = (sort: OrderSort) => patchPreferences({ sort });
+  const setSelectedBoard = (board: string) => patchPreferences({ board });
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [batchDueDate, setBatchDueDate] = useState("");
   const [copiedOrderId, setCopiedOrderId] = useState("");
@@ -5017,6 +5041,7 @@ function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssi
   ];
   const matchesOrderSearch = (order: SaleRecord) => !orderSearchText || normalize([
       order.customerName,
+      order.internalNote,
       order.channel,
       order.lines.map((line) => `${line.name} ${line.sku}`).join(" ")
     ].join(" ")).includes(orderSearchText);
@@ -5040,7 +5065,10 @@ function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssi
     return true;
   };
   const boardOrders = orders.filter((order) => matchesBoard(order) && matchesOrderSearch(order));
-  const visibleOrders = boardOrders.filter((order) => matchesOrderFilter(order, orderFilter)).sort((left, right) => {
+  const visibleOrders = boardOrders.filter((order) => {
+    const owed = saleOwed(order);
+    return matchesOrderFilter(order, orderFilter) && orderMatchesOperationalView(order, operationalView, owed.ars > 0 || owed.usd > 0);
+  }).sort((left, right) => {
     if (orderSort === "current") return 0;
     const leftUnits = left.lines.reduce((sum, line) => sum + line.quantity, 0);
     const rightUnits = right.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -5089,11 +5117,15 @@ function OrdersListView({ sales, claims, stockItems, blueRate, resellers, onAssi
     await Promise.all(selectedOrders.filter((order) => order.status === "pending" || order.status === "packed").map((order) => onPacked(order.id)));
   };
   return (
-    <section className="view orders-layout">
+    <section className="view orders-layout operational-order-list">
       <div className="panel orders-header-panel">
-        <div className="orders-title"><h2>Ordenes</h2><p className="muted">Ejecucion diaria: contactar, cobrar, embalar y entregar sin saltar de pantalla.</p></div>
+        <div className="operational-heading"><h2>Ordenes</h2><span>{visibleOrders.length}/{orders.length} {showingDelivered ? "entregas" : "ordenes"}</span></div>
+        <WorkspaceToolbar label="Controles de ordenes en lista" search={<label className="operational-search"><Icon name="search" /><input aria-label="Buscar ordenes" value={orderSearch} onChange={event=>setOrderSearch(event.target.value)} placeholder="Comprador, carta o nota" /></label>} actions={<>
+          <OrderViewPicker value={operationalView} onChange={view=>patchPreferences({ view, filter: "all" })} />
+          <label>Orden<select aria-label="Ordenar ordenes" value={orderSort} onChange={event=>setOrderSort(event.target.value as OrderSort)}><option value="current">Orden actual</option><option value="money_desc">Mayor importe</option><option value="money_asc">Menor importe</option><option value="units_desc">Mas cartas</option><option value="units_asc">Menos cartas</option></select></label>
+          <button className="secondary-action operational-reset" title="Restablecer vista" aria-label="Restablecer vista de ordenes" onClick={resetPreferences}><Icon name="refresh" /></button>
+        </>} />
         <div className="orders-tools">
-          <div className="orders-search-row"><label className="orders-search"><Icon name="search" /><input value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Buscar comprador o carta" /></label><select className="orders-sort" aria-label="Ordenar ordenes" value={orderSort} onChange={(event) => setOrderSort(event.target.value as OrderSort)}><option value="current">Orden actual</option><option value="money_desc">Mayor importe</option><option value="money_asc">Menor importe</option><option value="units_desc">Mas cartas</option><option value="units_asc">Menos cartas</option></select></div>
           <div className="order-board-tabs">{orderBoards.map((board) => <button className={selectedBoard === board.id ? "active" : ""} key={board.id} onClick={() => setSelectedBoard(board.id)}>{board.label}<span>{board.count}</span></button>)}</div>
           <div className="orders-filters">{orderFilterOptions.map((option) => <button className={`secondary-action filter-toggle ${orderFilter === option.value ? "active" : ""}`} key={option.value} onClick={() => setOrderFilter(option.value)}>{option.label} <span>{filterCounts.get(option.value) || 0}</span></button>)}</div>
         </div>
@@ -5373,7 +5405,12 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   );
 }
 
-function SalesView({ sales, purchases, items, resellers, blueRate, costSaving, onFillCosts }: { sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; resellers: ResellerDashboard[]; blueRate: BlueExchangeRate; costSaving: boolean; onFillCosts: (body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) => Promise<void> }) {
+function SalesView({ preferenceScope, sales, purchases, items, resellers, blueRate, costSaving, onFillCosts }: { preferenceScope: string; sales: SaleRecord[]; purchases: PurchaseRecord[]; items: StockRow[]; resellers: ResellerDashboard[]; blueRate: BlueExchangeRate; costSaving: boolean; onFillCosts: (body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) => Promise<void> }) {
+  const [preferences, patchPreferences, resetPreferences] = useOperationalPreferences(preferenceScope, "cash");
+  const { query, period, view: movementView } = preferences;
+  const [movementLimit, setMovementLimit] = useState(10);
+  useEffect(() => { setMovementLimit(10); }, [query, period, movementView]);
+  const matchesMovement = (timestamp: string, values: Array<string | null | undefined>) => matchesOperationalPeriod(timestamp, period) && normalize(values.join(" ")).includes(normalize(query));
   const paid = sales.filter((sale) => sale.status === "paid" || sale.status === "delivered");
   const snapshot = moneySnapshot(items, sales, resellers, blueRate);
   const receivables = sales.filter((sale) => { const owed = saleOwed(sale); return owed.ars > 0 || owed.usd > 0; });
@@ -5393,19 +5430,20 @@ function SalesView({ sales, purchases, items, resellers, blueRate, costSaving, o
   monthStart.setHours(0, 0, 0, 0);
   const monthly = paid.filter((sale) => new Date(sale.completedAt || sale.createdAt) >= monthStart);
   const channelTotals = [...new Set(paid.map((sale) => sale.channel))].map((channel) => ({ channel, total: paid.filter((sale) => sale.channel === channel).reduce((sum, sale) => sum + sale.totalArs, 0), totalUsd: paid.filter((sale) => sale.channel === channel).reduce((sum, sale) => sum + sale.totalUsd, 0) })).sort((a, b) => (b.total + toBlueArs(b.totalUsd, blueRate)) - (a.total + toBlueArs(a.totalUsd, blueRate)));
-  const recentLines = paid
+  const visibleReceivables = receivables.filter(sale => matchesMovement(sale.createdAt, [sale.customerName, sale.internalNote, sale.channel, ...sale.lines.map(line => `${line.name} ${line.sku}`)]));
+  const visiblePurchases = purchases.filter(purchase => purchase.status !== "cancelled" && matchesMovement(purchase.createdAt, [purchase.sellerName, purchase.note, ...purchase.lines.map(line => line.name)]));
+  const filteredPaid = paid.filter(sale => matchesMovement(sale.completedAt || sale.createdAt, [sale.customerName, sale.channel, ...sale.lines.map(line => `${line.name} ${line.sku}`)]));
+  const recentLines = filteredPaid
     .flatMap((sale) => sale.lines.map((line) => ({ sale, line })))
     .sort((left, right) => new Date(right.sale.completedAt || right.sale.createdAt).getTime() - new Date(left.sale.completedAt || left.sale.createdAt).getTime())
-    .slice(0, 12);
+    .slice(0, movementLimit);
+  const movementCount = Math.max(movementView === "all" || movementView === "receivables" ? visibleReceivables.length : 0, movementView === "all" || movementView === "purchases" ? visiblePurchases.length : 0, movementView === "all" || movementView === "sales" ? filteredPaid.reduce((sum, sale) => sum + sale.lines.length, 0) : 0);
   return (
-    <section className="view sales-dashboard">
-      <MoneyOverview snapshot={snapshot} blueRate={blueRate} />
-      <CostFillPanel missingUnits={items.filter((item) => item.quantityOnHand > 0 && !unitCostArs(item, blueRate)).reduce((sum, item) => sum + item.quantityOnHand, 0)} saving={costSaving} onPercent={(percent) => onFillCosts({ percentOfSale: percent, onlyMissing: true })} onCsv={(rows) => onFillCosts({ rows })} />
+    <section className="view sales-dashboard operational-cash">
+      <div className="operational-heading"><h2>Caja</h2><span>Resumen general</span></div>
       <section className="panel cash-hero">
         <div>
-          <p className="eyebrow">Caja</p>
-          <h2>Resumen financiero operativo</h2>
-          <p>Cobros, deuda de clientes, compras registradas y stock valorizado sin mezclar conceptos.</p>
+          <h2>Balance operativo general</h2>
         </div>
         <div className="cash-hero-total"><span>Caja estimada</span><strong>{formatArs(estimatedCash)}</strong><small>cobrado - compras registradas</small></div>
       </section>
@@ -5418,23 +5456,35 @@ function SalesView({ sales, purchases, items, resellers, blueRate, costSaving, o
         <Metric label="Reservado" value={formatArs(reservedSaleValue)} helper="valor de cartas separadas" />
         <Metric label="Costo registrado" value={formatArs(stockCostValue)} helper="compra o costo cargado por carta" />
       </div>
-      <div className="cash-grid">
-        <section className="panel cash-section">
-          <div className="section-heading"><div><h2>Deudas a cobrar</h2><p>Ordenes abiertas con saldo pendiente.</p></div></div>
-          {receivables.length ? <div className="cash-row-list">{receivables.slice(0, 10).map((sale) => {
+      <WorkspaceToolbar label="Controles de movimientos de caja" search={<label className="operational-search"><Icon name="search" /><input aria-label="Buscar movimientos" placeholder="Cliente, proveedor, carta o nota" value={query} onChange={event=>patchPreferences({ query: event.target.value })} /></label>} actions={<>
+        <label>Movimientos<select aria-label="Vista de caja" value={movementView} onChange={event=>patchPreferences({ view: event.target.value as typeof movementView })}><option value="all">Todos</option><option value="receivables">A cobrar</option><option value="purchases">Compras</option><option value="sales">Ventas cobradas</option></select></label>
+        <label>Fecha del registro<select aria-label="Periodo de movimientos" value={period} onChange={event=>patchPreferences({ period: event.target.value as typeof period })}><option value="all">Todo el historial</option><option value="today">Hoy</option><option value="month">Este mes</option></select></label>
+        <button className="secondary-action operational-reset" title="Restablecer vista" aria-label="Restablecer vista de caja" onClick={resetPreferences}><Icon name="refresh" /></button>
+      </>} />
+      {movementView !== "sales" ? <div className="cash-grid">
+        {movementView !== "purchases" ? <section className="panel cash-section">
+          <div className="section-heading"><div><h2>A cobrar</h2><p>{visibleReceivables.length} orden(es) con saldo</p></div></div>
+          {visibleReceivables.length ? <div className="cash-row-list">{visibleReceivables.slice(0, movementLimit).map((sale) => {
             const remaining = saleOwed(sale);
             return <article className="cash-row debt-row" key={sale.id}><div><strong>{sale.customerName}</strong><span>{sale.lines.reduce((sum, line) => sum + line.quantity, 0)} carta(s) - {channelLabel(sale.channel)}</span><small>{sale.paymentDueAt ? `Vence ${formatShortDate(sale.paymentDueAt)}` : "Sin fecha limite"}</small></div><MoneyStack ars={remaining.ars || null} usd={remaining.usd || null} blueRate={blueRate} compact /></article>;
-          })}</div> : <EmptyState title="Sin deuda a cobrar" body="No hay ordenes pendientes con saldo." />}
-        </section>
-        <section className="panel cash-section">
-          <div className="section-heading"><div><h2>Deudas a pagar</h2><p>Por ahora se calcula sobre compras registradas. Falta seguimiento de pago a proveedores.</p></div></div>
-          {purchases.length ? <div className="cash-row-list">{purchases.filter((purchase) => purchase.status !== "cancelled").slice(0, 10).map((purchase) => <article className="cash-row payable-row" key={purchase.id}><div><strong>{purchase.sellerName}</strong><span>{purchase.lines.reduce((sum, line) => sum + line.quantity, 0)} unidad(es) - {formatDate(purchase.createdAt)}</span><small>{purchase.note || "Sin nota"}</small></div><MoneyStack ars={purchase.totalArs} blueRate={blueRate} compact /></article>)}</div> : <EmptyState title="Sin compras" body="Registra compras para ver compromisos a pagar." />}
-        </section>
-      </div>
-      <div className="sales-grid">
-        <section className="panel"><div className="section-heading"><div><h2>Ultimas cartas vendidas</h2><p>Precios finales, cliente y lugar de venta.</p></div></div>{recentLines.length ? <div className="sold-card-list">{recentLines.map(({ sale, line }) => <article className="sold-card-row" key={`${sale.id}-${line.saleItemId || line.inventoryItemId}-${line.name}`}><CardArt src={line.imageUrl} alt={line.name} label={line.name} className="sold-card-thumb" fallbackClassName="sold-card-thumb image-placeholder" /><div><strong>{line.name}</strong><span>{sale.customerName} - {channelLabel(sale.channel)}</span><small>{formatDate(sale.completedAt || sale.createdAt)}</small></div><div><MoneyStack ars={line.lineTotalArs || null} usd={line.lineTotalUsd || null} blueRate={blueRate} compact /><span>{line.quantity} x {line.priceCurrency === "USD" ? formatUsd(line.unitPriceUsd) : formatArs(line.unitPriceArs)}</span></div></article>)}</div> : <EmptyState title="Sin ventas" body="Confirma una venta desde Inventario / Venta para verla aca." />}</section>
-        <aside className="panel sales-side"><h3>Ventas por lugar</h3>{channelTotals.length ? channelTotals.map((row) => <div className="channel-row" key={row.channel}><strong>{channelLabel(row.channel)}</strong><MoneyStack ars={row.total || null} usd={row.totalUsd || null} blueRate={blueRate} compact /></div>) : <p className="muted">Todavia no hay ventas cobradas.</p>}<div className="cash-note"><strong>Mes actual</strong><span>{formatArs(monthly.reduce((sum, sale) => sum + sale.totalArs, 0))}</span><small>Ticket promedio {formatArs(paid.length ? paid.reduce((sum, sale) => sum + sale.totalArs, 0) / paid.length : 0)}</small></div></aside>
-      </div>
+          })}</div> : <EmptyState title="Sin saldos en esta vista" body="No hay ordenes que coincidan con los filtros." />}
+        </section> : null}
+        {movementView !== "receivables" ? <section className="panel cash-section">
+          <div className="section-heading"><div><h2>Compras registradas</h2><p>{visiblePurchases.length} compra(s) · Pago a proveedores sin seguimiento</p></div></div>
+          {visiblePurchases.length ? <div className="cash-row-list">{visiblePurchases.slice(0, movementLimit).map((purchase) => <article className="cash-row payable-row" key={purchase.id}><div><strong>{purchase.sellerName}</strong><span>{purchase.lines.reduce((sum, line) => sum + line.quantity, 0)} unidad(es) - {formatDate(purchase.createdAt)}</span><small>{purchase.note || "Sin nota"}</small></div><MoneyStack ars={purchase.totalArs} blueRate={blueRate} compact /></article>)}</div> : <EmptyState title="Sin compras en esta vista" body="No hay compras que coincidan con los filtros." />}
+        </section> : null}
+      </div> : null}
+      {movementView === "all" || movementView === "sales" ? <div className="sales-grid">
+        <section className="panel"><div className="section-heading"><div><h2>Cartas vendidas</h2><p>{filteredPaid.length} venta(s) cobrada(s)</p></div></div>{recentLines.length ? <div className="sold-card-list">{recentLines.map(({ sale, line }) => <article className="sold-card-row" key={`${sale.id}-${line.saleItemId || line.inventoryItemId}-${line.name}`}><CardArt src={line.imageUrl} alt={line.name} label={line.name} className="sold-card-thumb" fallbackClassName="sold-card-thumb image-placeholder" /><div><strong>{line.name}</strong><span>{sale.customerName} - {channelLabel(sale.channel)}</span><small>{formatDate(sale.completedAt || sale.createdAt)}</small></div><div><MoneyStack ars={line.lineTotalArs || null} usd={line.lineTotalUsd || null} blueRate={blueRate} compact /><span>{line.quantity} x {line.priceCurrency === "USD" ? formatUsd(line.unitPriceUsd) : formatArs(line.unitPriceArs)}</span></div></article>)}</div> : <EmptyState title="Sin ventas en esta vista" body="No hay ventas cobradas que coincidan con los filtros." />}</section>
+        <aside className="panel sales-side">
+          <h3>Totales generales por lugar</h3>
+          {channelTotals.length ? channelTotals.map((row) => <div className="channel-row" key={row.channel}><strong>{channelLabel(row.channel)}</strong><MoneyStack ars={row.total || null} usd={row.totalUsd || null} blueRate={blueRate} compact /></div>) : <p className="muted">Todavia no hay ventas cobradas.</p>}
+          <div className="cash-note"><strong>Mes actual (general)</strong><span>{formatArs(monthly.reduce((sum, sale) => sum + sale.totalArs, 0))}</span><small>Ticket promedio {formatArs(paid.length ? paid.reduce((sum, sale) => sum + sale.totalArs, 0) / paid.length : 0)}</small></div>
+        </aside>
+      </div> : null}
+      {movementLimit < movementCount ? <button className="secondary-action operational-load-more" onClick={()=>setMovementLimit(limit=>limit+10)}>Ver mas movimientos</button> : null}
+      <details className="operational-disclosure"><summary>Valuacion general y saldos por propietario</summary><MoneyOverview snapshot={snapshot} blueRate={blueRate} /></details>
+      <details className="operational-disclosure"><summary>Cargar costos de inventario</summary><CostFillPanel missingUnits={items.filter((item) => item.quantityOnHand > 0 && !unitCostArs(item, blueRate)).reduce((sum, item) => sum + item.quantityOnHand, 0)} saving={costSaving} onPercent={(percent) => onFillCosts({ percentOfSale: percent, onlyMissing: true })} onCsv={(rows) => onFillCosts({ rows })} /></details>
     </section>
   );
 }
@@ -8106,6 +8156,7 @@ function CardIndexAuditRow({ entry, onReview }: {
 }
 
 function PurchasesView(props: {
+  preferenceScope: string;
   items: StockRow[];
   purchases: PurchaseRecord[];
   cart: PurchaseCartLine[];
@@ -8119,8 +8170,10 @@ function PurchasesView(props: {
   onSubmit: () => void;
   saving: boolean;
 }) {
-  const [search, setSearch] = useState("");
-  const [stockMode, setStockMode] = useState<"all" | "low" | "recent">("all");
+  const [preferences, patchPreferences, resetPreferences] = useOperationalPreferences(props.preferenceScope, "purchases");
+  const { query: search, mode: stockMode } = preferences;
+  const [catalogLimit, setCatalogLimit] = useState(18);
+  useEffect(() => { setCatalogLimit(18); }, [search, stockMode]);
   const parsedSearch = parseUiSearchQuery(search);
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -8129,7 +8182,7 @@ function PurchasesView(props: {
   const monthlyTotal = monthlyPurchases.reduce((sum, purchase) => sum + purchase.totalArs, 0);
   const averageCost = props.purchases.flatMap((purchase) => purchase.lines).reduce((sum, line) => sum + line.lineTotalArs, 0) / Math.max(1, props.purchases.flatMap((purchase) => purchase.lines).reduce((sum, line) => sum + line.quantity, 0));
   const lowStockCount = props.items.filter((item) => item.availableQuantity <= 1).length;
-  const visible = props.items
+  const matchingItems = props.items
     .map((item) => ({ item, searchScore: scoreStockSearch(item, parsedSearch) }))
     .filter(({ item, searchScore }) => (!parsedSearch.tokens.length || searchScore > 0) && (stockMode === "all" || (stockMode === "low" && item.availableQuantity <= 1) || (stockMode === "recent" && Boolean(item.lastPurchaseAt))))
     .sort((left, right) => {
@@ -8138,17 +8191,17 @@ function PurchasesView(props: {
       if (stockMode === "recent") return new Date(right.item.lastPurchaseAt || 0).getTime() - new Date(left.item.lastPurchaseAt || 0).getTime();
       return left.item.product.name.localeCompare(right.item.product.name, "es", { numeric: true });
     })
-    .slice(0, 18)
     .map(({ item }) => item);
+  const visible = matchingItems.slice(0, catalogLimit);
   const total = props.cart.reduce((sum, line) => sum + line.quantity * line.unitCostArs, 0);
   const totalUnits = props.cart.reduce((sum, line) => sum + line.quantity, 0);
   const lineKey = (line: PurchaseCartLine) => line.inventoryItemId ? `stock:${line.inventoryItemId}` : `pc:${line.priceChartingId}`;
   const update = (key: string, patch: Partial<{ quantity: number; unitCostArs: number }>) => props.onCartChange(props.cart.map((line) => lineKey(line) === key ? { ...line, ...patch } : line));
   return (
-    <section className="view purchases-layout">
+    <section className="view purchases-layout operational-purchases">
       <section className="purchases-top panel">
         <div className="section-heading">
-          <div><h2>Compras</h2><p>Registra entradas de stock con costo real y seguimiento por proveedor.</p></div>
+          <div><h2>Compras</h2></div>
         </div>
         <div className="purchase-metrics">
           <Metric label="Compras mes" value={monthlyPurchases.length} helper={formatArs(monthlyTotal)} />
@@ -8159,16 +8212,12 @@ function PurchasesView(props: {
       </section>
       <section className="panel sale-picker">
         <div className="stock-picker-header">
-          <div><h2>Catalogo para comprar</h2><p className="muted">Busca una carta existente y suma unidades al ingreso.</p></div>
+          <div><h2>Catalogo para comprar</h2><p className="muted">{visible.length}/{matchingItems.length} items</p></div>
         </div>
-        <div className="purchase-search-row">
-          <label>Buscar en catalogo<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, expansion, numero, SKU, PSA..." /></label>
-          <div className="dashboard-feature-tabs purchase-tabs">
-            <button className={stockMode === "all" ? "active" : ""} onClick={() => setStockMode("all")}>Todos</button>
-            <button className={stockMode === "low" ? "active" : ""} onClick={() => setStockMode("low")}>Stock bajo</button>
-            <button className={stockMode === "recent" ? "active" : ""} onClick={() => setStockMode("recent")}>Comprados antes</button>
-          </div>
-        </div>
+        <WorkspaceToolbar label="Controles de compras" search={<label className="operational-search"><Icon name="search" /><input aria-label="Buscar en catalogo de compras" value={search} onChange={event=>patchPreferences({ query: event.target.value })} placeholder="Nombre, expansion, numero o SKU" /></label>} actions={<>
+          <label>Vista<select aria-label="Vista de compras" value={stockMode} onChange={event=>patchPreferences({ mode: event.target.value as typeof stockMode })}><option value="all">Todo el catalogo</option><option value="low">Stock bajo</option><option value="recent">Comprados antes</option></select></label>
+          <button className="secondary-action operational-reset" title="Restablecer vista" aria-label="Restablecer vista de compras" onClick={resetPreferences}><Icon name="refresh" /></button>
+        </>} />
         <div className="sale-stock-list">{visible.map((item) => (
           <article className="sale-stock-row purchase-stock-row" key={item.id}>
             <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="purchase-stock-image" fallbackClassName="purchase-stock-image image-placeholder" />
@@ -8182,6 +8231,7 @@ function PurchasesView(props: {
             <button className="cart-chip" onClick={() => props.onAdd(item)}><Icon name="cart" />Agregar</button>
           </article>
         ))}</div>
+        {catalogLimit < matchingItems.length ? <button className="secondary-action operational-load-more" onClick={()=>setCatalogLimit(limit=>limit+18)}>Ver mas items ({visible.length} de {matchingItems.length})</button> : null}
         {!visible.length ? <EmptyState title="Sin resultados" body="Proba buscar por nombre, expansion, numero, SKU o variante." /> : null}
       </section>
       <aside className="stock-side">
