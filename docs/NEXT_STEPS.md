@@ -29,6 +29,10 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Redisenio entregado: busqueda en encabezado, banner de marca, navegacion por
+  tipo y filtros laterales. En celular, Filtros abre un dialogo; Ver resultados
+  lo cierra. Grilla/lista y chips para quitar filtros, sin cambiar inventario.
+  Ver detalle es consulta, no un boton de compra. No hay cuenta publica ni carrito.
 - La tienda ya usa la gama negra/carbon/roja del panel. Mantener esta identidad
   en futuras pantallas de carrito/checkout, sin oscurecer las imagenes reales.
 - Separacion entregada: tienda en `/` y panel/login en `/admin`. Todas las

@@ -7,6 +7,18 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Redisenio de tienda con identidad propia: encabezado con busqueda amplia,
+  navegacion por tipos y banner con arte original de UltimoTurno reutilizado.
+  Catalogo con filtros laterales, busqueda de expansiones, filtros activos,
+  grilla/lista, fotos grandes y Ver detalle. En movil, filtros en dialogo;
+  foco/cierre/scroll contenidos. Sin carrito, cuentas de compradores ni checkout.
+- Conserva API, publicacion, precios numericos y reglas de disponibilidad.
+  ARS muestra centavos solo cuando existen; no hay conversion nueva. Solo
+  frontend, Lucide con version fija y asset de marca de 193 KB. Sin promociones,
+  productos ficticios ni escrituras de prueba en produccion.
+- QA de redisenio: 38 pruebas frontend/catalogo, lint/tipos/build completo y
+  Chrome en siete anchos 1788/1440/1024/900/768/390/320 px, grilla/lista,
+  filtros, recarga, paginacion, modales, imagenes y estados vacio/error/reintento.
 - Tienda alineada con la paleta vigente del panel: negro, superficies carbon,
   acentos rojos y texto claro. Controles nativos en modo oscuro, foco visible,
   precios legibles e imagenes sin filtros. Cambio solo visual, sin alterar

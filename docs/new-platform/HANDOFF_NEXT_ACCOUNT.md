@@ -1,5 +1,32 @@
 # Traspaso de contexto - UltimoTurno
 
+## Redisenio comercial de tienda - 2026-10-12
+
+storefront.tsx/css reorganizan la misma API publica, sin cambios backend/schema:
+encabezado con busqueda, navegacion por cardType, banner de marca y CTA al
+catalogo, filtros laterales con expansion buscable/radios, idioma/condicion/tipo,
+chips removibles y grilla/lista. Navegar un tipo limpia filtros anteriores;
+cambiar cualquier filtro reinicia offset. Facets y resultados previos persisten
+durante carga, con acciones de detalle deshabilitadas hasta respuesta vigente.
+Movil <=900 px usa un unico formulario dentro de dialog nativo; no duplica
+controles. Resize al escritorio cierra filtros y restaura scroll. Detalle tambien
+usa dialog con foco/escape y bloqueo temporal de scroll del body.
+
+Arte original mobile-app/assets/ultimo-turno-splash-source.jpeg copiado sin editar
+a public/brand/ultimo-turno-artwork.jpeg (193 KB), usado como fondo de banner.
+No publicar productos/promociones inventadas. Los productos siguen usando sus
+imagenes reales sin filtros ni recorte; objeto contain y alto maximo 420 px.
+Lucide React 1.55.0 importado solo por tienda, tree-shaking de iconos. No cargar
+bundle/estilos/sesion privados en raiz. Helper storefront-filters.ts tiene tests
+de chips, etiquetas y busqueda de expansion con acentos. Precio visual ARS omite
+centavos cero, conserva centavos no cero y el valor numerico; no conversion.
+
+QA: 38 tests frontend/catalogo y lint/tipos/build completo. Chrome con respuestas
+publicas simuladas y escrituras/lecturas privadas bloqueadas, siete anchos,
+banner y primeras secciones visibles, imagenes reales, grilla/lista, filtro movil,
+busqueda, chips, tipos, orden, paginacion/recarga, modales/scroll y errores.
+Checkout/carrito/cuentas de compradores siguen pendientes; Ver detalle no compra.
+
 ## Paleta de tienda - 2026-10-12
 
 storefront.css usa los valores efectivos de la capa Everyday polish de styles.css:
