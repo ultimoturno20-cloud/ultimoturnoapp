@@ -1,5 +1,43 @@
 # Traspaso de contexto - UltimoTurno
 
+## Catalogo publico y publicacion - 2026-10-12
+
+La raiz deja de ser apertura pendiente: index.html carga storefront.tsx/css,
+React separado de main.tsx, sin sesion ni API privada. Busqueda/filtros/orden
+en URL, 36 por pagina, imagenes reales y dialogo de detalle; estados vacio/error.
+No hay carrito, checkout ni pagos. Mantener noindex hasta apertura comercial.
+
+0061_storefront_catalog.sql agrega inventory_items.storefront_published false,
+indices de publicacion y claim linkage e invalida stock_read_snapshots. Registrar
+migracion sin alterar orden previo. Stock privado siempre devuelve la bandera;
+parseStockSnapshot rechaza versiones anteriores sin ella. PUT /inventory/storefront
+solo admin, ids UUID unicos del negocio, lote atomico con locks, audit y expiracion
+del snapshot/cache. Estado idempotente; no toca stock/precios. Inventario expone
+checkbox en detalle y acciones de seleccion, con bloqueo mientras guarda y rollback
+visual si falla. Web habilitada no equivale a visible.
+
+GET /api/store/catalog es anonimo, solo lectura, negocio fijo slug ultimoturno.
+packages/db/src/storefront.ts selecciona DTO whitelist de producto/variante,
+imagen HTTP(S), precio ARS y freeQuantity central (no resta dos veces reservas
+de ordenes asignadas). Solo active + available + publicacion explicita + ARS>0.
+Excluye todo item enlazado a claim open, por inventory_item_id, inventory:UUID
+o PriceCharting del producto/variante, porque el claim reserva recien al cerrar.
+No usa snapshot privado/cache, propietarios, costos, notas ni identificadores
+en respuesta. Folder usa precio manual de venta, nunca valuacion del contenido.
+Contrato, filtros acotados y paginacion compartidos en domain/store-catalog.ts.
+
+QA: 160 pruebas de regresion completas; tests nuevos y ampliados de catalogo,
+roles, lotes atomicos, flags ocultas, disponibilidad, claim y DTO publico.
+Chrome sobre build y API con nueva base PGlite temporal, seis anchos, imagenes,
+filtros/paginacion/modal/errores, publicacion individual/lotes y auth privada.
+No publicar items reales como prueba, ni crear ordenes/claims en produccion.
+Scripts y capturas locales en .work (ignorados, sin secretos en Git).
+
+Siguiente: confirmar forma de pago/entrega, carrito y checkout Web con precio
+validado en servidor, reserva atomica, idempotencia, limites y expiracion.
+No asumir que compartir DB resuelve concurrencia ni habilitar claims y tienda
+simultaneamente para el mismo item sin conservar la exclusion.
+
 ## Raiz publica y rutas privadas - 2026-10-11
 
 index.html + storefront.ts/css es un documento publico de apertura pendiente,

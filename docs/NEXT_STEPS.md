@@ -20,7 +20,7 @@
 - Detalles: `docs/new-platform/TOURNAMENTS.md`.
 
 
-Actualizado: 2026-10-11
+Actualizado: 2026-10-12
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
@@ -34,10 +34,17 @@ Actualizado: 2026-10-11
   Enlaces anteriores redirigen, y la app instalada inicia dentro de admin.
   Abrirla con internet para retirar la cache global anterior. Torneos y portal
   de revendedores mantienen sus propios espacios y accesos.
-- La raiz solo muestra apertura pendiente. Catalogo, carrito y checkout publico
-  siguen sin implementar; no presentar esta entrega como ecommerce habilitado.
-- Siguiente alcance: decidir pago manual o automatico, habilitacion explicita
-  de articulos y DTO publico sin costos, propietarios ni datos de compradores.
+- Catalogo publico entregado en `/`, sin carrito, checkout ni pagos. Para
+  preparar la tienda, abrir `/admin/inventario`: Detalles > Publicar en tienda,
+  o seleccionar items y Publicar/Ocultar de tienda. No publicar pruebas reales.
+  Todo empieza oculto; solo administradores cambian la publicacion.
+- Web habilitada indica permiso de publicacion, no visibilidad garantizada.
+  Debe estar Disponible, tener unidades centrales libres y precio de venta ARS
+  positivo. USD sin ARS, No venta, asignaciones, reservas y claim abierto quedan
+  fuera. Una carpeta usa su precio de venta, no el valor de su contenido.
+- Siguiente alcance: carrito y checkout para ordenes Web. Confirmar pago manual
+  o automatico y datos de entrega antes de implementarlos. DTO publico ya excluye
+  costos, propietarios, notas, compradores e identificadores externos.
 - Antes del claim, evitar ofrecer simultaneamente sus mismas unidades: el
   flujo actual reserva al cerrar y puede agregar faltantes. Primera tienda
   debe excluir articulos del claim activo o coordinar disponibilidad de forma

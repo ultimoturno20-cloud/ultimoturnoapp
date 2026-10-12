@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
+  listStoreCatalog,
+  setStorefrontPublication,
   registerTournamentAccount, loginTournamentAccount, getTournamentAccount, logoutTournamentAccount,
   listSpaceTournaments, getSpaceTournament, createSpaceTournament, commandSpaceTournament,
   listTournaments, getTournament, createTournament, commandTournament,
@@ -155,6 +157,7 @@ import {
   type UpsertInventoryInput
 } from "@ultimoturno/db";
 import type { TournamentCommand } from '@ultimoturno/domain';
+import { normalizeStoreCatalogQuery } from '@ultimoturno/domain';
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 
@@ -229,7 +232,7 @@ function parseStockSnapshot(payload: unknown, compressed?: string | null): Stock
   }
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Partial<StockReadResult>;
-  if (Array.isArray(value.items) && value.items.some((item) => item.itemKind !== 'folder' && !item.cardType)) return null;
+  if (Array.isArray(value.items) && value.items.some((item) => typeof item.storefrontPublished !== 'boolean' || (item.itemKind !== 'folder' && !item.cardType))) return null;
   return value.summary && Array.isArray(value.items) ? value as StockReadResult : null;
 }
 
@@ -4029,6 +4032,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/store/catalog") {
+      if (request.method !== "GET") { sendJson(response, 405, { error: "Solo consulta de catalogo." }); return; }
+      const query = normalizeStoreCatalogQuery(Object.fromEntries(["query", "expansion", "language", "condition", "cardType", "sort", "offset"].map(key => [key, url.searchParams.get(key) ?? undefined])));
+      try { sendJson(response, 200, await listStoreCatalog(await dbPromise, query)); }
+      catch (error) { console.error("No se pudo leer el catalogo publico", error); sendJson(response, 503, { error: "No se pudo cargar el catalogo." }); }
+      return;
+    }
+
     if (url.pathname === "/image-proxy" && request.method === "GET") {
       await proxyAllowedImage(response, url.searchParams.get("url") || "");
       return;
@@ -4454,6 +4465,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/inventory/intake" && request.method === "POST") {
       const body = await readJson<UpsertInventoryInput>(request);
       sendJson(response, 200, { item: await finishInventoryChange(db, await addInventoryStock(db, { ...body, ownerUserId: user.roles?.includes("admin") ? body.ownerUserId : user.id }, user)) });
+      return;
+    }
+
+    if (url.pathname === "/inventory/storefront" && request.method === "PUT") {
+      const body = await readJson<{ inventoryItemIds: string[]; published: boolean }>(request);
+      const result = await setStorefrontPublication(db, body, user);
+      stockReadCache.delete(user.businessId);
+      sendJson(response, 200, result);
       return;
     }
 

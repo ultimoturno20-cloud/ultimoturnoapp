@@ -95,6 +95,7 @@ type BlueExchangeRate = {
 };
 
 type StockRow = {
+  storefrontPublished?: boolean;
   cardType?: CardType;
   cardTypeSource?: 'catalog' | 'checklist' | 'manual' | 'unknown';
   cardTypeOverride?: CardType | null;
@@ -1147,6 +1148,8 @@ function App() {
   const [stockImageReview, setStockImageReview] = useState<{ items: StockImageReviewItem[]; total: number }>({ items: [], total: 0 });
   const [stockImageReviewLoading, setStockImageReviewLoading] = useState(false);
   const [stockRestoring, setStockRestoring] = useState(false);
+  const [publicationSaving, setPublicationSaving] = useState(false);
+  const publicationRequest = useRef(false);
   const [showImageCatalog, setShowImageCatalog] = useState(false);
   const [imageCatalog, setImageCatalog] = useState<{ entries: ImageCatalogEntry[]; total: number }>({ entries: [], total: 0 });
   const [imageCatalogLoading, setImageCatalogLoading] = useState(false);
@@ -1584,6 +1587,24 @@ function App() {
       productRequest.current = false;
       setProductSaving(false);
     }
+  }
+
+  async function updateStorefrontPublication(items: StockRow[], published: boolean) {
+    if (publicationRequest.current || !items.length) return;
+    publicationRequest.current = true;
+    setPublicationSaving(true);
+    const previous = new Map(items.map(item => [item.id, Boolean(item.storefrontPublished)]));
+    setStock(current => ({ ...current, items: current.items.map(item => previous.has(item.id) ? { ...item, storefrontPublished: published } : item) }));
+    try {
+      const result = await api<{ items: Array<{ id: string; storefrontPublished: boolean }>; changedCount: number }>("/inventory/storefront", { method: "PUT", body: { inventoryItemIds: items.map(item => item.id), published } });
+      const changes = new Map(result.items.map(item => [item.id, item.storefrontPublished]));
+      setStock(current => ({ ...current, items: current.items.map(item => changes.has(item.id) ? { ...item, storefrontPublished: changes.get(item.id) } : item) }));
+      showMessage(`${result.changedCount} item(s): publicacion ${published ? "habilitada" : "oculta"}.`);
+    } catch (nextError) {
+      setStock(current => ({ ...current, items: current.items.map(item => previous.has(item.id) ? { ...item, storefrontPublished: previous.get(item.id) } : item) }));
+      showError(nextError);
+    }
+    finally { publicationRequest.current = false; setPublicationSaving(false); }
   }
 
   async function updateInventoryBatch(items: StockRow[], patch: InventoryBatchPatch) {
@@ -2841,6 +2862,9 @@ function App() {
           onClearFilters={() => applyInventoryFilters(defaultInventoryFilters)}
           onDensityChange={setInventoryDensity}
           onBatchUpdate={(items, patch) => void updateInventoryBatch(items, patch)}
+          canPublishStore={userRoles.includes("admin")}
+          publicationSaving={publicationSaving}
+          onPublicationChange={updateStorefrontPublication}
           onSelect={(item) => setSelectedId(item.id)}
           onStockSaved={(saved) => {
             setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; });
@@ -3457,6 +3481,9 @@ function InventoryQuickIntake({ item, onSaved, onClose, onBusyChange }: { item: 
 }
 
 function InventoryView(props: {
+  canPublishStore: boolean;
+  publicationSaving: boolean;
+  onPublicationChange: (items: StockRow[], published: boolean) => Promise<void>;
   items: StockRow[];
   allItems: StockRow[];
   selected?: StockRow;
@@ -3740,6 +3767,7 @@ function InventoryView(props: {
           <div className="section-heading">
             <div><h3>Cartas</h3></div>
             <div className="inventory-selection-tools">
+              {props.canPublishStore ? <a className="secondary-action inventory-store-link" href="/" target="_blank" rel="noreferrer"><Icon name="external" />Ver tienda</a> : null}
               <button className="secondary-action" disabled={!items.length} onClick={() => setBatchSelection(allVisibleSelected ? [] : items.map((item) => item.id))}>
                 <Icon name={allVisibleSelected ? "close" : "check"} />{allVisibleSelected ? "Limpiar seleccion" : "Seleccionar vista"}
               </button>
@@ -3764,6 +3792,12 @@ function InventoryView(props: {
               <button className="primary-action" onClick={applyBatchUpdate}><Icon name="check" />Aplicar</button>
             </div>
           ) : null}
+          {selectedBatchItems.length && props.canPublishStore ? <div className="inventory-publication-bar">
+            <span>{selectedBatchItems.length} item(s) seleccionados</span>
+            <button className="secondary-action" disabled={props.publicationSaving} onClick={() => void props.onPublicationChange(selectedBatchItems, true)}><Icon name="external" />Publicar en tienda</button>
+            <button className="secondary-action" disabled={props.publicationSaving} onClick={() => void props.onPublicationChange(selectedBatchItems, false)}><Icon name="close" />Ocultar de tienda</button>
+            {props.publicationSaving ? <span role="status">Guardando publicacion...</span> : null}
+          </div> : null}
           {items.length ? (
             <div className={`inventory-card-grid ${props.density === "compact" ? "compact" : ""}`}>
               {items.slice(0, renderLimit).map((item) => {
@@ -3785,6 +3819,7 @@ function InventoryView(props: {
                         <strong>{item.product.name}</strong>
                         {item.ownerUserId ? <span className="inventory-owner-label">Stock: {item.ownerName}</span> : null}
                         <span>{item.product.expansion} #{item.product.number || "-"}</span>
+                        {props.canPublishStore ? <small className={`inventory-store-state ${item.storefrontPublished ? "enabled" : ""}`}>{item.storefrontPublished ? "Web habilitada" : "Web oculta"}</small> : null}
                         <small>{inventoryVariantLabel(item)}</small>
                         {item.itemKind !== 'folder' ? <small className="inventory-card-type">{cardTypeLabels[item.cardType || 'unknown']}</small> : null}
                         <div className={`inventory-tag-list compact ${itemTags.length ? "" : "empty"}`}>{itemTags.map((tag) => <span key={tag}>{tag}</span>)}</div>
@@ -3839,6 +3874,7 @@ function InventoryView(props: {
                   </div>
                 )}
                 <div className="detail-title"><h3>{selected.product.name}</h3><span>{selected.sku}</span></div>
+                {props.canPublishStore ? <label className="inventory-store-toggle"><input type="checkbox" aria-label="Publicar en tienda" checked={Boolean(selected.storefrontPublished)} disabled={props.publicationSaving} onChange={event => void props.onPublicationChange([selected], event.target.checked)} /><span>Publicar en tienda</span>{props.publicationSaving ? <small role="status">Guardando...</small> : null}</label> : null}
                 {selected.itemKind !== 'folder' ? <p className="muted">{cardTypeLabels[selected.cardType || 'unknown']}{selected.cardTypeSource === 'manual' ? ' · Manual' : ''}</p> : null}
                 {selected.folder ? <div className="folder-value"><span>Valor del contenido</span><strong>{formatUsd(selected.folder.valueUsd)}</strong><span>{formatArs(toBlueArs(selected.folder.valueUsd, props.blueRate))}</span><small>{selected.folder.totalCards} cartas{selected.folder.missingPrices ? ` · ${selected.folder.missingPrices} sin precio · valor parcial` : ""}</small><button type="button" className="secondary-action" onClick={() => setSideTab("contents")}><Icon name="inventory" />Contenido</button></div> : null}
                 <section className="inventory-tags-panel">

@@ -1,15 +1,32 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-11
+Actualizado: 2026-10-12
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
 ## Resumen vigente
 
-- Separacion de accesos: `/` sirve un documento publico independiente para
-  la tienda. Por ahora muestra apertura pendiente, sin catalogo ni checkout,
-  sin login administrativo y sin consultar API privada, aun con sesion guardada.
+- Primera entrega de tienda: `/` muestra el catalogo publico con imagenes,
+  precios ARS, variantes, busqueda, filtros, paginacion y detalle. No hay carrito,
+  checkout ni pagos online habilitados. No lee la sesion administrativa ni
+  consulta API privada, aun con una sesion guardada.
+- Inventario permite Publicar en tienda desde Detalles o por seleccion, solo
+  para administradores. Todos los items existentes y nuevos empiezan ocultos.
+  La bandera Web habilitada no garantiza visibilidad: exige estado Disponible,
+  stock central libre y precio de venta ARS positivo; nunca usa valuacion de
+  carpetas ni referencias de mercado como precio de venta.
+- API publica GET `/api/store/catalog`: DTO limitado a producto, variante,
+  imagen HTTP(S), precio y unidades libres. Excluye No venta, agotados,
+  asignaciones/reservas y items de claims abiertos, incluidos enlaces antiguos
+  por PriceCharting. Lectura fresca sin cache; no expone costos, propietarios,
+  notas, compradores ni identificadores de fuentes.
+- Migracion aditiva `0061_storefront_catalog.sql`: bandera false por defecto,
+  indices y vencimiento de snapshots derivados. Publicacion atomica/auditada,
+  idempotente por estado; no cambia cantidades, precios ni claims.
+- QA: suite completa 160 pruebas, lint/tipos/build y Chrome en seis anchos
+  1788/1440/1024/768/390/320 px. Publicacion y API probadas en base temporal;
+  ningun item real publicado automaticamente ni operaciones ficticias en produccion.
 - Panel/login en `/admin`; secciones en `/admin/inventario`, `/admin/ordenes`,
   `/admin/claims`, `/admin/caja`, `/admin/compras`, etc. Configuracion se mueve
   de `/admin` a `/admin/configuracion`. Enlaces internos usan estas rutas.

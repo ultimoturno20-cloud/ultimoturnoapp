@@ -1,4 +1,14 @@
 .stock-layout { scrollbar-gutter: stable; }
+.stock-layout .availability-filter-row { min-width: 0; max-width: 100%; overflow-x: auto; }
+.inventory-store-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; min-height: 36px; padding: 8px 10px; font-size: 12px; }
+.inventory-publication-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-block: 10px; border-block: 1px solid var(--border-soft); margin-bottom: 12px; }
+.inventory-publication-bar > span { font-size: 12px; color: var(--muted); }
+.inventory-publication-bar > button { min-width: 0; min-height: 36px; padding: 8px 10px; font-size: 12px; white-space: normal; }
+.inventory-store-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-block: 1px solid var(--border-soft); padding-block: 12px; margin-block: 12px; }
+.inventory-store-toggle input { width: 16px; height: 16px; min-height: 0; margin: 0; }
+.inventory-store-toggle small { color: var(--muted); }
+.inventory-card-body .inventory-store-state { color: var(--muted); font-size: 11px; }
+.inventory-card-body .inventory-store-state.enabled { color: #79d9ac; }
 html:has(.stock-layout) { scrollbar-gutter: stable; }
 .inventory-browse-workspace .inventory-card { min-width: 0; }
 .inventory-browse-workspace .inventory-card-main,

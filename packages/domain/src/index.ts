@@ -1,3 +1,6 @@
+export { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCatalogPage } from "./store-catalog.js";
+export type { StoreCatalogItem, StoreCatalogQuery, StoreCatalogPage } from "./store-catalog.js";
+
 export type Business = {
   id: string;
   name: string;

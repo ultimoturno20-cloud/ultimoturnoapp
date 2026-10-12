@@ -10,6 +10,7 @@ import { classifyCard, isCardType, type CardType, type CardClassification } from
 export type { CardType, CardClassification } from "./card-types.js";
 export { createResellerStockRequestBatch, assignResellerStockBatch, resolveResellerStockRequestBatch } from "./reseller-batches.js";
 export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchResult } from "./reseller-batches.js";
+export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 
 const minimumSalePriceArs = 800;
 
@@ -42,6 +43,7 @@ export type DatabaseCheck = {
 };
 
 export type DbStockRow = {
+  storefrontPublished?: boolean;
   cardType?: CardType;
   cardTypeSource?: CardClassification["cardTypeSource"];
   cardTypeOverride?: CardType | null;
@@ -250,7 +252,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql", "0058_reseller_batches.sql", "0059_tournaments.sql", "0060_tournament_space.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql", "0058_reseller_batches.sql", "0059_tournaments.sql", "0060_tournament_space.sql", "0061_storefront_catalog.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -4177,6 +4179,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
+      ii.storefront_published,
       case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved) end as available_quantity,
       case when ii.inventory_status = 'not_for_sale' then 0 else least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as assigned_quantity,
       case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as free_quantity,
@@ -4483,6 +4486,7 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
+      ii.storefront_published,
       case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved) end as available_quantity,
       case when ii.inventory_status = 'not_for_sale' then 0 else least(greatest(0, ii.quantity_on_hand - ii.quantity_reserved), greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as assigned_quantity,
       case when ii.inventory_status = 'not_for_sale' then 0 else greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned_stock.remaining_quantity, 0) - coalesce(assigned_orders.reserved_quantity, 0)))::integer end as free_quantity,
@@ -4631,7 +4635,7 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
   return { summary: summarizeDbStock(items), items };
 }
 
-async function classifyCatalogReferences(db: PGlite, references: Array<{ name: string; expansion: string; number?: string; languageGroup?: string; entryKey?: string; priceChartingId?: string; tcgplayerProductId?: string }>): Promise<CardClassification[]> {
+export async function classifyCatalogReferences(db: PGlite, references: Array<{ name: string; expansion: string; number?: string; languageGroup?: string; entryKey?: string; priceChartingId?: string; tcgplayerProductId?: string }>): Promise<CardClassification[]> {
   const pcIds = [...new Set(references.map((entry) => entry.priceChartingId).filter(Boolean))];
   const tcgIds = [...new Set(references.map((entry) => entry.tcgplayerProductId).filter(Boolean))];
   const result = pcIds.length || tcgIds.length ? await db.query<Record<string, unknown>>(`
@@ -8092,6 +8096,7 @@ function doesProductNameMatchFinish(finish: string, productName: string): boolea
 
 function toStockRow(row: Record<string, unknown>): DbStockRow {
   return {
+    storefrontPublished: row.storefront_published === true,
     purchaseCost: optionalNumber(row.purchase_cost) ?? null,
     purchaseCurrency: String(row.purchase_currency || "ARS"),
     id: String(row.id),
