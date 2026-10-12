@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ArrowDownRight, ArrowLeft, ArrowRight, Banknote, Check, ChevronDown, Grid2X2, List, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
-import { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, type StoreCatalogItem, type StoreCatalogPage, type StoreCatalogQuery } from "@ultimoturno/domain";
-import { activeStoreFilters, matchingStoreExpansions, storeLanguageLabel, storeTypeLabels } from "./storefront-filters.js";
+import { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCategories, storeCategoryLabels, type StoreCategory, type StoreCatalogItem, type StoreCatalogPage, type StoreCatalogQuery } from "@ultimoturno/domain";
+import { activeStoreFilters, matchingStoreExpansions, removeStoreFilter, storeLanguageLabel, storeTypeLabels } from "./storefront-filters.js";
 import "./storefront.css";
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
 
@@ -32,7 +32,7 @@ function CatalogFilters({ query, facets, change, reset }: { query: StoreCatalogQ
       {expansionSearch && !matchingStoreExpansions(expansions, expansionSearch).length ? <p className="shop-filter-empty">Sin coincidencias</p> : null}
     </details>
     <details open className="shop-filter-group"><summary>Variante<ChevronDown aria-hidden="true" /></summary>{facetSelect("language", "Idioma", facets.languages)}{facetSelect("condition", "Condicion", facets.conditions)}</details>
-    <details open className="shop-filter-group"><summary>Tipo de carta<ChevronDown aria-hidden="true" /></summary>{facetSelect("cardType", "Tipo de carta", facets.cardTypes)}</details>
+    {query.category === "singles" ? <details open className="shop-filter-group"><summary>Tipo de carta<ChevronDown aria-hidden="true" /></summary>{facetSelect("cardType", "Tipo de carta", facets.cardTypes)}</details> : null}
     <button type="button" className="shop-reset" onClick={() => { setExpansionSearch(""); reset(); }}><RotateCcw aria-hidden="true" />Restablecer</button>
   </form>;
 }
@@ -100,10 +100,10 @@ function Storefront() {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = previous; };
   }, [selected, filtersOpen]);
-  const change = (patch: Partial<StoreCatalogQuery>) => setQuery(current => ({ ...current, ...patch, offset: 0 }));
+  const change = (patch: Partial<StoreCatalogQuery>) => setQuery(current => normalizeStoreCatalogQuery({ ...current, ...patch, offset: 0 }));
   const reset = () => setQuery({ ...defaultStoreCatalogQuery });
   const goToCatalog = () => catalog.current?.scrollIntoView({ block: "start" });
-  const selectCategory = (cardType: string) => { setQuery({ ...defaultStoreCatalogQuery, cardType }); goToCatalog(); };
+  const selectCategory = (category: StoreCategory | "all") => { setQuery({ ...defaultStoreCatalogQuery, category }); goToCatalog(); };
   const filters = <CatalogFilters query={query} facets={facets} change={change} reset={reset} />;
   return <>
     <div className="shop-announcement"><span>Pokemon TCG · Cartas y coleccion</span><span>Pedidos online no habilitados</span></div>
@@ -112,7 +112,7 @@ function Storefront() {
       <form className="shop-search" role="search" onSubmit={event => { event.preventDefault(); goToCatalog(); }}><Search aria-hidden="true" /><input type="search" aria-label="Buscar en la tienda" maxLength={120} placeholder="Buscar cartas, expansiones o sets..." value={query.query} onChange={event => change({ query: event.target.value })} /><button className="shop-icon-button" type="submit" aria-label="Buscar en el catalogo" title="Buscar en el catalogo"><ArrowRight aria-hidden="true" /></button></form>
       <span className="shop-currency"><Banknote aria-hidden="true" /><span>Moneda<strong>ARS</strong></span></span>
     </div>
-      <nav className="shop-nav" aria-label="Categorias del catalogo"><div><button type="button" aria-current={query.cardType === "all" ? "page" : undefined} onClick={() => selectCategory("all")}>Todo el catalogo</button>{["pokemon", "supporter", "item", "stadium", "tool", "energy"].map(type => <button type="button" key={type} aria-current={query.cardType === type ? "page" : undefined} onClick={() => selectCategory(type)}>{storeTypeLabels[type]}</button>)}<a href="/torneos">Torneos<ArrowDownRight aria-hidden="true" /></a></div></nav>
+      <nav className="shop-nav" aria-label="Categorias del catalogo"><div><button type="button" aria-current={query.category === "all" ? "page" : undefined} onClick={() => selectCategory("all")}>Todo el catalogo</button>{storeCategories.map(category => <button type="button" key={category} aria-current={query.category === category ? "page" : undefined} onClick={() => selectCategory(category)}>{storeCategoryLabels[category]}</button>)}<a href="/torneos">Torneos<ArrowDownRight aria-hidden="true" /></a></div></nav>
     </header>
     <main>
       <section className="shop-hero" aria-label="UltimoTurno Pokemon TCG"><div className="shop-hero-inner"><div className="shop-hero-copy"><span className="shop-eyebrow">POKEMON TRADING CARD GAME</span><h1>UltimoTurno</h1><p>Cartas para tu proxima jugada.<br />Piezas para tu coleccion.</p><a className="shop-primary-action" href="#catalogo">Explorar catalogo<ArrowDownRight aria-hidden="true" /></a></div></div></section>
@@ -127,7 +127,7 @@ function Storefront() {
                 <label className="shop-order-label"><span className="shop-sr-only">Orden</span><select aria-label="Ordenar catalogo" value={query.sort} onChange={event => change({ sort: event.target.value as StoreCatalogQuery["sort"] })}><option value="name">Nombre</option><option value="price_asc">Menor precio</option><option value="price_desc">Mayor precio</option></select></label>
               </div>
             </div>
-            {activeFilters.length ? <div className="shop-active-filters" aria-label="Filtros activos">{activeFilters.map(filter => <button type="button" key={filter.field} onClick={() => change({ [filter.field]: filter.field === "query" ? "" : "all" })} title={`Quitar ${filter.label}`} aria-label={`Quitar filtro: ${filter.label}`}><span>{filter.label}</span><X aria-hidden="true" /></button>)}<button type="button" className="shop-clear-filters" onClick={reset}>Limpiar filtros</button></div> : null}
+            {activeFilters.length ? <div className="shop-active-filters" aria-label="Filtros activos">{activeFilters.map(filter => <button type="button" key={filter.field} onClick={() => change(removeStoreFilter(filter.field))} title={`Quitar ${filter.label}`} aria-label={`Quitar filtro: ${filter.label}`}><span>{filter.label}</span><X aria-hidden="true" /></button>)}<button type="button" className="shop-clear-filters" onClick={reset}>Limpiar filtros</button></div> : null}
             {error ? <div className="shop-empty" role="alert"><h3>No pudimos cargar el catalogo</h3><p>Intenta nuevamente en unos momentos.</p><button type="button" className="shop-primary-action" onClick={() => setRefreshKey(key => key + 1)}><RotateCcw aria-hidden="true" />Reintentar</button></div> : null}
             {!loading && !error && page && !page.items.length ? <section className="shop-empty"><h3>{activeFilters.length ? "Sin coincidencias" : "Sin articulos disponibles"}</h3>{activeFilters.length ? <button type="button" className="shop-reset" onClick={reset}><RotateCcw aria-hidden="true" />Restablecer</button> : null}</section> : null}
             {!error ? <section className={`shop-grid ${view === "list" ? "shop-list" : ""}`} aria-label="Articulos" aria-busy={loading}>

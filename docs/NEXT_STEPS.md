@@ -29,8 +29,15 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Navegacion comercial: Singles, Sellado, Accesorios y Otros. Para ubicar un
+  producto, usar Inventario > Detalles > Categorias: singles, sellado, accesorios
+  u otros, manteniendo las etiquetas de trabajo que ya tenga. Elegir una sola
+  categoria comercial; si hay varias contradictorias se agrupa en Otros.
+  Carpetas van a Otros. Cartas reconocidas o con numero numerico van a Singles
+  sin exigir etiquetar una por una. Sin evidencia se usa Otros, no se adivina
+  Sellado/Accesorios por el nombre. Los tipos de cartas filtran dentro de Singles.
 - Redisenio entregado: busqueda en encabezado, banner de marca, navegacion por
-  tipo y filtros laterales. En celular, Filtros abre un dialogo; Ver resultados
+  productos y filtros laterales. En celular, Filtros abre un dialogo; Ver resultados
   lo cierra. Grilla/lista y chips para quitar filtros, sin cambiar inventario.
   Ver detalle es consulta, no un boton de compra. No hay cuenta publica ni carrito.
 - La tienda ya usa la gama negra/carbon/roja del panel. Mantener esta identidad

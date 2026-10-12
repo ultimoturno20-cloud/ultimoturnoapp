@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { defaultStoreCatalogQuery } from "@ultimoturno/domain";
-import { activeStoreFilters, matchingStoreExpansions, storeLanguageLabel } from "../src/storefront-filters.js";
+import { activeStoreFilters, matchingStoreExpansions, removeStoreFilter, storeLanguageLabel } from "../src/storefront-filters.js";
 
 it("lists only active public filters, not sorting, offset or all", () => {
   assert.deepEqual(activeStoreFilters({ ...defaultStoreCatalogQuery, sort: "price_desc", offset: 36 }), []);
   assert.deepEqual(activeStoreFilters({ ...defaultStoreCatalogQuery, query: "Mew", expansion: "151", language: "JP", condition: "NM", cardType: "tool" }), [
     { field: "query", label: "Mew" }, { field: "expansion", label: "151" }, { field: "language", label: "Japones" }, { field: "condition", label: "NM" }, { field: "cardType", label: "Tool" }
   ]);
+});
+
+it("shows product-category chips and removes dependent card-type filters with them", () => {
+  assert.deepEqual(activeStoreFilters({ ...defaultStoreCatalogQuery, category: "sealed" }), [{ field: "category", label: "Sellado" }]);
+  assert.deepEqual(removeStoreFilter("category"), { category: "all", cardType: "all" });
+  assert.deepEqual(removeStoreFilter("cardType"), { cardType: "all" });
 });
 
 it("retains unfamiliar variant labels rather than silently changing their filters", () => {

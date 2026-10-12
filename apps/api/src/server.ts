@@ -4034,7 +4034,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/store/catalog") {
       if (request.method !== "GET") { sendJson(response, 405, { error: "Solo consulta de catalogo." }); return; }
-      const query = normalizeStoreCatalogQuery(Object.fromEntries(["query", "expansion", "language", "condition", "cardType", "sort", "offset"].map(key => [key, url.searchParams.get(key) ?? undefined])));
+      const query = normalizeStoreCatalogQuery(Object.fromEntries(["query", "expansion", "language", "condition", "cardType", "category", "sort", "offset"].map(key => [key, url.searchParams.get(key) ?? undefined])));
       try { sendJson(response, 200, await listStoreCatalog(await dbPromise, query)); }
       catch (error) { console.error("No se pudo leer el catalogo publico", error); sendJson(response, 503, { error: "No se pudo cargar el catalogo." }); }
       return;

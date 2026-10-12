@@ -7,8 +7,23 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Categorias comerciales de tienda: Todo el catalogo, Singles, Sellado,
+  Accesorios y Otros. Los tipos Pokemon/Supporter/Item/Stadium/Tool/Energia
+  quedan dentro de los filtros de Singles, no en la navegacion principal.
+- Filtro de producto en servidor antes de contar/paginar, con categoria publica
+  derivada de etiquetas de Inventario. Singles/sellado/accesorios/otros ahora
+  aparecen como sugerencias en Detalles > Categorias. Sin migracion ni backfill:
+  no se modificaron etiquetas, precios, stock ni publicaciones reales.
+- Carpetas son Otros; para items normales una etiqueta comercial explicita manda.
+  Sin etiqueta, cartas con tipo reconocido o numero numerico son Singles;
+  sin evidencia o con categorias comerciales contradictorias son Otros.
+  Las etiquetas internas nunca se devuelven en el DTO publico.
+- QA: 48 pruebas focalizadas de frontend/dominio/DB, lint/tipos/build completo
+  y Chrome en siete anchos, categorias reales, paginacion, limpieza de tipos,
+  recarga y enlaces anteriores. DB temporal verifica privacidad y preservacion
+  de cantidades, reservas, precios y bandera de publicacion.
 - Redisenio de tienda con identidad propia: encabezado con busqueda amplia,
-  navegacion por tipos y banner con arte original de UltimoTurno reutilizado.
+  navegacion por productos y banner con arte original de UltimoTurno reutilizado.
   Catalogo con filtros laterales, busqueda de expansiones, filtros activos,
   grilla/lista, fotos grandes y Ver detalle. En movil, filtros en dialogo;
   foco/cierre/scroll contenidos. Sin carrito, cuentas de compradores ni checkout.

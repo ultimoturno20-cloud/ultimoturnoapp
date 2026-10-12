@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { it } from "node:test";
-import { assignResellerStockBatch, createOperationalDatabase, createReseller, createSale, getDefaultOperationalUser, listStockForBusiness, listStoreCatalog, setStorefrontPublication, upsertInventoryItem } from "./index.js";
+import { assignResellerStockBatch, createOperationalDatabase, createReseller, createSale, getDefaultOperationalUser, listStockForBusiness, listStoreCatalog, setStorefrontPublication, updateInventoryItemTags, upsertInventoryItem } from "./index.js";
 
 it("publishes only explicitly selected, eligible central units with an isolated public DTO", async t => {
   const db = await createOperationalDatabase({ dataDir: await mkdtemp(path.join(tmpdir(), "ultimoturno-storefront-")) });
@@ -48,8 +48,9 @@ it("publishes only explicitly selected, eligible central units with an isolated 
     assert.ok(!page.items.some(item => item.id === ids[11]));
     assert.equal((await listStoreCatalog(db, {}, "nonexistent-business")).total, 0);
     const dto = page.items[0];
-    assert.deepEqual(Object.keys(dto).sort(), ["id", "name", "expansion", "number", "imageUrl", "language", "condition", "finish", "gradingCompany", "grade", "cardType", "itemKind", "priceArs", "availableQuantity"].sort());
+    assert.deepEqual(Object.keys(dto).sort(), ["id", "name", "expansion", "number", "imageUrl", "language", "condition", "finish", "gradingCompany", "grade", "cardType", "category", "itemKind", "priceArs", "availableQuantity"].sort());
     assert.equal(dto.cardType, "unknown");
+    assert.equal(dto.category, "singles");
     const stock = await listStockForBusiness(db, admin.businessId);
     assert.equal(stock.items.find(item => item.id === ids[6])?.freeQuantity, 3);
     const sale = await createSale(db, { customerName: "Local reservation", saleType: "reservation", channel: "test", lines: [{ inventoryItemId: ids[6], quantity: 1, unitPriceArs: 1000 }] }, admin);
@@ -87,5 +88,26 @@ it("publishes only explicitly selected, eligible central units with an isolated 
     assert.equal(publicFolder?.itemKind, "folder");
     assert.equal(publicFolder?.priceArs, folder.priceArs);
     assert.equal(publicFolder?.availableQuantity, 1);
+    assert.equal(publicFolder?.category, "other");
+  });
+
+  await t.test("filters inventory product categories server-side without changing stock, prices or publication", async () => {
+    const financialState = () => db.query("select ii.id, ii.quantity_on_hand, ii.quantity_reserved, ii.storefront_published, cp.price_ars from inventory_items ii join current_prices cp on cp.inventory_item_id = ii.id order by ii.id");
+    const before = (await financialState()).rows;
+    await updateInventoryItemTags(db, ids[6], "SELLADO; vitrina", admin);
+    await updateInventoryItemTags(db, ids[7], "accesorios, private-internal-note", admin);
+    await updateInventoryItemTags(db, ids[8], "otros", admin);
+    const sealed = await listStoreCatalog(db, { category: "sealed" });
+    assert.deepEqual(sealed.items.map(item => item.id), [ids[6]]);
+    assert.equal(sealed.total, 1);
+    assert.equal(sealed.items[0].availableQuantity, 3);
+    assert.deepEqual((await listStoreCatalog(db, { category: "accessories" })).items.map(item => item.id), [ids[7]]);
+    assert.deepEqual((await listStoreCatalog(db, { category: "singles" })).items.map(item => item.id), [ids[9]]);
+    assert.equal((await listStoreCatalog(db, { category: "other" })).total, 2);
+    assert.ok(!JSON.stringify(await listStoreCatalog(db)).includes("private-internal-note"));
+    await updateInventoryItemTags(db, ids[6], "accesorios", admin);
+    assert.equal((await listStoreCatalog(db, { category: "sealed" })).total, 0);
+    assert.equal((await listStoreCatalog(db, { category: "accessories" })).total, 2);
+    assert.deepEqual((await financialState()).rows, before);
   });
 });

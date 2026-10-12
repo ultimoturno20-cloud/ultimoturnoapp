@@ -9890,7 +9890,7 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, "es"));
 }
 
-const inventoryTagSuggestions = ["jugables", "old", "full art", "promo", "sellado", "staple", "bulk", "vitrina"];
+const inventoryTagSuggestions = ["singles", "sellado", "accesorios", "otros", "jugables", "old", "full art", "promo", "staple", "bulk", "vitrina"];
 
 function inventoryTags(value: string): string[] {
   const seen = new Set<string>();

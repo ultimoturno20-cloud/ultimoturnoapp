@@ -1,15 +1,19 @@
-import type { StoreCatalogQuery } from "@ultimoturno/domain";
+import { storeCategoryLabels, type StoreCatalogQuery } from "@ultimoturno/domain";
 
 export const storeTypeLabels: Record<string, string> = { pokemon: "Pokemon", supporter: "Supporter", item: "Item", stadium: "Stadium", tool: "Tool", energy: "Energia", unknown: "Sin clasificar" };
 export const storeLanguageLabel = (value: string) => ({ EN: "Ingles", JP: "Japones", JA: "Japones", CHS: "Chino", CH: "Chino", CN: "Chino", ZH: "Chino" } as Record<string, string>)[value] || value;
-export type StoreFilterField = "query" | "expansion" | "language" | "condition" | "cardType";
+export type StoreFilterField = "query" | "expansion" | "language" | "condition" | "cardType" | "category";
 
 export function activeStoreFilters(query: StoreCatalogQuery): Array<{ field: StoreFilterField; label: string }> {
-  return (["query", "expansion", "language", "condition", "cardType"] as const).flatMap(field => {
+  return (["category", "query", "expansion", "language", "condition", "cardType"] as const).flatMap(field => {
     if (!query[field] || (field !== "query" && query[field] === "all")) return [];
-    const label = field === "language" ? storeLanguageLabel(query[field]) : field === "cardType" ? storeTypeLabels[query[field]] || query[field] : query[field];
+    const label = field === "category" ? storeCategoryLabels[query.category as keyof typeof storeCategoryLabels] : field === "language" ? storeLanguageLabel(query[field]) : field === "cardType" ? storeTypeLabels[query[field]] || query[field] : query[field];
     return [{ field, label }];
   });
+}
+
+export function removeStoreFilter(field: StoreFilterField): Partial<StoreCatalogQuery> {
+  return field === "category" ? { category: "all", cardType: "all" } : { [field]: field === "query" ? "" : "all" };
 }
 
 export function matchingStoreExpansions(values: string[], search: string): string[] {

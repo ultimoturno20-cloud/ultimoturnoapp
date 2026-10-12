@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { PGlite } from "@electric-sql/pglite";
-import { storeCatalogPage, type StoreCatalogItem, type StoreCatalogQuery } from "@ultimoturno/domain";
+import { resolveStoreCategory, storeCatalogPage, type StoreCatalogItem, type StoreCatalogQuery } from "@ultimoturno/domain";
 import { classifyCatalogReferences, inventoryTransaction, type AuthenticatedUser } from "./index.js";
 import { isCardType } from "./card-types.js";
 
@@ -27,7 +27,7 @@ export async function setStorefrontPublication(db: PGlite, input: { inventoryIte
 
 export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQuery> = {}, businessSlug = "ultimoturno") {
   const rows = await db.query<Record<string, unknown>>(`
-    select ii.id, ii.item_kind, ii.card_type_override, p.name, p.expansion, coalesce(p.card_number, '') as card_number,
+    select ii.id, ii.item_kind, ii.card_type_override, ii.tags, p.name, p.expansion, coalesce(p.card_number, '') as card_number,
       v.language, v.condition, v.finish, coalesce(v.grading_company, '') as grading_company, coalesce(v.grade, '') as grade,
       cp.price_ars,
       greatest(0, ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned.remaining, 0) - coalesce(assigned_orders.reserved, 0)))::integer as free_quantity,
@@ -57,11 +57,15 @@ export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQu
     order by p.name, ii.id
   `, [businessSlug]);
   const classifications = await classifyCatalogReferences(db, rows.rows.map(row => ({ name: String(row.name), expansion: String(row.expansion), number: String(row.card_number), priceChartingId: String(row.pricecharting_id), languageGroup: ({ EN: "english", JA: "japanese", JP: "japanese", CHS: "chinese", CH: "chinese", CN: "chinese", ZH: "chinese" } as Record<string, string>)[String(row.language).toUpperCase()] })));
-  const items: StoreCatalogItem[] = rows.rows.map((row, index): StoreCatalogItem => ({
-    id: String(row.id), name: String(row.name), expansion: String(row.expansion), number: String(row.card_number), imageUrl: String(row.image_url),
-    language: String(row.language), condition: String(row.condition), finish: String(row.finish), gradingCompany: String(row.grading_company), grade: String(row.grade),
-    cardType: isCardType(row.card_type_override) ? row.card_type_override : classifications[index].cardType,
-    itemKind: row.item_kind === "folder" ? "folder" : "standard", priceArs: Number(row.price_ars), availableQuantity: Number(row.free_quantity)
-  })).filter(item => Number.isFinite(item.priceArs) && item.priceArs > 0);
+  const items: StoreCatalogItem[] = rows.rows.map((row, index): StoreCatalogItem => {
+    const cardType = isCardType(row.card_type_override) ? row.card_type_override : classifications[index].cardType;
+    return {
+      id: String(row.id), name: String(row.name), expansion: String(row.expansion), number: String(row.card_number), imageUrl: String(row.image_url),
+      language: String(row.language), condition: String(row.condition), finish: String(row.finish), gradingCompany: String(row.grading_company), grade: String(row.grade),
+      cardType,
+      category: resolveStoreCategory({ itemKind: String(row.item_kind), cardType, number: String(row.card_number), tags: String(row.tags || "").split(",") }),
+      itemKind: row.item_kind === "folder" ? "folder" : "standard", priceArs: Number(row.price_ars), availableQuantity: Number(row.free_quantity)
+    };
+  }).filter(item => Number.isFinite(item.priceArs) && item.priceArs > 0);
   return storeCatalogPage(items, query);
 }

@@ -1,5 +1,31 @@
 # Traspaso de contexto - UltimoTurno
 
+## Categorias comerciales de tienda - 2026-10-12
+
+Esta entrega reemplaza la navegacion por cardType: header muestra Singles,
+Sellado, Accesorios, Otros, ademas de Todo el catalogo. Tipo de carta solo se
+muestra dentro de Singles. Domain/store-catalog agrega StoreCategory, category
+en DTO/query y filtro previo al conteo/orden/paginacion. API anonima acepta
+category con allowlist singles/sealed/accessories/other/all. Links cardType
+anteriores se normalizan a Singles; categorias no Singles limpian cardType.
+Cambiar categoria limpia filtros/offset. Quitar su chip tambien elimina tipo
+dependiente; recarga conserva categoria en URL. Facet cardTypes solo de Singles.
+
+resolveStoreCategory usa tags ya normalizados de inventory_items, sin devolverlos
+en DTO. Carpetas siempre other. Para standard: exactamente una etiqueta comercial
+singles/sellado/accesorios/otros define categoria; varias contradictorias -> other.
+Sin etiquetas comerciales, tipo de carta conocido o numero numerico -> singles;
+sin evidencia -> other. No adivina Sellado/Accesorios desde nombres/expansiones.
+main.tsx agrega esas cuatro sugerencias a Detalles > Categorias, reutilizando
+el flujo de tags existente. No agrega schema, backfill ni ruta de escritura;
+no altera publicaciones, precio, stock ni reglas de claim/reservas.
+
+QA: 48 tests focalizados de frontend/dominio/DB, lint/tipos/build completo,
+Chrome con lecturas simuladas y cero escrituras en siete anchos. DB temporal
+usa updateInventoryItemTags para mover productos y comprueba categoria publica,
+filtrado, privacidad de tags y que cantidades/reservas/precios/publicacion no
+cambien. Mantener tags privados: solo exportar la categoria comercial calculada.
+
 ## Redisenio comercial de tienda - 2026-10-12
 
 storefront.tsx/css reorganizan la misma API publica, sin cambios backend/schema:

@@ -1,5 +1,5 @@
-export { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCatalogPage } from "./store-catalog.js";
-export type { StoreCatalogItem, StoreCatalogQuery, StoreCatalogPage } from "./store-catalog.js";
+export { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCatalogPage, storeCategories, storeCategoryLabels, storeCategoryTags, resolveStoreCategory } from "./store-catalog.js";
+export type { StoreCatalogItem, StoreCatalogQuery, StoreCatalogPage, StoreCategory } from "./store-catalog.js";
 
 export type Business = {
   id: string;
