@@ -27,6 +27,15 @@ Actualizado: 2026-10-12
 
 ## Prioridades vigentes
 
+### Imagenes de claims
+
+- Reintentar Buscar imagen en Slowpoke de 30th Celebration #16: respaldo TCGdex
+  verificado disponible. Buscar imagenes usa el mismo flujo para el claim activo.
+- Si no hay coincidencia exacta, usar Corregir imagen con URL directa de la foto,
+  no una pagina PC bloqueada. No sustituir por otra expansion/idioma/estampado.
+  Respaldo TCGdex automatico limitado a ingles; otros idiomas usan cache/storage
+  o PC. No hacer escrituras de prueba sobre los claims reales.
+
 ### Tienda publica y separacion del admin
 
 - Catalogo y busqueda en lista por defecto, sin exigir escribir primero.

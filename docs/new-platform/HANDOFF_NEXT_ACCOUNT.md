@@ -1,5 +1,20 @@
 # Traspaso de contexto - UltimoTurno
 
+## Imagen de claim y PriceCharting HTTP 403 - 2026-10-12
+
+Buscar imagen y busqueda masiva dependian solo de paginas PC, omitian imagenes
+ya indexadas y concatenaban el mismo HTTP 403 por cada URL candidata.
+server.ts usa ahora downloadClaimCardImage para ambos caminos: lee cache/indice
+por pricecharting_id exacto, prueba storage, TCGdex y finalmente paginas PC.
+claim-image-resolver.ts comprueba nombre/numero/expansion desde detalle TCGdex;
+solo ingles y arte base (normal/holo/reverse), no variantes estampadas especiales.
+Slowpoke 30th Celebration #16 tiene detalle 30th-016 e imagen high.webp valida.
+No se construye una URL de imagen por nombre/numero sin verificar metadata.
+403/429 frenan paginas repetidas; mensaje 403 unico orienta a Corregir imagen
+con URL directa. Se conserva cooldown 429 y registro de exito/fallo existente.
+Tests de API agregados a npm test. QA aislada .work/claim-image-qa.mts simula
+bloqueo PC y consulta TCGdex real, sin POST a produccion. No migraciones.
+
 ## Busqueda en filas y cantidad por variante - 2026-10-12
 
 Referencia visual del usuario: busqueda CoolStuff con foto izquierda y opciones

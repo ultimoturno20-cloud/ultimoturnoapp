@@ -7,6 +7,17 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Imagenes de claims: Buscar imagen/Buscar imagenes reutilizan URLs del cache e
+  indice por ID exacto, luego storage de PriceCharting y respaldo TCGdex ingles.
+  TCGdex exige nombre, expansion y numero exactos desde el detalle de la carta;
+  no usa otra edicion, idioma ni estampados especiales. Las paginas PC quedan
+  como ultimo recurso; 403/429 detienen intentos repetidos. Error 403 unico con
+  indicacion de Corregir imagen mediante URL directa. Sin migraciones ni cambios
+  de precios, cantidades, compradores o configuracion productiva.
+  QA: 14 regresiones; API/base temporal con PC bloqueado, imagen real TCGdex,
+  reutilizacion de cache, busqueda individual/masiva y rechazo sin sesion.
+  Precios/cantidades/tags del claim, stock y ventas conservados en esa prueba.
+  Suite completa: 212 tests aprobados, lint, tipos y build correctos.
 - Busqueda en filas inspirada en la referencia CoolStuff, conservando identidad
   negro/carbon/rojo: imagen completa pequena, nombre/numero/edicion, idioma/acabado
   y opciones de condicion con precio, disponibilidad y selector de cantidad.

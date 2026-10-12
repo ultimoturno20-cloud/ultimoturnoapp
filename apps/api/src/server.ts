@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { findExactTcgdexClaimImage, resolveClaimImage } from "./claim-image-resolver.js";
 import {
   listStoreCatalog,
   setStorefrontPublication,
@@ -1853,6 +1854,7 @@ async function fetchPriceChartingPageHtml(pageUrl: string): Promise<string> {
       continue;
     }
     lastError = `HTTP ${pageResponse.status}`;
+    if (pageResponse.status === 403) throw new Error("No se pudo leer la pagina de PriceCharting (HTTP 403).");
     if (pageResponse.status === 429) throw new Error("PriceCharting respondio HTTP 429 al buscar imagen.");
   }
   throw new Error(`No se pudo leer la pagina de PriceCharting (${lastError}).`);
@@ -2705,6 +2707,34 @@ async function processPriceChartingImageUrlQueue(batchSize: number, concurrency:
   };
 }
 
+async function downloadClaimCardImage(input: {
+  priceChartingId: string; canonicalUrl: string; productName: string; expansionName: string; cardNumber: string;
+}) {
+  const db = await dbPromise;
+  const cached = await db.query<{
+    language_group: string; catalog_image: string; index_image: string; source_image: string; public_image: string;
+  }>(`
+    select pce.language_group, pce.image_url as catalog_image, cie.image_url as index_image,
+      pic.source_image_url as source_image, pic.public_url as public_image
+    from pricecharting_cache_entries pce
+    left join pricecharting_image_cache pic using (pricecharting_id)
+    left join card_index_entries cie using (pricecharting_id)
+    where pce.pricecharting_id = $1 limit 1
+  `, [input.priceChartingId]);
+  const row = cached.rows[0];
+  const cachedUrls = [row?.public_image, row?.source_image, row?.catalog_image, row?.index_image]
+    .map((url) => unwrapImageSourceUrl(String(url || "")))
+    .filter((url) => Boolean(parseHttpUrl(url)));
+  return resolveClaimImage({
+    cachedUrls,
+    storageUrls: directPriceChartingImageCandidates(input.priceChartingId),
+    externalImage: () => findExactTcgdexClaimImage({ ...input, languageGroup: row?.language_group || "" }),
+    pageUrls: priceChartingCardUrlCandidates(input),
+    pageImage: async (url) => extractPriceChartingImageUrl(await fetchPriceChartingPageHtml(url)),
+    download: (url, source) => downloadImageUrl(url, input.priceChartingId, source)
+  });
+}
+
 async function processActiveClaimPriceChartingPageImages(businessId: string, batchSize: number) {
   const db = await dbPromise;
   const queue = await listActiveClaimMissingPriceChartingImages(db, businessId, batchSize);
@@ -2713,28 +2743,12 @@ async function processActiveClaimPriceChartingPageImages(businessId: string, bat
 
   for (const entry of queue) {
     try {
-      if (!entry.canonicalUrl) throw new Error("La carta no tiene link de PriceCharting.");
-      let sourceImageUrl = "";
-      const errors: string[] = [];
-      for (const candidateUrl of await expandedPriceChartingCardUrlCandidates(entry)) {
-        try {
-          sourceImageUrl = await discoverPriceChartingImageUrl({
-            priceChartingId: entry.priceChartingId,
-            canonicalUrl: candidateUrl,
-            sourceMode: "auto"
-          });
-          break;
-        } catch (error) {
-          errors.push(error instanceof Error ? error.message : String(error));
-        }
-      }
-      if (!sourceImageUrl) throw new Error(errors.slice(-2).join(" / ") || "No se encontro imagen en PriceCharting.");
-      const result = await downloadImageUrl(sourceImageUrl, entry.priceChartingId, "PriceCharting imagen");
+      const result = await downloadClaimCardImage(entry);
       await recordPriceChartingImageSuccess(db, {
         priceChartingId: entry.priceChartingId,
         ...result
       });
-      items.push({ priceChartingId: entry.priceChartingId, status: "downloaded", source: imageDownloadSourceLabel(sourceImageUrl) });
+      items.push({ priceChartingId: entry.priceChartingId, status: "downloaded", source: result.source });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const priceChartingRateLimit = message.includes("429") && message.includes("PriceCharting");
@@ -2772,23 +2786,7 @@ async function processSingleClaimCardImage(input: {
   const db = await dbPromise;
   try {
     if (!input.priceChartingId) throw new Error("La carta no tiene PriceCharting ID.");
-    if (!input.canonicalUrl) throw new Error("La carta no tiene link de PriceCharting.");
-    let sourceImageUrl = "";
-    const errors: string[] = [];
-    for (const candidateUrl of await expandedPriceChartingCardUrlCandidates(input)) {
-      try {
-        sourceImageUrl = await discoverPriceChartingImageUrl({
-          priceChartingId: input.priceChartingId,
-          canonicalUrl: candidateUrl,
-          sourceMode: "auto"
-        });
-        break;
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
-      }
-    }
-    if (!sourceImageUrl) throw new Error(errors.slice(-2).join(" / ") || "No se encontro imagen en PriceCharting.");
-    const result = await downloadImageUrl(sourceImageUrl, input.priceChartingId, "PriceCharting imagen");
+    const result = await downloadClaimCardImage(input);
     await recordPriceChartingImageSuccess(db, {
       priceChartingId: input.priceChartingId,
       ...result
@@ -2797,7 +2795,7 @@ async function processSingleClaimCardImage(input: {
       processed: 1,
       downloaded: 1,
       failed: 0,
-      item: { priceChartingId: input.priceChartingId, status: "downloaded" as const, source: imageDownloadSourceLabel(sourceImageUrl) }
+      item: { priceChartingId: input.priceChartingId, status: "downloaded" as const, source: result.source }
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
