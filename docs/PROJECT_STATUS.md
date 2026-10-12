@@ -7,6 +7,17 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Recuperacion autorizada del claim del 12 de octubre: 243 imagenes faltantes
+  completadas; 359 cartas conservadas, cero faltantes finales. Solo se modifico
+  claim_cards.image_url mediante filtros por negocio/claim/ID e imagen previa.
+  Cache por ID exacto, metadata TCGdex/TCGCSV y referencias primarias verificadas
+  para japonesas, Prize Pack, Cosmos, Poke Ball, promos estampadas y Creatures.
+  Chrome decodifico las 243 fotos finales; dos fuentes fallidas fueron reemplazadas
+  por fotos de las mismas cartas verificadas por expansion/nombre/numero.
+  Hashes de campos protegidos del claim sin cambios; snapshots de inventory_items,
+  current_prices, sales y sale_items iguales antes/despues de cada tanda.
+  Sin cambios de codigo, migraciones, borrados ni recreacion de datos. Evidencias
+  y scripts de operacion en .work ignorado, sin secretos versionados.
 - Imagenes de claims: Buscar imagen/Buscar imagenes reutilizan URLs del cache e
   indice por ID exacto, luego storage de PriceCharting y respaldo TCGdex ingles.
   TCGdex exige nombre, expansion y numero exactos desde el detalle de la carta;

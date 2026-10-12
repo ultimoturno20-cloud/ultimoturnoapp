@@ -29,6 +29,9 @@ Actualizado: 2026-10-12
 
 ### Imagenes de claims
 
+- Claim del 12 de octubre reparado: las 243 faltantes ya tienen imagen y cargan
+  en Chrome; recargar el panel. No hace falta volver a ejecutar una busqueda masiva
+  sobre este claim. Las 359 cartas y sus valores/compradores/cantidades se conservaron.
 - Reintentar Buscar imagen en Slowpoke de 30th Celebration #16: respaldo TCGdex
   verificado disponible. Buscar imagenes usa el mismo flujo para el claim activo.
 - Si no hay coincidencia exacta, usar Corregir imagen con URL directa de la foto,

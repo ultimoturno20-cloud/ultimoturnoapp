@@ -1,5 +1,25 @@
 # Traspaso de contexto - UltimoTurno
 
+## Reparacion real de las 243 imagenes del claim - 2026-10-12
+
+El usuario autorizo completar imagenes del claim actual y actualizo Supabase a Pro.
+REST volvio a responder 200. La clave compartida local del API seguia sin acceso;
+se uso la credencial Supabase existente en variables de entorno, sin imprimirla.
+Claim del 12 de octubre: 359 cartas, 243 imagenes vacias al inicio, cero al final.
+Se revisaron fuentes antes de aplicar. Tandas de 208, 24 y 11 completaron image_url;
+posteriormente se reemplazaron solo dos URLs TCGdex que Chrome no pudo decodificar.
+Esas dos cartas son Chinchou Legend Maker #50 y Bisharp Dark Explorers #72.
+No se usaron fotos de versiones normales para variantes estampadas/Poke Ball:
+se verificaron las variantes TCGCSV o referencias primarias PriceCharting.
+Las japonesas conservaron idioma/edicion. Creatures Deck 2003 usa su foto especifica.
+REST PATCH limitado a claim_cards.image_url, con negocio/claim/ID/imagen previa,
+claim abierto y hash de campos protegidos verificados; no se modifico cache global.
+Snapshots de inventory_items/current_prices/sales/sale_items iguales por tanda.
+Las 243 fotos finales fueron decodificadas en Chrome y se inspecciono captura
+de las ediciones especiales. Evidencia y scripts en .work/claim-oct12-* y
+.work/repair-claim-oct12.mts, ignorados. Sin secretos ni datos de compradores en Git.
+No cambios de API/frontend/DTO/migraciones; commit de documentacion exclusivamente.
+
 ## Imagen de claim y PriceCharting HTTP 403 - 2026-10-12
 
 Buscar imagen y busqueda masiva dependian solo de paginas PC, omitian imagenes
