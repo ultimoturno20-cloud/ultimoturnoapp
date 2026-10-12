@@ -29,6 +29,26 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Carrito y pedido Web con pago manual entregados. Abrir `/admin/configuracion`
+  > Tienda y pedidos web: completar instrucciones PUBLICAS de pago y contacto,
+  definir retiro/envio y plazo de reserva; activar Aceptar pedidos web y guardar.
+  Empieza pausado. No cargar claves de API ni contrasenas en instrucciones.
+  Recargar la tienda despues de cambiar la configuracion. Envio se coordina y
+  cotiza aparte; no hay tarifa automatica ni costo incluido en el pedido.
+- En `/admin/ordenes`, revisar los pedidos Web y sus datos de contacto/entrega.
+  Confirmar pago solo ante un cobro real. Un pago parcial evita expiracion;
+  despues completar el pago/embalaje/entrega con las acciones existentes.
+  La fecha exacta de reserva Web es distinta del vencimiento por dia de claims.
+  No fusionar ni editar cartas/asignar a revendedor en esta primera entrega.
+- Expiracion solo de nuevas reservas Web sin pago: se procesa al consultar
+  catalogo/stock/ordenes o confirmar otro pedido, no con un cron continuo.
+  Cancela la orden y libera reserva, sin borrar registros ni tocar claims.
+  Una carta con reserva Web activa no puede incorporarse a un claim abierto.
+  Resolver su orden antes. Seguir excluyendo del catalogo los items del claim.
+- Ante respuesta sin confirmar, reintentar el MISMO envio; la pestana conserva
+  temporalmente los datos incluso al recargar. No iniciar otro pedido a mano.
+  Reembolsos, cotizacion de envio, correo automatico y pagos automaticos siguen
+  pendientes. Probar compras solo en base temporal, nunca pedidos ficticios reales.
 - Densidad corregida: catalogo con imagenes completas y compactas, 5-6 cartas
   por fila en escritorio y dos en celular. Detalle mantiene una imagen grande.
   Conservar marcos estables y precios completos al sumar carrito/checkout;
@@ -43,7 +63,7 @@ Actualizado: 2026-10-12
 - Redisenio entregado: busqueda en encabezado, banner de marca, navegacion por
   productos y filtros laterales. En celular, Filtros abre un dialogo; Ver resultados
   lo cierra. Grilla/lista y chips para quitar filtros, sin cambiar inventario.
-  Ver detalle es consulta, no un boton de compra. No hay cuenta publica ni carrito.
+  Ver detalle es consulta; el boton de carrito es independiente. Sin cuenta obligatoria.
 - La tienda ya usa la gama negra/carbon/roja del panel. Mantener esta identidad
   en futuras pantallas de carrito/checkout, sin oscurecer las imagenes reales.
 - Separacion entregada: tienda en `/` y panel/login en `/admin`. Todas las
@@ -51,7 +71,7 @@ Actualizado: 2026-10-12
   Enlaces anteriores redirigen, y la app instalada inicia dentro de admin.
   Abrirla con internet para retirar la cache global anterior. Torneos y portal
   de revendedores mantienen sus propios espacios y accesos.
-- Catalogo publico entregado en `/`, sin carrito, checkout ni pagos. Para
+- Catalogo publico entregado en `/`, ahora con carrito y checkout manual. Para
   preparar la tienda, abrir `/admin/inventario`: Detalles > Publicar en tienda,
   o seleccionar items y Publicar/Ocultar de tienda. No publicar pruebas reales.
   Todo empieza oculto; solo administradores cambian la publicacion.
@@ -59,8 +79,8 @@ Actualizado: 2026-10-12
   Debe estar Disponible, tener unidades centrales libres y precio de venta ARS
   positivo. USD sin ARS, No venta, asignaciones, reservas y claim abierto quedan
   fuera. Una carpeta usa su precio de venta, no el valor de su contenido.
-- Siguiente alcance: carrito y checkout para ordenes Web. Confirmar pago manual
-  o automatico y datos de entrega antes de implementarlos. DTO publico ya excluye
+- Siguiente alcance: pagos automaticos, seguimiento y cotizacion de envio,
+  despues de pilotear pedidos manuales. DTO publico ya excluye
   costos, propietarios, notas, compradores e identificadores externos.
 - Antes del claim, evitar ofrecer simultaneamente sus mismas unidades: el
   flujo actual reserva al cerrar y puede agregar faltantes. Primera tienda

@@ -7,6 +7,35 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Carrito y checkout Web con pago manual implementados, sin cuenta obligatoria.
+  Agregar desde tarjeta/detalle, cambiar cantidades, actualizar precios/stock,
+  cargar nombre/email/telefono y retiro o envio a coordinar. Envio cotizado
+  aparte, no incluido en total. No hay cobro automatico ni emails automaticos.
+- Pedidos pausados por defecto: `/admin/configuracion` > Tienda y pedidos web.
+  Admin define instrucciones publicas de pago/contacto, entrega y reserva
+  (30 minutos/2 horas/24 horas) antes de habilitar Aceptar pedidos web.
+  No se inventaron datos bancarios ni se habilito la apertura automaticamente.
+- POST publico acotado `/api/store/orders`: precio y disponibilidad actuales
+  en servidor, locks de stock/precio, reserva atomica, recibo idempotente y
+  limites persistentes por IP/email. Datos de contacto solo en Ordenes privadas.
+  Recupera respuesta perdida incluso al recargar la misma pestana; el intento
+  temporal usa sessionStorage separado y se borra al confirmar. Carrito publico
+  en localStorage propio; nunca consulta ni usa la sesion administrativa.
+- Nuevas ordenes aparecen como Web en `/admin/ordenes`, con contacto, entrega
+  y vencimiento exacto. Pago/embalaje/cancelacion usan el circuito existente.
+  No se fusionan, editan sus lineas ni entregan a consignacion. Reservas nuevas
+  vencidas sin pago se cancelan/liberan al consultar catalogo/ordenes/stock o
+  confirmar otro pedido. Pagos parciales registrados conservan la reserva.
+  Ordenes anteriores y reservas de claim no reciben expiracion automatica.
+- Migracion aditiva 0062: configuracion, metadata de pedidos e intentos.
+  Guarda contra nuevas incorporaciones al claim de cartas con reserva Web:
+  coordina con checkout bloqueando las mismas filas de stock. No modifica
+  las cartas existentes del claim ni publica productos automaticamente.
+- QA checkout: suite completa 180 pruebas y regresiones focalizadas finales,
+  lint/tipos/build/verify DB correctos. Chrome + HTTP con base/API temporales:
+  siete anchos publicos, cuatro de configuracion y tres de Ordenes, pedido,
+  respuesta perdida/recarga/reintento, cobro manual, body limit y privacidad.
+  Sin ordenes, pagos, publicaciones ni mutaciones de prueba en produccion.
 - Catalogo compacto: grilla adaptable con 5-6 cartas por fila en escritorio,
   4-5 en tablet y dos en celular, incluso a 320 px. Imagenes completas dentro
   de marcos estables de hasta 240 px (220 px en movil); cargar una foto no

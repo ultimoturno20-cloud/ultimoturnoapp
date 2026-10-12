@@ -11,6 +11,8 @@ export type { CardType, CardClassification } from "./card-types.js";
 export { createResellerStockRequestBatch, assignResellerStockBatch, resolveResellerStockRequestBatch } from "./reseller-batches.js";
 export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchResult } from "./reseller-batches.js";
 export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
+export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
+import { guardStoreOrder } from "./store-checkout.js";
 
 const minimumSalePriceArs = 800;
 
@@ -252,7 +254,7 @@ export type DbReservationRow = {
   createdAt: string;
 };
 
-export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql", "0058_reseller_batches.sql", "0059_tournaments.sql", "0060_tournament_space.sql", "0061_storefront_catalog.sql"];
+export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operational_inventory.sql", "0003_operational_commerce.sql", "0004_pricecharting_cache.sql", "0005_pricecharting_image_cache.sql", "0006_claims.sql", "0007_pricecharting_image_url_found.sql", "0008_card_index.sql", "0009_card_index_review.sql", "0010_claim_sessions_allow_reused_names.sql", "0011_claim_sections.sql", "0012_claim_card_quantity.sql", "0013_order_packing_payments.sql", "0014_claim_order_payment_due.sql", "0015_sale_delivered_status.sql", "0016_sales_usd_lines.sql", "0017_sale_notes.sql", "0018_sale_message_sent.sql", "0019_card_variant_grading.sql", "0020_card_variant_grading_cert.sql", "0021_inventory_intake_control.sql", "0022_tcgplayer_price_cache.sql", "0023_mobile_inventory_staging.sql", "0024_inventory_item_tags.sql", "0025_inventory_intake_safety.sql", "0026_order_boards.sql", "0027_language_groups.sql", "0028_refine_language_groups.sql", "0029_recalculate_language_groups.sql", "0030_unified_catalog_cards.sql", "0031_claim_stock_lifecycle.sql", "0032_reseller_consignment.sql", "0033_reseller_orders.sql", "0034_reseller_order_workflow.sql", "0035_tcgplayer_price_fallback.sql", "0036_claim_planner.sql", "0037_fast_catalog_search.sql", "0038_coolstuff_price_cache.sql", "0039_catalog_search_number_index.sql", "0040_reuse_catalog_stock_images.sql", "0041_stock_read_indexes.sql", "0042_stock_read_snapshots.sql", "0043_compress_stock_snapshots.sql", "0044_inventory_ownership.sql", "0045_external_identifiers_per_product.sql", "0046_reseller_stock_requests.sql", "0047_reseller_credit_limits.sql", "0048_finish_from_name.sql", "0049_sales_reseller_assignment.sql", "0050_login_attempts.sql", "0051_price_history.sql", "0052_default_payment_due.sql", "0053_sale_amount_paid_usd.sql", "0056_inventory_folders.sql", "0057_inventory_card_type.sql", "0058_reseller_batches.sql", "0059_tournaments.sql", "0060_tournament_space.sql", "0061_storefront_catalog.sql", "0062_store_checkout.sql"];
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -663,6 +665,7 @@ export type SaleRecord = {
   amountPaidUsd: number;
   paymentDueAt?: string;
   internalNote: string;
+  webOrder?: { reference: string; email: string; phone: string; fulfillment: string; address: string; expiresAt: string; expired: boolean };
   messageSentAt?: string;
   createdAt: string;
   completedAt?: string;
@@ -5435,7 +5438,8 @@ export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?
   const result = await db.query<Record<string, unknown>>(`
     select s.id, s.created_by, s.customer_name, s.sale_type, s.status, s.channel, s.total_ars, s.total_usd, s.amount_paid_ars, s.amount_paid_usd, s.payment_due_at, s.internal_note, s.message_sent_at,
       s.assigned_reseller_user_id, s.assigned_reseller_at, assigned_reseller.display_name as assigned_reseller_name,
-      s.created_at, s.completed_at, si.id as sale_item_id, si.inventory_item_id, si.quantity,
+      s.created_at, s.completed_at, w.receipt->>'reference' as web_reference, w.customer_email, w.customer_phone, w.fulfillment, w.address, w.expires_at as web_expires_at, w.expired_at as web_expired_at,
+      si.id as sale_item_id, si.inventory_item_id, si.quantity,
       si.unit_price_ars, si.unit_price_usd, si.line_total_ars, si.line_total_usd, si.price_currency, si.packed_at, ii.sku, p.name,
       coalesce(
         nullif(p.image_url, ''),
@@ -5449,6 +5453,7 @@ export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?
       si.display_name, si.sku_snapshot,
       v.language, v.condition, v.finish, v.grading_company, v.grade, v.grading_cert
     from sales s
+    left join store_orders w on w.sale_id=s.id and w.business_id=s.business_id
     left join sale_items si on si.sale_id = s.id
     left join inventory_items ii on ii.id = si.inventory_item_id
     left join card_products p on p.id = ii.product_id
@@ -5475,6 +5480,7 @@ export async function listSales(db: PGlite, businessId = demoBusinessId, saleId?
       amountPaidUsd: Number(row.amount_paid_usd || 0),
       paymentDueAt: toIsoDate(row.payment_due_at),
       internalNote: String(row.internal_note || ""),
+      webOrder: row.web_reference ? { reference: String(row.web_reference), email: String(row.customer_email), phone: String(row.customer_phone), fulfillment: String(row.fulfillment), address: String(row.address), expiresAt: row.web_expires_at instanceof Date ? row.web_expires_at.toISOString() : String(row.web_expires_at), expired: Boolean(row.web_expired_at) } : undefined,
       messageSentAt: row.message_sent_at ? String(row.message_sent_at) : undefined,
       createdAt: String(row.created_at),
       completedAt: row.completed_at ? String(row.completed_at) : undefined,
@@ -5599,14 +5605,18 @@ export async function createSale(db: PGlite, input: CreateSaleInput, actor: Auth
 }
 
 export async function completeReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, connection => completeReservationSale(connection, saleId, actor));
+  const webOrder = await guardStoreOrder(db, saleId, actor.businessId);
   const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
   const stockExceptions: Array<{ inventoryItemId: string; name: string; quantity: number; quantityOnHand: number; quantityReserved: number }> = [];
   await inventoryTransaction(db, async (db) => {
+    if (webOrder) await db.query("select id from inventory_items where business_id=$1 and id=any($2::uuid[]) order by id for update", [actor.businessId, sale.lines.map(line=>line.inventoryItemId).filter(Boolean)]);
     for (const line of sale.lines) {
       if (!line.inventoryItemId) continue;
       const item = await getInventoryItem(db, line.inventoryItemId, actor.businessId);
       if (!item || item.quantityReserved < line.quantity || item.quantityOnHand < line.quantity) {
+        if (webOrder) throw Object.assign(new Error("El stock del pedido web cambio. Revisalo antes de confirmar el pago."), { statusCode: 409 });
         if (item) {
           await db.query(`
             update inventory_items
@@ -5709,6 +5719,7 @@ export async function assignOrderToReseller(
     const sale = saleResult.rows[0];
     if (!sale) throw new Error("La orden ya no existe.");
     if (!["pending", "packed"].includes(String(sale.status))) throw new Error("Solo se pueden asignar ordenes pendientes o a embalar.");
+    await guardStoreOrder(connection, saleId, actor.businessId, true);
     const currentResellerId = String(sale.assigned_reseller_user_id || "");
     if (currentResellerId === normalizedResellerId) return;
     if (currentResellerId) throw new Error("La orden ya esta asignada a otro revendedor.");
@@ -5837,6 +5848,7 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
     const sale = saleResult.rows[0];
     if (!sale) throw new Error("La orden ya no existe.");
     if (!["pending", "packed"].includes(String(sale.status))) throw new Error("Solo se pueden editar ordenes pendientes o a embalar.");
+    await guardStoreOrder(connection, saleId, actor.businessId, true);
     if (sale.assigned_reseller_user_id) throw new Error("La orden ya fue entregada a un revendedor y sus cartas no se pueden modificar.");
     const canManageAll = !actor.roles || actor.roles.includes("admin");
     if (!canManageAll && String(sale.created_by || "") !== actor.id) throw new Error("No podes editar una orden creada por otro usuario.");
@@ -5957,6 +5969,8 @@ export async function updateReservationSaleLines(db: PGlite, saleId: string, inp
 }
 
 export async function updateSalePayment(db: PGlite, saleId: string, amountPaidArs: number | undefined, actor: AuthenticatedUser, paymentDueAt?: string, amountPaidUsd?: number): Promise<SaleRecord> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, connection => updateSalePayment(connection, saleId, amountPaidArs, actor, paymentDueAt, amountPaidUsd));
+  await guardStoreOrder(db, saleId, actor.businessId);
   const amount = amountPaidArs === undefined ? null : Math.max(0, Number(amountPaidArs) || 0);
   const amountUsd = amountPaidUsd === undefined ? null : Math.max(0, Number(amountPaidUsd) || 0);
   await db.query(`
@@ -6005,6 +6019,8 @@ export async function updateSaleItemPacked(db: PGlite, saleItemId: string, packe
 }
 
 export async function markSalePacked(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, connection => markSalePacked(connection, saleId, actor));
+  await guardStoreOrder(db, saleId, actor.businessId);
   const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed", "paid"].includes(sale.status)) throw new Error("La orden no esta pendiente.");
   await db.query("update sale_items set packed_at = coalesce(packed_at, now()) where sale_id = $1 and business_id = $2", [saleId, actor.businessId]);
@@ -6030,6 +6046,7 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
     where business_id = $1
       and sale_type = 'reservation'
       and status in ('pending', 'packed')
+      and not exists (select 1 from store_orders w where w.sale_id=sales.id)
     order by created_at asc
   `, [actor.businessId]);
   const groups = new Map<string, Record<string, unknown>[]>();
@@ -6082,6 +6099,8 @@ export async function mergeDuplicateCustomerOrders(db: PGlite, actor: Authentica
 }
 
 export async function cancelReservationSale(db: PGlite, saleId: string, actor: AuthenticatedUser): Promise<SaleRecord> {
+  if (!inventoryTransactions.has(db)) return inventoryTransaction(db, connection => cancelReservationSale(connection, saleId, actor));
+  await db.query("select id from sales where id=$1 and business_id=$2 for update", [saleId, actor.businessId]);
   const sale = (await listSales(db, actor.businessId, saleId)).sales.find((row) => row.id === saleId);
   if (!sale || sale.saleType !== "reservation" || !["pending", "packed"].includes(sale.status)) throw new Error("La reserva ya no esta pendiente");
   await inventoryTransaction(db, async (db) => {
@@ -9648,7 +9667,7 @@ async function getRuleTargetColumn(db: PGlite, businessId: string, saleId: strin
   return ensureOrderBoardColumn(db,businessId,boardId,columnName);
 }
 
-async function moveSaleToRuleColumn(db: PGlite, businessId: string, saleId: string, force = false) {
+export async function moveSaleToRuleColumn(db: PGlite, businessId: string, saleId: string, force = false) {
   const columnId = await getRuleTargetColumn(db,businessId,saleId);
   if (!columnId) return;
   const current = await db.query<{column_id:string;name:string}>("select c.column_id,bc.name from order_board_cards c join order_board_columns bc on bc.id=c.column_id and bc.business_id=c.business_id where c.sale_id=$1 and c.business_id=$2 limit 1", [saleId,businessId]);

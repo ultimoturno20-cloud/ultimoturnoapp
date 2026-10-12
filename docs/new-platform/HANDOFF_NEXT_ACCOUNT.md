@@ -1,5 +1,62 @@
 # Traspaso de contexto - UltimoTurno
 
+## Carrito y pedidos Web con pago manual - 2026-10-12
+
+0062_store_checkout.sql agrega store_settings (enabled false por defecto),
+store_orders vinculadas a sales y limites persistentes por hashes IP/email.
+Admin en /admin/configuracion define instrucciones publicas, entrega y plazo
+de reserva antes de abrir pedidos. No activar automaticamente ni inventar alias,
+WhatsApp, direccion de retiro o costos de envio. Contacto/pago son texto publico;
+no guardar secretos alli. No hay cuentas de compradores, cobro ni email automatico.
+
+GET /store/settings publico; GET/PUT /store-settings solo admin y por negocio.
+POST /store/orders publico con JSON <=16 KB, hasta 30 lineas y 99 unidades por
+linea, validacion estricta y limites 5/email o 20/IP en 15 minutos. Claves UUIDv4,
+hash del pedido normalizado y locks/idempotencia PostgreSQL. Reintento devuelve
+el mismo recibo con estado actual aun si la tienda se pauso. No entrega DTO privado
+de ventas, datos de otros compradores ni identificadores administrativos.
+
+Checkout bloquea ii/current_prices en orden de ID y reutiliza listStoreCatalog
+con ids acotados: misma publicacion, ARS positivo, stock libre, No venta y claim.
+GET /store/catalog?ids permite refrescar solo el carrito (maximo 30 IDs UUID).
+Crea sale reservation/pending/channel web, lineas con precio real, reservas,
+movimientos y audit atomicos, sin restar cantidad fisica hasta cobro. Invalida
+snapshot/cache y actualiza tablero dentro de transaccion. created_by es null:
+un comprador no representa una sesion ni un usuario admin.
+
+Vencimiento exacto en store_orders/reservations, NO en payment_due_at de tipo
+date: evitamos marcar una reserva nueva vencida por medianoche/zona horaria.
+expireStoreOrders se ejecuta al leer catalogo/stock/sales/order-boards y al
+confirmar un pedido; no hay cron continuo. Solo pendientes/embaladas Web con
+metadata propia, sin pagos y sin consignacion. Bloquea sale, libera reservas,
+cancela conservando registros, audita y actualiza tablero/snapshot. Pago parcial
+registrado conserva reserva. Pago/cancelacion se serializan contra expiracion;
+Web nunca se completa sin stock suficiente. No cambia la reconciliacion legacy.
+Fusion de duplicados excluye Web; editor y asignacion a revendedor las rechazan.
+
+Trigger de claim nuevo/actualizacion de referencia bloquea las mismas filas de
+inventario que checkout y rechaza una referencia con reserva Web activa. Incluye
+inventory_item_id, inventory:UUID y PriceCharting producto/variante. No cambia
+claim actual. Esto cubre incorporaciones posteriores; mantener exclusion del
+claim abierto en catalogo/checkout. Cancelar/resolver la orden antes de agregarla.
+
+store-cart-state.ts y store-cart.tsx manejan carrito publico, dialogo/formulario
+y recuperacion: localStorage solo productos; sessionStorage solo intento pendiente
+(incluye datos del comprador temporalmente). No usa session admin. Se elimina
+el intento al confirmar/rechazo conocido; fallas ambiguas conservan la MISMA
+clave/payload incluso al recargar. No generar otra clave ante respuesta incierta.
+No se reserva al agregar al carrito. Detalle y tarjeta permiten agregar, sin
+aumentar filas/imagenes. Envio siempre a coordinar y cotizado por separado.
+
+QA: 180 tests completos y 12 focalizados finales, lint/tipos/build y db:verify
+local correctos. .work/checkout-browser-test.mts usa API/base PGlite temporales,
+Chrome siete anchos de tienda, cuatro configuracion y tres Ordenes. Crea una
+orden local, pierde respuesta, recarga/reintenta sin duplicar, verifica contacto,
+restricciones y cobra localmente. HTTP valida 400/401/405/413 y privacidad.
+Scripts/capturas en .work ignorado. Ningun pedido, pago ni publicacion de prueba
+en produccion. La concurrencia PostgreSQL usa locks/advisory; las pruebas de
+escritura se realizaron en PGlite, no contra Supabase productivo.
+
 ## Catalogo compacto e imagenes contenidas - 2026-10-12
 
 Cambio solo en storefront.css: grilla auto-fill con minimo 160 px (155 px en

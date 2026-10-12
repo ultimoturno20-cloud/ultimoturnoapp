@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ArrowDownRight, ArrowLeft, ArrowRight, Banknote, Check, ChevronDown, Grid2X2, List, RotateCcw, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, Banknote, Check, ChevronDown, Grid2X2, List, RotateCcw, Search, ShoppingCart, SlidersHorizontal, X } from "lucide-react";
 import { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCategories, storeCategoryLabels, type StoreCategory, type StoreCatalogItem, type StoreCatalogPage, type StoreCatalogQuery } from "@ultimoturno/domain";
 import { activeStoreFilters, matchingStoreExpansions, removeStoreFilter, storeLanguageLabel, storeTypeLabels } from "./storefront-filters.js";
 import "./storefront.css";
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
+import { useStoreCart, StoreCartButton, StoreCartDialog } from "./store-cart.js";
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const variant = (item: StoreCatalogItem) => [item.language, item.condition, item.finish, [item.gradingCompany, item.grade].filter(Boolean).join(" ")].filter(Boolean).join(" / ");
@@ -38,6 +39,7 @@ function CatalogFilters({ query, facets, change, reset }: { query: StoreCatalogQ
 }
 
 function Storefront() {
+  const cart = useStoreCart();
   const [query, setQuery] = useState<StoreCatalogQuery>(() => normalizeStoreCatalogQuery(Object.fromEntries(new URLSearchParams(window.location.search))));
   const [page, setPage] = useState<StoreCatalogPage | null>(null);
   const [facets, setFacets] = useState<StoreCatalogPage["facets"]>({ expansions: [], languages: [], conditions: [], cardTypes: [] });
@@ -106,11 +108,11 @@ function Storefront() {
   const selectCategory = (category: StoreCategory | "all") => { setQuery({ ...defaultStoreCatalogQuery, category }); goToCatalog(); };
   const filters = <CatalogFilters query={query} facets={facets} change={change} reset={reset} />;
   return <>
-    <div className="shop-announcement"><span>Pokemon TCG · Cartas y coleccion</span><span>Pedidos online no habilitados</span></div>
+    <div className="shop-announcement"><span>Pokemon TCG · Cartas y coleccion</span><span>{cart.settings.enabled ? "Pedidos web · Pago manual" : "Pedidos web pausados"}</span></div>
     <header className="shop-header"><div className="shop-header-inner">
       <a className="shop-brand" href="/"><img src="/brand/ultimo-turno-logo.jpeg" width="56" height="56" alt="" /><span><strong>ULTIMO TURNO</strong><small>POKEMON TCG</small></span></a>
       <form className="shop-search" role="search" onSubmit={event => { event.preventDefault(); goToCatalog(); }}><Search aria-hidden="true" /><input type="search" aria-label="Buscar en la tienda" maxLength={120} placeholder="Buscar cartas, expansiones o sets..." value={query.query} onChange={event => change({ query: event.target.value })} /><button className="shop-icon-button" type="submit" aria-label="Buscar en el catalogo" title="Buscar en el catalogo"><ArrowRight aria-hidden="true" /></button></form>
-      <span className="shop-currency"><Banknote aria-hidden="true" /><span>Moneda<strong>ARS</strong></span></span>
+      <div className="shop-header-actions"><span className="shop-currency"><Banknote aria-hidden="true" /><span>Moneda<strong>ARS</strong></span></span><StoreCartButton cart={cart}/></div>
     </div>
       <nav className="shop-nav" aria-label="Categorias del catalogo"><div><button type="button" aria-current={query.category === "all" ? "page" : undefined} onClick={() => selectCategory("all")}>Todo el catalogo</button>{storeCategories.map(category => <button type="button" key={category} aria-current={query.category === category ? "page" : undefined} onClick={() => selectCategory(category)}>{storeCategoryLabels[category]}</button>)}<a href="/torneos">Torneos<ArrowDownRight aria-hidden="true" /></a></div></nav>
     </header>
@@ -135,7 +137,7 @@ function Storefront() {
               {page?.items.map(item => <article className="shop-product" key={item.id}>
                 <button className="shop-product-preview" type="button" disabled={loading} aria-label={`Ver ${item.name}`} onClick={() => setSelected(item)}><div className="shop-product-image"><StoreImage item={item} /></div></button>
                 <div className="shop-product-copy"><div className="shop-product-badges"><span>{item.itemKind === "folder" ? "Carpeta" : item.language}</span>{item.finish && item.finish !== "normal" ? <span className="shop-finish">{item.finish}</span> : null}</div><h3>{item.name}</h3><span className="shop-product-expansion">{item.expansion}{item.number ? ` #${item.number}` : ""}</span><small>{variant(item)}</small></div>
-                <div className="shop-product-price"><strong>{money.format(item.priceArs)}</strong><span>{item.availableQuantity} disponible{item.availableQuantity === 1 ? "" : "s"}</span><button type="button" disabled={loading} className="shop-product-detail" onClick={() => setSelected(item)}>Ver detalle<ArrowRight aria-hidden="true" /></button></div>
+                <div className="shop-product-price"><strong>{money.format(item.priceArs)}</strong><span>{item.availableQuantity} disponible{item.availableQuantity === 1 ? "" : "s"}</span><div className="shop-product-actions"><button type="button" disabled={loading} className="shop-product-detail" onClick={() => setSelected(item)}>Ver detalle<ArrowRight aria-hidden="true" /></button><button type="button" className="shop-icon-button shop-add-cart" disabled={loading} title="Agregar al carrito" aria-label={`Agregar ${item.name} al carrito`} onClick={()=>cart.add(item)}><ShoppingCart aria-hidden="true"/></button></div></div>
               </article>)}
             </section> : null}
             {page && !error && page.total > page.pageSize ? <nav className="shop-pagination" aria-label="Paginas de catalogo"><button type="button" disabled={loading || page.offset === 0} onClick={() => { setQuery(current => ({ ...current, offset: Math.max(0, current.offset - page.pageSize) })); goToCatalog(); }}><ArrowLeft aria-hidden="true" />Anterior</button><span>Pagina {Math.floor(page.offset / page.pageSize) + 1} de {Math.ceil(page.total / page.pageSize)}</span><button type="button" disabled={loading || page.offset + page.pageSize >= page.total} onClick={() => { setQuery(current => ({ ...current, offset: current.offset + page.pageSize })); goToCatalog(); }}>Siguiente<ArrowRight aria-hidden="true" /></button></nav> : null}
@@ -148,7 +150,10 @@ function Storefront() {
     <dialog ref={dialog} className="shop-detail" aria-label="Detalle del articulo" onCancel={() => setSelected(null)} onClose={() => setSelected(null)}>
       <button type="button" className="shop-close shop-icon-button" aria-label="Cerrar detalle" title="Cerrar detalle" onClick={() => setSelected(null)} autoFocus><X aria-hidden="true" /></button>
       {selected ? <div className="shop-detail-content"><div className="shop-detail-image"><StoreImage item={selected} /></div><div><span className="shop-eyebrow">{selected.itemKind === "folder" ? "CARPETA" : "POKEMON TCG"}</span><h2>{selected.name}</h2><p>{selected.expansion}{selected.number ? ` #${selected.number}` : ""}</p><dl><div><dt>Idioma</dt><dd>{storeLanguageLabel(selected.language)}</dd></div><div><dt>Condicion</dt><dd>{selected.condition}</dd></div><div><dt>Acabado</dt><dd>{selected.finish}</dd></div><div><dt>Tipo</dt><dd>{selected.itemKind === "folder" ? "Carpeta" : storeTypeLabels[selected.cardType] || selected.cardType}</dd></div>{selected.grade ? <div><dt>Grading</dt><dd>{selected.gradingCompany} {selected.grade}</dd></div> : null}</dl><span className="shop-detail-currency">Precio en ARS</span><strong className="shop-detail-price">{money.format(selected.priceArs)}</strong><span className="shop-detail-availability"><Check aria-hidden="true" />{selected.availableQuantity} disponible{selected.availableQuantity === 1 ? "" : "s"}</span></div></div> : null}
+      {selected ? <button type="button" className="shop-primary-action" onClick={()=>{cart.add(selected);setSelected(null);}}><ShoppingCart/>Agregar al carrito</button> : null}
     </dialog>
+    <StoreCartDialog cart={cart}/>
+    {cart.notice?<div className="shop-cart-notice" role="status"><span>{cart.notice}</span><button type="button" className="shop-icon-button" aria-label="Cerrar aviso" title="Cerrar aviso" onClick={()=>cart.setNotice('')}><X/></button></div>:null}
   </>;
 }
 

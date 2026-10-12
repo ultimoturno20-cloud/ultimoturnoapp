@@ -17,6 +17,7 @@ import { useOperationalPreferences } from "./use-operational-preferences.js";
 import "./operational-workspace.css";
 import { adminViewPaths as viewPaths, adminViewFromUrl, isAdminPath, isResellerPortalPath, type AdminView as View } from "./admin-routing.js";
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
+import { StoreSettingsPanel } from "./store-settings.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -424,6 +425,7 @@ type SaleRecord = {
   amountPaidUsd: number;
   paymentDueAt?: string;
   internalNote: string;
+  webOrder?: { reference: string; email: string; phone: string; fulfillment: string; address: string; expiresAt: string; expired: boolean };
   messageSentAt?: string;
   createdAt: string;
   completedAt?: string;
@@ -5223,7 +5225,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
   const canBatchSelect = order.status !== "cancelled" && !isDelivered;
   const canPack = order.status !== "cancelled" && !isDelivered;
   const canEdit = order.status !== "cancelled" && order.status !== "paid" && order.status !== "delivered";
-  const canEditLines = canEdit && !order.assignedResellerUserId;
+  const canEditLines = canEdit && !order.assignedResellerUserId && !order.webOrder;
   const startLineEditing = () => {
     setLineDrafts(orderLineDrafts(order));
     setLineSearch("");
@@ -5358,7 +5360,7 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
           </div>
           <div className="quick-payment-fields">
             {quickPaymentMode === "partial" ? <><label>Pesos<input type="number" min={0} value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} placeholder="ARS a sumar" /></label>{(order.totalUsd || 0) > 0 ? <label>Dolares<input type="number" min={0} step={0.01} value={paymentUsdDraft} onChange={(event) => setPaymentUsdDraft(event.target.value)} placeholder="USD a sumar" /></label> : null}</> : <div className="quick-full-total"><span>Total a cobrar</span><MoneyStack ars={order.totalArs || null} usd={order.totalUsd || null} blueRate={blueRate} compact /></div>}
-            <label>Fecha limite<input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>
+            {!order.webOrder?<label>Fecha limite<input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>:null}
           </div>
           <button className="primary-action" disabled={quickPaymentMode === "partial" && paymentToAdd <= 0 && usdToAdd <= 0} onClick={() => void confirmQuickPayment()}><Icon name="check" />Confirmar {quickPaymentMode === "full" ? "pago completo" : "pago parcial"}</button>
         </div>
@@ -5367,26 +5369,27 @@ function OrderCard({ order, boardLabel, stockItems, blueRate, resellers, open, f
         <div className="order-detail">
           <div className="order-detail-strip">
             <div><strong>Seguimiento</strong><span>{messageSent ? "Mensaje enviado" : "Mensaje pendiente"} / {packedUnits}/{units} embaladas</span></div>
+          {order.webOrder?<div className="order-web-contact"><strong>Pedido Web · {order.webOrder.reference}</strong><span>{order.webOrder.email} · {order.webOrder.phone}</span><span>{order.webOrder.fulfillment==='shipping'?`Envio a coordinar: ${order.webOrder.address}`:'Retiro a coordinar'}</span><span>{order.webOrder.expired?'Reserva vencida':order.amountPaidArs>0?'Pago registrado: reserva conservada':`Reserva sin pago hasta ${formatDate(order.webOrder.expiresAt)}`}</span></div>:null}
             <div className="order-detail-strip-actions">
               <label className={`order-message-check ${messageSent ? "checked" : ""}`}><input type="checkbox" disabled={order.status === "cancelled" || isDelivered} checked={messageSent} onChange={(event) => onMessageSent(event.target.checked)} /><span>Mensaje enviado</span></label>
               {canEdit ? <button className="secondary-action" onClick={onCopy}><Icon name={copied ? "check" : "copy"} />{copied ? "Copiado" : "Copiar mensaje"}</button> : null}
               {canPack ? <button className="secondary-action" onClick={() => onPacked(order.id)}><Icon name="check" />Marcar embalada</button> : null}
             </div>
           </div>
-          <section className={`order-reseller-assignment ${order.assignedResellerUserId ? "assigned" : ""}`}>
+          {!order.webOrder?<section className={`order-reseller-assignment ${order.assignedResellerUserId ? "assigned" : ""}`}>
             <div><strong>{order.assignedResellerName ? `Asignada a ${order.assignedResellerName}` : "Asignar orden a revendedor"}</strong><span>{order.assignedResellerName ? `${units} unidad(es) ya forman parte de su inventario.` : "Entrega todas las cartas de esta orden a un inventario en consignacion."}</span></div>
             {order.assignedResellerUserId ? <span className="pill ok"><Icon name="check" />Asignada</span> : <div className="order-reseller-controls"><select value={resellerDraft} disabled={!canEdit || resellerAssigning} onChange={(event) => { setResellerDraft(event.target.value); setResellerError(""); }}><option value="">Elegir revendedor</option>{resellers.map((reseller) => <option key={reseller.userId} value={reseller.userId}>{reseller.displayName}</option>)}</select><button className="primary-action" disabled={!canEdit || !resellerDraft || resellerAssigning} onClick={() => void confirmResellerAssignment()}><Icon name="sales" />{resellerAssigning ? "Asignando..." : "Asignar orden"}</button></div>}
             {resellerError ? <div className="feedback error" role="alert">{resellerError}</div> : null}
-          </section>
+          </section>:null}
           <div className="order-work-grid">
             <section className="order-work-panel order-payment-panel">
               <div className="order-panel-heading"><h4>Pago</h4><div className="order-payment-badges"><span>Pagado <strong>{formatArs(order.amountPaidArs || 0)}{(order.amountPaidUsd || 0) > 0 ? " + " : ""}{(order.amountPaidUsd || 0) > 0 ? formatUsd(order.amountPaidUsd) : ""}</strong></span><span>Resta <strong>{formatArs(remaining)}{remainingUsd > 0 ? " + " : ""}{remainingUsd > 0 ? formatUsd(remainingUsd) : ""}</strong></span></div></div>
               <div className="order-payment-grid">
                 <label className="order-payment-field"><span>Seña / pago en pesos</span><input type="number" min={0} placeholder="ARS a sumar" value={paymentDraft} onChange={(event) => setPaymentDraft(event.target.value)} /></label>{(order.totalUsd || 0) > 0 ? <label className="order-payment-field"><span>Pago en dolares</span><input type="number" min={0} step={0.01} placeholder="USD a sumar" value={paymentUsdDraft} onChange={(event) => setPaymentUsdDraft(event.target.value)} /></label> : null}
-                <label className="order-payment-field"><span>Fecha limite de pago</span><input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>
+                {!order.webOrder?<label className="order-payment-field"><span>Fecha limite de pago</span><input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} /></label>:null}
               </div>
               <div className="order-panel-footer payment-actions">
-                <button className="secondary-action" disabled={!canEdit || !dueChanged} onClick={() => onPayment(order.id, order.amountPaidArs || 0, dueDraft)}><Icon name="check" />Fijar fecha</button>
+                {!order.webOrder?<button className="secondary-action" disabled={!canEdit || !dueChanged} onClick={() => onPayment(order.id, order.amountPaidArs || 0, dueDraft)}><Icon name="check" />Fijar fecha</button>:null}
                 <button className="primary-action" disabled={!canEdit || (paymentToAdd <= 0 && usdToAdd <= 0)} onClick={() => { onPayment(order.id, nextPaid, dueDraft, nextPaidUsd); setPaymentDraft(""); setPaymentUsdDraft(""); }}><Icon name="check" />Registrar pago</button>
               </div>
             </section>
@@ -7263,6 +7266,7 @@ function AdminView(props: {
       </section>
 
       <UserManagementPanel users={props.users} onCreated={props.onUserCreated} />
+      <StoreSettingsPanel request={api}/>
 
       <section className="metrics admin-metrics">
         <Metric label="Perfil" value={props.environment.dataProfile} helper={props.environment.allowExamples ? "permite ejemplos" : "datos reales"} />

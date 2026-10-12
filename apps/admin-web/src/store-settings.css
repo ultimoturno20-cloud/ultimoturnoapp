@@ -1,0 +1,9 @@
+.store-settings-panel form { max-width: 760px; }
+.store-settings-panel fieldset { display: grid; gap: 16px; padding: 0; border: 0; margin: 0; min-width: 0; }
+.store-settings-panel label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.store-settings-panel textarea { width: 100%; min-width: 0; resize: vertical; background: var(--bg); color: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 10px; font: inherit; }
+.store-settings-panel .store-settings-check { display: flex; align-items: center; gap: 8px; }
+.store-settings-check input { width: 18px; height: 18px; flex-shrink: 0; }
+.store-settings-delivery { display: flex; flex-wrap: wrap; gap: 16px; }
+.store-settings-panel button { justify-self: start; }
+.order-web-contact { display: grid; gap: 6px; padding-block: 10px; border-block: 1px solid var(--border); overflow-wrap: anywhere; font-size: 13px; }

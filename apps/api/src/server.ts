@@ -8,6 +8,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import {
   listStoreCatalog,
   setStorefrontPublication,
+  getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders,
   registerTournamentAccount, loginTournamentAccount, getTournamentAccount, logoutTournamentAccount,
   listSpaceTournaments, getSpaceTournament, createSpaceTournament, commandSpaceTournament,
   listTournaments, getTournament, createTournament, commandTournament,
@@ -3066,9 +3067,15 @@ async function fetchAndCacheMissingPriceChartingImage(db: Awaited<typeof dbPromi
   return { body, contentType };
 }
 
-async function readJson<T>(request: IncomingMessage): Promise<T> {
+async function readJson<T>(request: IncomingMessage, maxBytes = Infinity): Promise<T> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let bytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > maxBytes) throw Object.assign(new Error("Solicitud demasiado grande."), { statusCode: 413 });
+    chunks.push(buffer);
+  }
   const text = Buffer.concat(chunks).toString("utf8");
   return text ? JSON.parse(text) as T : {} as T;
 }
@@ -4035,9 +4042,27 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/store/catalog") {
       if (request.method !== "GET") { sendJson(response, 405, { error: "Solo consulta de catalogo." }); return; }
       const query = normalizeStoreCatalogQuery(Object.fromEntries(["query", "expansion", "language", "condition", "cardType", "category", "sort", "offset"].map(key => [key, url.searchParams.get(key) ?? undefined])));
-      try { sendJson(response, 200, await listStoreCatalog(await dbPromise, query)); }
+      const ids = url.searchParams.has("ids") ? url.searchParams.get("ids")!.split(",") : undefined;
+      if (ids && (!ids.length || ids.length>30 || ids.some(id=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) throw Object.assign(new Error("Seleccion de carrito invalida."), {statusCode:400});
+      try { const storeDb = await dbPromise; if(await expireStoreOrders(storeDb))stockReadCache.clear(); sendJson(response, 200, await listStoreCatalog(storeDb, query, "ultimoturno", ids)); }
       catch (error) { console.error("No se pudo leer el catalogo publico", error); sendJson(response, 503, { error: "No se pudo cargar el catalogo." }); }
       return;
+    }
+
+    if (url.pathname === "/store/settings") {
+      response.setHeader("Cache-Control", "no-store");
+      if (request.method !== "GET") { sendJson(response, 405, { error: "Metodo no permitido." }); return; }
+      sendJson(response, 200, await getStoreSettings(await dbPromise)); return;
+    }
+    if (url.pathname === "/store/orders") {
+      response.setHeader("Cache-Control", "private, no-store");
+      if (request.method !== "POST") { sendJson(response, 405, { error: "Metodo no permitido." }); return; }
+      if (!String(request.headers["content-type"] || "").startsWith("application/json")) throw Object.assign(new Error("Usa JSON para confirmar el pedido."), { statusCode: 415 });
+      const body = await readJson<Parameters<typeof createStoreOrder>[1]>(request, 16384).catch(error => { if (error instanceof SyntaxError) throw Object.assign(new Error("Pedido invalido."), { statusCode: 400 }); throw error; });
+      const storeDb = await dbPromise;
+      const receipt = await createStoreOrder(storeDb, body, clientIp(request));
+      stockReadCache.clear();
+      sendJson(response, 201, { receipt }); return;
     }
 
     if (url.pathname === "/image-proxy" && request.method === "GET") {
@@ -4257,6 +4282,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const user: AuthenticatedUser = sessionUser || { ...(await operationalUser()), roles: ["admin"] };
+
+    if (["/stock", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
+      if (await expireStoreOrders(db, user.businessId)) stockReadCache.delete(user.businessId);
+    }
+    if (url.pathname === "/store-settings") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      if (request.method === "GET") { sendJson(response, 200, await getStoreSettings(db, "ultimoturno", user.businessId)); return; }
+      if (request.method === "PUT") { sendJson(response, 200, await saveStoreSettings(db, await readJson(request, 8192), user)); return; }
+      sendJson(response, 405, { error: "Metodo no permitido." }); return;
+    }
 
     if (url.pathname === "/users" && request.method === "GET") {
       if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });

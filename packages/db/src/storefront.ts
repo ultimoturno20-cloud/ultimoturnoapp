@@ -25,7 +25,7 @@ export async function setStorefrontPublication(db: PGlite, input: { inventoryIte
   });
 }
 
-export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQuery> = {}, businessSlug = "ultimoturno") {
+export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQuery> = {}, businessSlug = "ultimoturno", inventoryItemIds?: string[]) {
   const rows = await db.query<Record<string, unknown>>(`
     select ii.id, ii.item_kind, ii.card_type_override, ii.tags, p.name, p.expansion, coalesce(p.card_number, '') as card_number,
       v.language, v.condition, v.finish, coalesce(v.grading_company, '') as grading_company, coalesce(v.grade, '') as grade,
@@ -43,7 +43,8 @@ export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQu
     left join lateral (select ei.external_id from external_identifiers ei join external_sources es on es.id = ei.source_id and es.name = 'pricecharting' where ei.business_id = ii.business_id and ei.product_id = p.id and (ei.variant_id is null or ei.variant_id = v.id) order by case when ei.variant_id = v.id then 0 else 1 end, ei.id limit 1) pc on true
     left join pricecharting_image_cache pic on pic.pricecharting_id = pc.external_id
     left join pricecharting_cache_entries pce on pce.pricecharting_id = pc.external_id
-    where ii.storefront_published = true and ii.active = true and ii.inventory_status = 'available' and cp.price_ars > 0
+    where ($2::uuid[] is null or ii.id = any($2::uuid[]))
+      and ii.storefront_published = true and ii.active = true and ii.inventory_status = 'available' and cp.price_ars > 0
       and ii.quantity_on_hand - ii.quantity_reserved - greatest(0, coalesce(assigned.remaining, 0) - coalesce(assigned_orders.reserved, 0)) > 0
       and not exists (
         select 1 from claim_cards cc join claim_sessions cs on cs.id = cc.claim_id and cs.business_id = cc.business_id and cs.status = 'open'
@@ -55,7 +56,7 @@ export async function listStoreCatalog(db: PGlite, query: Partial<StoreCatalogQu
         )
       )
     order by p.name, ii.id
-  `, [businessSlug]);
+  `, [businessSlug, inventoryItemIds || null]);
   const classifications = await classifyCatalogReferences(db, rows.rows.map(row => ({ name: String(row.name), expansion: String(row.expansion), number: String(row.card_number), priceChartingId: String(row.pricecharting_id), languageGroup: ({ EN: "english", JA: "japanese", JP: "japanese", CHS: "chinese", CH: "chinese", CN: "chinese", ZH: "chinese" } as Record<string, string>)[String(row.language).toUpperCase()] })));
   const items: StoreCatalogItem[] = rows.rows.map((row, index): StoreCatalogItem => {
     const cardType = isCardType(row.card_type_override) ? row.card_type_override : classifications[index].cardType;
