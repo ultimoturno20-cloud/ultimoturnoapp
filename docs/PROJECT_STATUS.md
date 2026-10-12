@@ -10,7 +10,11 @@ Actualizado: 2026-10-12
 - Busqueda en filas inspirada en la referencia CoolStuff, conservando identidad
   negro/carbon/rojo: imagen completa pequena, nombre/numero/edicion, idioma/acabado
   y opciones de condicion con precio, disponibilidad y selector de cantidad.
-  Busqueda abre lista por defecto y omite banner; grilla sigue disponible.
+  Catalogo y busqueda abren lista por defecto; al buscar se omite banner.
+  Grilla sigue disponible solo por eleccion explicita (view=grid).
+  Corregida la entrega inicial que dejaba el catalogo sin query en grilla.
+  QA de correccion: portada sin parametros, reload, borrar busqueda y view
+  invalida en filas; grilla explicita conservada. Chrome siete anchos, sin writes.
   Lista ocupa ancho completo con filtros en dialogo tambien en escritorio.
 - Agrupado exclusivamente visual de coincidencias exactas del DTO publico,
   salvo condicion/precio/cantidad/ID, que se conservan por oferta. Idioma,

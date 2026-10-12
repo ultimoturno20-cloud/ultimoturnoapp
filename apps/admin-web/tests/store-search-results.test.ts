@@ -19,8 +19,9 @@ test('folders remain unique and grouping preserves incoming sort and offer order
   const third={...item,id:'33333333-3333-4333-8333-333333333333',name:'Another card'};
   const groups=groupStoreSearchResults([other,third,item]);assert.deepEqual(groups.map(group=>group.item.id),[other.id,third.id]);assert.deepEqual(groups[0].offers.map(offer=>offer.id),[other.id,item.id]);
 });
-test('search defaults to list while explicit views survive and unknown values are not trusted',()=>{
-  assert.equal(resolveStoreResultView(' Hilda ',null),'list');assert.equal(resolveStoreResultView(' ',null),'grid');assert.equal(resolveStoreResultView('Hilda','grid'),'grid');assert.equal(resolveStoreResultView('','list'),'list');
+test('catalog and search default to list while explicit views survive and unknown values are not trusted',()=>{
+  assert.equal(resolveStoreResultView(null),'list');assert.equal(resolveStoreResultView('grid'),'grid');assert.equal(resolveStoreResultView('list'),'list');
+  assert.equal(resolveStoreResultView(readStoreResultView(null)),'list');assert.equal(resolveStoreResultView(readStoreResultView('invalid')),'list');
   assert.equal(readStoreResultView('grid'),'grid');assert.equal(readStoreResultView('list'),'list');assert.equal(readStoreResultView('admin'),null);assert.equal(readStoreResultView(null),null);
 });
 test('condition labels expand known codes and retain unknown source values',()=>{

@@ -29,7 +29,8 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
-- Busqueda en lista entregada: al escribir, filas comparables y banner oculto;
+- Catalogo y busqueda en lista por defecto, sin exigir escribir primero.
+  Al buscar, filas comparables y banner oculto;
   cantidad por condicion y lapiz admin por oferta. Grilla sigue seleccionable.
   Filtros de lista en dialogo, incluso en escritorio; eleccion de vista en URL.
 - Mantener agrupado solo visual/exacto y IDs/precios/stock por condicion.

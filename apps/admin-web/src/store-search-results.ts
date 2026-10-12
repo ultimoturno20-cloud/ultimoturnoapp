@@ -2,7 +2,7 @@ import type { StoreCatalogItem } from "@ultimoturno/domain";
 
 export type StoreResultView = "grid" | "list";
 export const readStoreResultView = (value: string | null): StoreResultView | null => value === "grid" || value === "list" ? value : null;
-export const resolveStoreResultView = (query: string, choice: StoreResultView | null): StoreResultView => choice || (query.trim() ? "list" : "grid");
+export const resolveStoreResultView = (choice: StoreResultView | null): StoreResultView => choice || "list";
 export const storeConditionLabel = (condition: string) => ({ NM: "Near Mint", LP: "Lightly Played", MP: "Moderately Played", HP: "Heavily Played", DMG: "Damaged" } as Record<string,string>)[condition] || condition;
 
 export type StoreResultGroup = { key: string; item: StoreCatalogItem; offers: StoreCatalogItem[] };

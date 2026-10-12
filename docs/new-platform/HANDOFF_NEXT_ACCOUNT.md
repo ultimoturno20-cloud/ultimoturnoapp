@@ -10,9 +10,13 @@ Solo frontend, sin API/DTO/migraciones/dependencias ni escrituras productivas.
 store-search-list.tsx muestra filas de ancho completo con bandas alternadas,
 foto completa 118x165 desktop/82x115 movil, nombre/numero/edicion y metadata
 publica. Filtros en dialogo en lista, sidebar solo en grilla desktop.
-Search sin banner y encabezado compacto; query no vacia elige lista salvo
-override manual. view=grid/list queda en URL y reload/popstate lo recuperan.
+Catalogo y busqueda eligen lista por defecto salvo override manual: corregida
+la primera entrega que seguia en grilla sin query. Search sin banner y encabezado
+compacto. view=grid/list queda en URL y reload/popstate lo recuperan.
 Input conserva espacios mientras se escribe; API recibe query normalizada.
+Correccion de vista inicial verificada con .work/store-default-view-qa.mts:
+raiz sin query/view, reload, limpiar busqueda y view invalida eligen lista;
+grid explicito conserva eleccion. Chrome siete anchos, GET solamente.
 
 store-search-results.ts agrupa solo coincidencias EXACTAS de nombre/edicion/
 numero/idioma/acabado/grading/imagen/tipo/categoria. No recorta nombres ni

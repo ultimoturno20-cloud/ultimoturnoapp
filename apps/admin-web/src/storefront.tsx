@@ -51,7 +51,7 @@ function Storefront() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [selected, setSelected] = useState<StoreCatalogItem | null>(null);
   const [viewOverride, setView] = useState<StoreResultView|null>(()=>readStoreResultView(new URLSearchParams(window.location.search).get("view")));
-  const view=resolveStoreResultView(query.query,viewOverride);
+  const view=resolveStoreResultView(viewOverride);
   const searchTerm=query.query.trim();
   const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 900px)").matches);
   const compactFilters=narrow||view==="list";
