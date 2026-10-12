@@ -29,6 +29,8 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- La tienda ya usa la gama negra/carbon/roja del panel. Mantener esta identidad
+  en futuras pantallas de carrito/checkout, sin oscurecer las imagenes reales.
 - Separacion entregada: tienda en `/` y panel/login en `/admin`. Todas las
   secciones usan `/admin/...`; Configuracion es `/admin/configuracion`.
   Enlaces anteriores redirigen, y la app instalada inicia dentro de admin.

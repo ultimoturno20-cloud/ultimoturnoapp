@@ -7,6 +7,11 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Tienda alineada con la paleta vigente del panel: negro, superficies carbon,
+  acentos rojos y texto claro. Controles nativos en modo oscuro, foco visible,
+  precios legibles e imagenes sin filtros. Cambio solo visual, sin alterar
+  publicacion, stock, precios ni API. QA Chrome en seis anchos, contraste de
+  textos >= 4.5:1 y 35 pruebas de interfaz/catalogo, lint/tipos/build web correctos.
 - Primera entrega de tienda: `/` muestra el catalogo publico con imagenes,
   precios ARS, variantes, busqueda, filtros, paginacion y detalle. No hay carrito,
   checkout ni pagos online habilitados. No lee la sesion administrativa ni

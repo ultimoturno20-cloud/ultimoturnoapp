@@ -1,5 +1,18 @@
 # Traspaso de contexto - UltimoTurno
 
+## Paleta de tienda - 2026-10-12
+
+storefront.css usa los valores efectivos de la capa Everyday polish de styles.css:
+bg #08080a, surface #121216, surface-2 #18181d, border #2c2c34, text #f5f5f6,
+muted #b0b0b8, accent #e82a40 y accent-2 #ff4b61. Variables locales --shop-*;
+no importar estilos/bundle privado en la raiz publica. HTML color-scheme dark.
+Imagenes originales sin tintes/filtros; disponibilidad verde y foco rojo visible.
+Solo estilos/metadata, sin cambios de API/schema/logica ni escrituras de datos.
+QA Chrome con respuestas simuladas y bloqueo de escrituras: paleta comparada
+contra estilos computados del admin, textos >=4.5:1, seis anchos, estados
+vacio/error, imagenes, filtros/paginacion/dialogo. 35 tests y lint/tipos/build web.
+Scripts/capturas de QA en .work, fuera de Git.
+
 ## Catalogo publico y publicacion - 2026-10-12
 
 La raiz deja de ser apertura pendiente: index.html carga storefront.tsx/css,
