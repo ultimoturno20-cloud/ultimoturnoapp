@@ -29,6 +29,16 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Precios desde tienda: si ya ingresaste como admin, abrir `/` con el mismo
+  navegador; o usar Acceso admin (escudo) para ingresar con la cuenta existente.
+  El lapiz junto a disponibilidad o dentro de detalle edita el precio central:
+  ARS minimo 800/redondeo a 100 y USD al blue vigente, no una oferta independiente.
+  Guardar actualiza catalogo y panel de otra pestana. Cualquier admin del negocio
+  puede hacerlo; revendedores, duenos de stock y visitantes no tienen permiso.
+- Si otro admin cambio el precio, Recargar precio antes de guardar. Si la respuesta
+  quedo sin confirmar, Reintentar precio conserva el mismo valor esperado.
+  No altera cantidad/reservas ni ordenes existentes. Mantener pruebas de escritura
+  en bases temporales, nunca cambiar precios reales para verificar un deploy.
 - Carrito y pedido Web con pago manual entregados. Abrir `/admin/configuracion`
   > Tienda y pedidos web: completar instrucciones PUBLICAS de pago y contacto,
   definir retiro/envio y plazo de reserva; activar Aceptar pedidos web y guardar.

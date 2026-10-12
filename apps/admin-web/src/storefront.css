@@ -42,6 +42,27 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 .shop-currency span { display: grid; gap: 4px; }
 .shop-currency strong { font-size: 14px; color: var(--shop-text); }
 .shop-header-actions { display: flex; align-items: center; gap: 18px; }
+.shop-admin-access.active { color: var(--shop-available); border-color: var(--shop-available); }
+.shop-admin-dialog { width: min(420px,calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 20px; border: 1px solid var(--shop-border); border-radius: 7px; background: var(--shop-surface); color: var(--shop-text); }
+.shop-admin-dialog .shop-modal-heading { margin-bottom: 20px; }
+.shop-admin-form { display: grid; gap: 16px; }
+.shop-admin-form fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.shop-admin-form label { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.shop-admin-form input { width: 100%; min-width: 0; min-height: 42px; border: 1px solid var(--shop-border); border-radius: 5px; padding: 10px; background: var(--shop-bg); color: var(--shop-text); }
+.shop-admin-form .shop-primary-action { justify-content: center; }
+.shop-admin-account { display: grid; gap: 12px; }
+.shop-admin-account strong, .shop-price-item-name { overflow-wrap: anywhere; }
+.shop-admin-account a { text-decoration: none; }
+.shop-admin-problem { color: var(--shop-accent-2); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.shop-price-item-name { font-size: 15px; line-height: 1.4; margin: 0 0 16px; }
+.shop-price-preview { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; font-size: 13px; }
+.shop-price-preview output { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.shop-price-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.shop-price-editor-actions button { flex: 1; min-width: 140px; justify-content: center; margin: 0; }
+.shop-product-availability { display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 24px; }
+.shop-edit-price { width: 24px; height: 24px; border-color: transparent; background: transparent; }
+.shop-edit-price svg { width: 14px; height: 14px; }
+.shop-detail-price-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .shop-cart-button { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px; color: var(--shop-text); background: var(--shop-surface-2); border: 1px solid var(--shop-border); border-radius: 5px; font-size: 12px; }
 .shop-cart-button b { min-width: 20px; text-align: center; font-size: 11px; }
 .shop-product-actions { display: grid; grid-template-columns: minmax(0,1fr) 36px; gap: 6px; align-items: center; }
@@ -149,7 +170,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 .shop-product-copy > small { font-size: 10px; line-height: 14px; height: 14px; color: var(--shop-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .shop-product-price { display: grid; gap: 6px; padding: 12px 10px 10px; margin-top: auto; min-width: 0; container-type: inline-size; }
 .shop-product-price strong { font-size: clamp(14px, 10cqi, 20px); line-height: 1.3; overflow-wrap: anywhere; }
-.shop-product-price > span { font-size: 11px; color: var(--shop-available); }
+.shop-product-availability > span { font-size: 11px; color: var(--shop-available); }
 .shop-product-detail { margin-top: 2px; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 36px; padding: 8px; border: 1px solid var(--shop-border); border-radius: 5px; color: var(--shop-text); background: var(--shop-surface-2); font-size: 11px; }
 .shop-product-detail svg { width: 14px; height: 14px; }
 .shop-product-detail:hover:not(:disabled) { color: var(--shop-accent-2); border-color: var(--shop-accent); }
@@ -197,6 +218,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .8); }
 .shop-modal-heading h2 { margin: 0; font-size: 20px; }
 .shop-apply-filters { width: 100%; margin-top: 20px; }
 @media (max-width: 1100px) {
+  .shop-header-actions .shop-currency { display: none; }
+  .shop-header-actions { gap: 8px; }
   .shop-header-inner { grid-template-columns: 235px minmax(0, 1fr) auto; gap: 20px; }
   .shop-hero { background-position: right center; }
   .shop-catalog-layout { grid-template-columns: 200px minmax(0, 1fr); gap: 24px; }

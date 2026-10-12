@@ -18,6 +18,7 @@ import "./operational-workspace.css";
 import { adminViewPaths as viewPaths, adminViewFromUrl, isAdminPath, isResellerPortalPath, type AdminView as View } from "./admin-routing.js";
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
 import { StoreSettingsPanel } from "./store-settings.js";
+import { storePriceChangeKey } from "./store-admin-state.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -1406,19 +1407,41 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  useEffect(()=>{
+    const changed=(event:StorageEvent)=>{
+      if(event.key===adminSessionTokenKey||event.key===null){revalidatedApiCache.clear();window.location.reload();}
+    };
+    window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);
+  },[]);
+
   useEffect(() => {
     if (!initialLoadComplete || accessRequired) return;
+    let priceChanged = false;
+    let priceReloading = false;
     const sync = () => {
       if (document.visibilityState !== "visible") return;
+      if (priceReloading) return;
+      if (priceChanged) {
+        priceChanged=false;priceReloading=true;
+        void (async()=>{
+          await viewRefreshRequests.current.get(view)?.catch(()=>undefined);
+          revalidatedApiCache.clear();
+          setStock(await api<{summary:StockSummary;items:StockRow[]}>("/stock?fresh=1"));
+        })().catch(()=>{priceChanged=true;}).finally(()=>{priceReloading=false;});
+        return;
+      }
       void refreshViewData(view).catch(() => undefined);
     };
     const interval = window.setInterval(sync, 15000);
     const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
+    const onPriceChange = (event:StorageEvent) => { if(event.key===storePriceChangeKey){priceChanged=true;revalidatedApiCache.clear();sync();} };
     window.addEventListener("focus", sync);
+    window.addEventListener("storage", onPriceChange);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", sync);
+      window.removeEventListener("storage", onPriceChange);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [accessRequired, initialLoadComplete, view]);

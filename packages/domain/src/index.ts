@@ -2,6 +2,7 @@ export { defaultStoreCatalogQuery, normalizeStoreCatalogQuery, storeCatalogPage,
 export type { StoreCatalogItem, StoreCatalogQuery, StoreCatalogPage, StoreCategory } from "./store-catalog.js";
 export { defaultStoreSettings } from "./store-checkout.js";
 export type { StoreSettings, StoreOrderInput, StoreOrderReceipt } from "./store-checkout.js";
+export type { StoreAdminSession, StoreAdminPrice } from "./store-admin.js";
 
 export type Business = {
   id: string;

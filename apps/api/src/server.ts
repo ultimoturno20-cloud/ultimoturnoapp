@@ -8,6 +8,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import {
   listStoreCatalog,
   setStorefrontPublication,
+  getStoreAdminPrice, updateStoreAdminPrice,
   getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders,
   registerTournamentAccount, loginTournamentAccount, getTournamentAccount, logoutTournamentAccount,
   listSpaceTournaments, getSpaceTournament, createSpaceTournament, commandSpaceTournament,
@@ -198,7 +199,8 @@ const dbPromise = createOperationalDatabase({
   poolMax: databasePoolMax
 });
 
-async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: string): Promise<StockReadResult> {
+async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: string, fresh = false): Promise<StockReadResult> {
+  if (fresh) return rememberStockSnapshot(businessId, await listStockForBusiness(db, businessId));
   const now = Date.now();
   const cached = stockReadCache.get(businessId);
   if (cached && cached.expiresAt > now) return cached.result;
@@ -4065,6 +4067,39 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       sendJson(response, 201, { receipt }); return;
     }
 
+    if (url.pathname.startsWith("/store-admin/")) {
+      response.setHeader("Cache-Control", "private, no-store");
+      const storeDb=await dbPromise;
+      let token=bearerToken(request);
+      let createdSession=false;
+      if(url.pathname==="/store-admin/login" && request.method==="POST") {
+        const input=await readJson<{email:string;password:string}>(request,4096).catch(error=>{if(error instanceof SyntaxError)throw Object.assign(new Error("Datos de acceso invalidos."),{statusCode:400});throw error;});
+        if(!input || typeof input.email!=="string" || input.email.length>254 || typeof input.password!=="string" || !input.password || input.password.length>128) throw Object.assign(new Error("Datos de acceso invalidos."), {statusCode:400});
+        token=(await loginUser(storeDb,input.email.trim(),input.password,clientIp(request))).token;
+        createdSession=true;
+      }
+      const actor=await getAuthenticatedUserContext(storeDb,token);
+      if(!actor) {
+        if(createdSession)await logoutUser(storeDb,token);
+        throw Object.assign(new Error("Sesion vencida. Ingresa como admin."), {statusCode:401});
+      }
+      const business=await storeDb.query<{slug:string}>("select slug from businesses where id=$1",[actor.businessId]);
+      if(!actor.roles.includes("admin") || business.rows[0]?.slug!=="ultimoturno") {
+        if(createdSession)await logoutUser(storeDb,token);
+        throw Object.assign(new Error("Se requiere una cuenta admin de esta tienda."),{statusCode:403});
+      }
+      if(createdSession){sendJson(response,200,{token,admin:{displayName:actor.displayName}});return;}
+      if(url.pathname==="/store-admin/session" && request.method==="GET"){sendJson(response,200,{admin:{displayName:actor.displayName}});return;}
+      const priceMatch=url.pathname.match(/^\/store-admin\/items\/([^/]+)\/price$/);
+      if(priceMatch && request.method==="GET"){sendJson(response,200,{price:await getStoreAdminPrice(storeDb,priceMatch[1],actor)});return;}
+      if(priceMatch && request.method==="PUT") {
+        const input=await readJson<Parameters<typeof updateStoreAdminPrice>[2]>(request,4096).catch(error=>{if(error instanceof SyntaxError)throw Object.assign(new Error("Precio de venta invalido."),{statusCode:400});throw error;});
+        const price=await updateStoreAdminPrice(storeDb,priceMatch[1],input,actor,(await getBlueExchangeRate()).sell);
+        stockReadCache.delete(actor.businessId);sendJson(response,200,{price});return;
+      }
+      sendJson(response,405,{error:"Operacion admin de tienda no disponible."});return;
+    }
+
     if (url.pathname === "/image-proxy" && request.method === "GET") {
       await proxyAllowedImage(response, url.searchParams.get("url") || "");
       return;
@@ -4412,7 +4447,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/stock" && request.method === "GET") {
-      const stock = user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId);
+      const stock = user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId, url.searchParams.get("fresh")==="1");
       sendRevalidatedJson(response, revalueInventoryFolders(stock, (await getBlueExchangeRate()).sell));
       return;
     }

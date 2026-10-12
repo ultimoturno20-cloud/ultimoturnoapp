@@ -5278,6 +5278,41 @@ export async function setInventoryPurchaseCosts(db: PGlite, input: { percentOfSa
   return { updated: result.rows.length, skipped: 0 };
 }
 
+export async function getStoreAdminPrice(db: PGlite, inventoryItemId: string, actor: AuthenticatedUser) {
+  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere una cuenta admin."), { statusCode: 403 });
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inventoryItemId)) throw Object.assign(new Error("Articulo invalido."), { statusCode: 400 });
+  const result = await db.query<{ id: string; name: string; price_ars: string; price_usd: string | null }>(`
+    select ii.id, p.name, cp.price_ars, cp.price_usd from inventory_items ii
+    join businesses b on b.id=ii.business_id and b.slug='ultimoturno'
+    join card_products p on p.id=ii.product_id and p.business_id=ii.business_id
+    join current_prices cp on cp.inventory_item_id=ii.id and cp.business_id=ii.business_id
+    where ii.id=$1 and ii.business_id=$2 and ii.active=true and ii.storefront_published=true and ii.inventory_status='available'
+  `, [inventoryItemId, actor.businessId]);
+  const row=result.rows[0];
+  if (!row) throw Object.assign(new Error("El articulo ya no esta publicado o no pertenece a esta tienda."), { statusCode: 404 });
+  return { id: row.id, name: row.name, priceArs: Number(row.price_ars || 0), priceUsd: row.price_usd===null?null:Number(row.price_usd) };
+}
+
+export async function updateStoreAdminPrice(db: PGlite, inventoryItemId: string, input: { priceArs: number; expectedPriceArs: number }, actor: AuthenticatedUser, blueRateSell: number) {
+  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere una cuenta admin."), { statusCode: 403 });
+  if (!input || typeof input.priceArs!=="number" || !Number.isFinite(input.priceArs) || input.priceArs<800 || input.priceArs>9999999900 || typeof input.expectedPriceArs!=="number" || !Number.isFinite(input.expectedPriceArs) || input.expectedPriceArs<0) throw Object.assign(new Error("Precio de venta invalido."), { statusCode: 400 });
+  if (!Number.isFinite(blueRateSell) || blueRateSell<=0) throw Object.assign(new Error("Cotizacion no disponible."), { statusCode: 503 });
+  const priceArs=normalizeSalePriceArs(input.priceArs), priceUsd=Math.round(priceArs/blueRateSell*100)/100;
+  if (priceUsd>9999999999.99) throw Object.assign(new Error("Cotizacion no disponible."), { statusCode: 503 });
+  return inventoryTransaction(db, async connection=>{
+    // Mismo orden de locks que checkout: stock y precio, sin reenviar cantidades.
+    await getStoreAdminPrice(connection,inventoryItemId,actor);
+    await connection.query("select ii.id from inventory_items ii join current_prices cp on cp.inventory_item_id=ii.id and cp.business_id=ii.business_id where ii.id=$1 and ii.business_id=$2 for update of ii,cp",[inventoryItemId,actor.businessId]);
+    const current=await getStoreAdminPrice(connection,inventoryItemId,actor);
+    if (current.priceArs===priceArs) return current;
+    if (Math.round(current.priceArs*100)!==Math.round(input.expectedPriceArs*100)) throw Object.assign(new Error("Otro admin cambio este precio. Recargalo antes de guardar."), { statusCode: 409 });
+    await connection.query("update current_prices set price_ars=$1,price_usd=$2,manual_override=true,updated_at=now() where inventory_item_id=$3 and business_id=$4",[priceArs,priceUsd,inventoryItemId,actor.businessId]);
+    await connection.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz where business_id=$1",[actor.businessId]);
+    await writeAudit(connection,actor,"inventory.store_price.update","inventory_item",inventoryItemId,current,{priceArs,priceUsd});
+    return {...current,priceArs,priceUsd};
+  });
+}
+
 export async function updateInventoryItemTags(
   db: PGlite,
   inventoryItemId: string,

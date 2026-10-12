@@ -7,6 +7,25 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Edicion de precio central desde tienda entregada: cualquier cuenta admin de
+  UltimoTurno usa su sesion existente o ingresa desde Acceso admin (escudo).
+  Un lapiz en tarjeta y detalle abre un editor compacto independiente; no
+  cambia el alto de filas ni requiere ir al panel. El visitante no ve el lapiz.
+- API privada minima /store-admin: solo token individual vigente y rol admin
+  del negocio, nunca clave compartida legacy ni roles declarados en navegador.
+  Actualiza current_prices ARS/USD con cotizacion blue, minimo 800 y redondeo
+  hacia arriba a 100 ARS. Guarda override manual y auditoria con el admin real.
+  No cambia cantidades, reservas, costos, publicacion ni precios de ordenes previas.
+- Control de precio esperado evita pisar cambios de otro admin; ante conflicto
+  Recargar precio y decidir nuevamente. Reintento de respuesta perdida no duplica
+  cambios/auditoria. Invalida snapshots/cache; panel de otra pestana refresca stock
+  con /stock?fresh=1. Inicio/cierre de sesion tambien se comparte entre pestanas.
+  Sin token guardado, tienda no consulta API privada. Carrito sigue independiente.
+- QA precios Web: 189 tests completos, nueve focalizados nuevos, lint/tipos/build.
+  Chrome + API/base temporales en siete anchos: dos admins, edicion central,
+  sincronizacion con panel, conflicto, respuesta perdida, vuelta al detalle,
+  logout/expiracion y rechazo de no-admin/clave legacy. Cero escrituras de prueba
+  en produccion. Sin migraciones ni cambios a configuracion de checkout.
 - Carrito y checkout Web con pago manual implementados, sin cuenta obligatoria.
   Agregar desde tarjeta/detalle, cambiar cantidades, actualizar precios/stock,
   cargar nombre/email/telefono y retiro o envio a coordinar. Envio cotizado
@@ -78,10 +97,10 @@ Actualizado: 2026-10-12
   precios legibles e imagenes sin filtros. Cambio solo visual, sin alterar
   publicacion, stock, precios ni API. QA Chrome en seis anchos, contraste de
   textos >= 4.5:1 y 35 pruebas de interfaz/catalogo, lint/tipos/build web correctos.
-- Primera entrega de tienda: `/` muestra el catalogo publico con imagenes,
-  precios ARS, variantes, busqueda, filtros, paginacion y detalle. No hay carrito,
-  checkout ni pagos online habilitados. No lee la sesion administrativa ni
-  consulta API privada, aun con una sesion guardada.
+- Primera entrega de tienda (historica): `/` agrego catalogo publico con imagenes,
+  precios ARS, variantes, busqueda, filtros, paginacion y detalle. Carrito,
+  checkout manual y acceso admin opcional se agregaron despues, como se indica
+  al inicio de esta seccion. No hay cobro automatico.
 - Inventario permite Publicar en tienda desde Detalles o por seleccion, solo
   para administradores. Todos los items existentes y nuevos empiezan ocultos.
   La bandera Web habilitada no garantiza visibilidad: exige estado Disponible,

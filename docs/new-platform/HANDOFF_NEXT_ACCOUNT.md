@@ -1,5 +1,51 @@
 # Traspaso de contexto - UltimoTurno
 
+## Admin y precio central desde tienda - 2026-10-12
+
+Pedido explicito del usuario: cualquier admin logueado debe editar precios desde
+la Web sin ir/volver al panel. Esta seccion reemplaza las afirmaciones historicas
+de que raiz nunca lee una sesion ni llama API privada aun con token guardado.
+Anonimo sigue sin API privada, login obligatorio ni bundle/PWA administrativo.
+Carrito/checkout no usa privilegios staff ni cambia sus endpoints publicos.
+
+store-admin-state.ts lee solo el token opaco de ultimoturno_admin_session,
+compartido con panel. useStoreAdmin valida GET /store-admin/session en servidor,
+focus/storage/cada 15 s visible. Sin token no hace llamadas privadas. Roles no
+se confian al localStorage. 401 limpia sesion coincidente; 403 oculta controles
+sin eliminar sesion del owner/revendedor. Storage comunica login/logout a panel.
+POST /store-admin/login reutiliza cuentas y limites persistentes existentes;
+revoca nueva sesion si no corresponde al rol admin y negocio ultimoturno.
+
+GET/PUT /store-admin/items/:id/price exigen Bearer individual vigente, admin y
+negocio, sin fallback a clave legacy. DTO permitido id/name/priceArs/priceUsd,
+Cache-Control private/no-store y body limitado a 4 KB. Edita solo item activo,
+publicado y available del negocio. JSON invalido 400; permisos 401/403.
+Solo current_prices cambia: ARS minimo 800/redondeo100 y USD calculado con blue
+de servidor; manual_override=true. Inventario, cantidades, propietarios, costos,
+etiquetas, publicacion y lineas de ventas/reservas existentes quedan intactos.
+
+inventoryTransaction bloquea ii/current_prices como checkout; compara
+expectedPriceArs bajo lock, conflicto409 sin pisar otro admin. Reintento cuyo
+precio objetivo ya es actual devuelve resultado sin segundo audit ni recalculo.
+Audita inventory.store_price.update con actor real, expira stock_read_snapshots
+y cache del proceso. No hay migracion. El admin escucha aviso sin secretos por
+storage y pide /stock?fresh=1 tras esperar refrescos pendientes: evita cache
+de instancia/snapshot viejo. Cambio de sesion recarga panel para no mezclar cuentas.
+
+StoreAdminAccess muestra escudo en encabezado, nombre/acceso panel/logout o login
+opcional staff. StoreEditPriceButton lapiz compacto junto a disponibilidad y en
+detalle; StorePriceEditor modal aislado, precio final visible, conflicto/recarga
+y reintento ambiguo con draft congelado. Cerrar vuelve al detalle de origen.
+Actualiza catalogo y carrito propio salvo checkout pendiente ambiguo; servidor
+rechaza cotizacion vieja en checkout. No cambia ajustes ni habilita pedidos.
+
+QA: 189 tests completos (9 nuevos), lint/tipos/build; Chrome HTTP con API/PGlite
+temporales en .work/store-admin-browser-test.mts, siete anchos 320..1788.
+Dos admins, reuse/login/logout/expiracion, precio central y refresh panel,
+conflicto/recarga, respuesta perdida sin duplicar, retorno detalle, no-admin
+y clave legacy rechazados, cantidades intactas. Capturas/fixtures ignorados.
+No login, precios, ordenes ni publicaciones de prueba en produccion.
+
 ## Carrito y pedidos Web con pago manual - 2026-10-12
 
 0062_store_checkout.sql agrega store_settings (enabled false por defecto),
