@@ -20,12 +20,31 @@
 - Detalles: `docs/new-platform/TOURNAMENTS.md`.
 
 
-Actualizado: 2026-10-10
+Actualizado: 2026-10-11
 
 > Las prioridades vigentes estan en esta primera seccion. El plan del
 > 2026-09-11 se conserva debajo como referencia historica.
 
 ## Prioridades vigentes
+
+### Tienda publica y separacion del admin
+
+- Separacion entregada: tienda en `/` y panel/login en `/admin`. Todas las
+  secciones usan `/admin/...`; Configuracion es `/admin/configuracion`.
+  Enlaces anteriores redirigen, y la app instalada inicia dentro de admin.
+  Abrirla con internet para retirar la cache global anterior. Torneos y portal
+  de revendedores mantienen sus propios espacios y accesos.
+- La raiz solo muestra apertura pendiente. Catalogo, carrito y checkout publico
+  siguen sin implementar; no presentar esta entrega como ecommerce habilitado.
+- Siguiente alcance: decidir pago manual o automatico, habilitacion explicita
+  de articulos y DTO publico sin costos, propietarios ni datos de compradores.
+- Antes del claim, evitar ofrecer simultaneamente sus mismas unidades: el
+  flujo actual reserva al cerrar y puede agregar faltantes. Primera tienda
+  debe excluir articulos del claim activo o coordinar disponibilidad de forma
+  transaccional. No publicar automaticamente toda la base de inventario.
+- Checkout necesita precios/stock validados en servidor, idempotencia, limite
+  de abuso y vencimiento/liberacion de reservas. Probar concurrencia en base
+  temporal; nunca crear compras o claims ficticios en produccion.
 
 ### Consistencia visual y vistas operativas
 

@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#08080a" />
     <meta name="color-scheme" content="dark" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="UltimoTurno" />
-    <meta name="description" content="Inventario, ventas, ordenes y consignacion de UltimoTurno." />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="description" content="Tienda de cartas y productos de UltimoTurno." />
+    <meta name="robots" content="noindex" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/app-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <title>UltimoTurno</title>
+    <title>UltimoTurno | Tienda</title>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <main class="storefront-shell">
+      <header class="storefront-header"><img src="/brand/ultimo-turno-logo.jpeg" width="48" height="48" alt="" /><h1>UltimoTurno</h1><span>Tienda</span></header>
+      <section class="storefront-status" aria-labelledby="storefront-title"><span class="storefront-state">Apertura pendiente</span><h2 id="storefront-title">El catalogo estara disponible proximamente.</h2><p>Las compras online todavia no estan habilitadas.</p></section>
+      <footer>UltimoTurno</footer>
+    </main>
+    <script type="module" src="/src/storefront.ts"></script>
   </body>
 </html>

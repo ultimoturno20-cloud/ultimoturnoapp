@@ -1,11 +1,30 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-10
+Actualizado: 2026-10-11
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
 ## Resumen vigente
+
+- Separacion de accesos: `/` sirve un documento publico independiente para
+  la tienda. Por ahora muestra apertura pendiente, sin catalogo ni checkout,
+  sin login administrativo y sin consultar API privada, aun con sesion guardada.
+- Panel/login en `/admin`; secciones en `/admin/inventario`, `/admin/ordenes`,
+  `/admin/claims`, `/admin/caja`, `/admin/compras`, etc. Configuracion se mueve
+  de `/admin` a `/admin/configuracion`. Enlaces internos usan estas rutas.
+  Marcadores anteriores redirigen conservando query; `/tienda` lleva a `/`.
+- Portal de revendedores conserva `/portal-revendedor` y vuelve a su propio
+  login al salir. Torneos sigue independiente en `/torneos`. No cambian cuentas,
+  sesiones, permisos de API ni datos. Conocer `/admin` no evita autenticacion.
+- PWA administrativa inicia y funciona offline dentro de `/admin`, sin usar
+  ese shell para la tienda ni Torneos. Se retiran worker/cache globales antiguos;
+  abrir una vez con internet permite actualizar instalaciones anteriores.
+- QA: 32 tests frontend, lint/tipos/build; Chrome con compilacion de produccion
+  local verifica 15 rutas, raiz sin llamadas privadas, login/navegacion/roles,
+  marcadores, ficha recuperada y offline. API de produccion devuelve 401 para
+  stock/ordenes/claims sin credenciales. Regresiones de Inventario y vistas
+  operativas correctas; sin operaciones ficticias ni mutaciones en produccion.
 
 - Segunda entrega de consistencia operativa: Ordenes (tablero/lista), Caja y
   Compras reutilizan WorkspaceToolbar y recuperan sus filtros al recargar o

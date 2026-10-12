@@ -6,17 +6,42 @@
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
-      "source": "/manifest.webmanifest",
+      "source": "/admin/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/admin" }
+      ]
+    },
+    {
+      "source": "/admin/manifest.webmanifest",
       "headers": [
         { "key": "Content-Type", "value": "application/manifest+json" },
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     }
+  ],
+  "redirects": [
+    { "source": "/inicio", "destination": "/admin", "permanent": true },
+    { "source": "/inventario", "destination": "/admin/inventario", "permanent": true },
+    { "source": "/inventario/:path*", "destination": "/admin/inventario/:path*", "permanent": true },
+    { "source": "/ordenes", "destination": "/admin/ordenes", "permanent": true },
+    { "source": "/caja", "destination": "/admin/caja", "permanent": true },
+    { "source": "/claims", "destination": "/admin/claims", "permanent": true },
+    { "source": "/claims/:path*", "destination": "/admin/claims/:path*", "permanent": true },
+    { "source": "/compras", "destination": "/admin/compras", "permanent": true },
+    { "source": "/calidad", "destination": "/admin/calidad", "permanent": true },
+    { "source": "/movimientos", "destination": "/admin/movimientos", "permanent": true },
+    { "source": "/importar", "destination": "/admin/importar", "permanent": true },
+    { "source": "/carga-movil", "destination": "/admin/carga-movil", "permanent": true },
+    { "source": "/revendedores", "destination": "/admin/revendedores", "permanent": true },
+    { "source": "/admin/inicio", "destination": "/admin", "permanent": true },
+    { "source": "/admin.html", "destination": "/admin", "permanent": true },
+    { "source": "/tienda", "destination": "/", "permanent": true },
+    { "source": "/manifest.webmanifest", "destination": "/admin/manifest.webmanifest", "permanent": true }
   ],
   "rewrites": [
     { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
@@ -43,22 +68,23 @@
     { "source": "/api/imports/:path*", "destination": "/api/dispatch?path=/imports/:path*" },
     { "source": "/torneos", "destination": "/torneos.html" },
     { "source": "/torneos/", "destination": "/torneos.html" },
-    { "source": "/inicio", "destination": "/index.html" },
-    { "source": "/inventario", "destination": "/index.html" },
-    { "source": "/inventario/:path*", "destination": "/index.html" },
-    { "source": "/ordenes", "destination": "/index.html" },
-    { "source": "/caja", "destination": "/index.html" },
-    { "source": "/claims", "destination": "/index.html" },
-    { "source": "/claims/:path*", "destination": "/index.html" },
-    { "source": "/compras", "destination": "/index.html" },
-    { "source": "/calidad", "destination": "/index.html" },
-    { "source": "/movimientos", "destination": "/index.html" },
-    { "source": "/importar", "destination": "/index.html" },
-    { "source": "/carga-movil", "destination": "/index.html" },
-    { "source": "/revendedores", "destination": "/index.html" },
-    { "source": "/admin", "destination": "/index.html" },
-    { "source": "/portal-revendedor", "destination": "/index.html" },
-    { "source": "/portal-revendedor/:path*", "destination": "/index.html" }
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/", "destination": "/admin.html" },
+    { "source": "/admin/inventario", "destination": "/admin.html" },
+    { "source": "/admin/inventario/:path*", "destination": "/admin.html" },
+    { "source": "/admin/ordenes", "destination": "/admin.html" },
+    { "source": "/admin/caja", "destination": "/admin.html" },
+    { "source": "/admin/claims", "destination": "/admin.html" },
+    { "source": "/admin/claims/:path*", "destination": "/admin.html" },
+    { "source": "/admin/compras", "destination": "/admin.html" },
+    { "source": "/admin/calidad", "destination": "/admin.html" },
+    { "source": "/admin/movimientos", "destination": "/admin.html" },
+    { "source": "/admin/importar", "destination": "/admin.html" },
+    { "source": "/admin/carga-movil", "destination": "/admin.html" },
+    { "source": "/admin/revendedores", "destination": "/admin.html" },
+    { "source": "/admin/configuracion", "destination": "/admin.html" },
+    { "source": "/portal-revendedor", "destination": "/admin.html" },
+    { "source": "/portal-revendedor/:path*", "destination": "/admin.html" }
   ],
   "functions": {
     "api/[...path].ts": {

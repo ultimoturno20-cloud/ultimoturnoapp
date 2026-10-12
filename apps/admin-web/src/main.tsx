@@ -15,31 +15,15 @@ import "./inventory-layout.css";
 import { matchesOperationalPeriod, orderMatchesOperationalView, type OrderOperationalView } from "./operational-preferences.js";
 import { useOperationalPreferences } from "./use-operational-preferences.js";
 import "./operational-workspace.css";
+import { adminViewPaths as viewPaths, adminViewFromUrl, isAdminPath, isResellerPortalPath, type AdminView as View } from "./admin-routing.js";
+import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-type View = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 type ResellerPortalTab = "sell" | "orders" | "stock" | "global" | "sales";
-const viewPaths: Record<View, string> = {
-  dashboard: "/inicio",
-  inventory: "/inventario",
-  "stock-intake": "/inventario/cargar-stock",
-  claims: "/claims",
-  "claim-planner": "/claims/planificar",
-  "claim-live": "/claims/en-vivo",
-  orders: "/ordenes",
-  sales: "/caja",
-  purchases: "/compras",
-  catalog: "/calidad",
-  movements: "/movimientos",
-  import: "/importar",
-  "mobile-intake": "/carga-movil",
-  resellers: "/revendedores",
-  admin: "/admin"
-};
 const resellerPortalPaths: Record<ResellerPortalTab, string> = {
   sell: "/portal-revendedor/venta",
   orders: "/portal-revendedor/pedidos",
@@ -53,10 +37,7 @@ function stockOwnerViewAllowed(view: View) {
 }
 
 function viewFromLocation(): View {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("mobile") === "1" || window.location.hash === "#mobile") return "mobile-intake";
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  return (Object.entries(viewPaths).find(([, route]) => route === path)?.[0] as View | undefined) || "dashboard";
+  return adminViewFromUrl(new URL(window.location.href));
 }
 
 function resellerTabFromLocation(): ResellerPortalTab {
@@ -6877,7 +6858,7 @@ function ResellerPortal() {
     } catch (nextError) { setError(errorMessage(nextError)); }
     finally { setRequestSavingId(""); }
   }
-  async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); window.location.assign(viewPaths.dashboard); }
+  async function logout() { await api("/reseller/auth/logout", { token, method: "POST" }).catch(() => undefined); removeLocalStorage(resellerTokenKey); setToken(""); setDashboard(null); window.location.assign(resellerPortalPaths.sell); }
 
   function addToResellerCart(item: ResellerAssignment) {
     if (item.sellable <= 0) return;
@@ -11143,15 +11124,27 @@ function PwaRuntime() {
 }
 
 function Root() {
-  const resellerMode = window.location.pathname.startsWith("/portal-revendedor") || new URLSearchParams(window.location.search).get("revendedor") === "1" || window.location.hash === "#revendedor";
-  return <><PwaRuntime />{resellerMode ? <ResellerPortal /> : <App />}</>;
+  const resellerMode = isResellerPortalPath(window.location.pathname);
+  useEffect(() => {
+    if (resellerMode) {
+      document.title = "UltimoTurno | Revendedores";
+      document.querySelector('link[rel="manifest"]')?.remove();
+    }
+  }, [resellerMode]);
+  if (!resellerMode && !isAdminPath(window.location.pathname)) {
+    window.location.replace("/");
+    return null;
+  }
+  return <>{!resellerMode ? <PwaRuntime /> : null}{resellerMode ? <ResellerPortal /> : <App />}</>;
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(<Root />);
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+    void retireLegacyStockWorker().then(() => {
+      if (isAdminPath(window.location.pathname)) return navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin" });
+    }).catch(() => undefined);
   });
 }
 

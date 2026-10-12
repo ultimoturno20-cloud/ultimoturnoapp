@@ -1,5 +1,40 @@
 # Traspaso de contexto - UltimoTurno
 
+## Raiz publica y rutas privadas - 2026-10-11
+
+index.html + storefront.ts/css es un documento publico de apertura pendiente,
+sin React/admin, login, API privada ni lectura de sesion. No es una tienda
+operativa todavia. admin.html mantiene main.tsx: panel/login solo bajo /admin,
+settings en /admin/configuracion. admin-routing.ts centraliza los 15 paths,
+tipos y lectura de URL. Flags mobile/revendedor en la raiz no abren el panel.
+
+vercel.json conserva API/imagenes, redirige rutas privadas anteriores a su
+equivalente /admin y reescribe cada seccion hacia admin.html; no usa un catch-all
+que tape sw/manifest. Vite/preview reutilizan esas reglas de paginas y headers.
+Queries sobreviven a redirects; navegacion, roles y preferencias se mantienen.
+Portal conserva sus URLs y vuelve a su login al salir, sin instalar PWA admin.
+Torneos sigue en su HTML/espacio separado, sin cambios de logica o cuentas.
+
+public/admin/sw.js y manifest.webmanifest: scope/start_url /admin. El id /inicio
+del manifest se conserva solo como identidad de instalaciones existentes.
+El worker no maneja tienda, portal, Torneos ni API; cachea solo shell privado
+y archivos estaticos publicos. ignoreVary para esos assets evita misses del
+Vary: Origin de Vite preview, sin cachear datos personalizados.
+public/sw.js es un worker de retirada. legacy-stock-worker.ts desregistra solo
+el worker global antiguo y borra solo su cache; no borra sesiones/localStorage.
+Usuarios de instalaciones anteriores deben abrir una vez con internet.
+
+QA local sobre build: 15 rutas sin sesion, login profundo, Atrás/recarga,
+ficha con query, propietario restringido, logout y shell offline. Raiz sigue
+publica aun con sesion y no carga bundles/API admin. Chrome a 1440/768/390/320;
+32 tests frontend y lint/typecheck/build, QA anterior de Inventario/operaciones.
+GET anonimos a API de produccion stock/sales/claims devuelven 401. Mover URLs
+no reemplaza autenticacion; no se modifica backend ni se publican datos reales.
+
+Siguiente: ecommerce. Aun faltan DTO/publicacion, carrito y checkout seguro.
+El claim actual reserva al cerrar y puede agregar stock faltante: no habilitar
+sus mismas unidades en ambos canales sin exclusion/coordinacion transaccional.
+
 ## Consistencia operativa, segunda entrega - 2026-10-10
 
 Ordenes tablero/lista, Caja y Compras usan WorkspaceToolbar. Los archivos
