@@ -7,6 +7,27 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Busqueda en filas inspirada en la referencia CoolStuff, conservando identidad
+  negro/carbon/rojo: imagen completa pequena, nombre/numero/edicion, idioma/acabado
+  y opciones de condicion con precio, disponibilidad y selector de cantidad.
+  Busqueda abre lista por defecto y omite banner; grilla sigue disponible.
+  Lista ocupa ancho completo con filtros en dialogo tambien en escritorio.
+- Agrupado exclusivamente visual de coincidencias exactas del DTO publico,
+  salvo condicion/precio/cantidad/ID, que se conservan por oferta. Idioma,
+  acabado, grading, imagen y edicion diferentes no se fusionan. Carpetas unicas.
+  Agrupa solo la pagina actual; contador y paginacion cuentan variantes (36),
+  no grupos ni suma de unidades. No agrega rarezas, ratings ni notas inventadas.
+- Carrito admite cantidades multiples atomicas, sin exceder stock/99 por linea
+  ni 30 items. Cada condicion mantiene su ID y precio; pedido pendiente bloquea
+  edicion del intento como antes. Snapshot local sincrono evita pisar clicks.
+  Lapiz admin por oferta conserva el editor central y permisos existentes.
+- Vista explicita guarda view=grid/list en URL y se recupera con reload/Atras.
+  Se permite escribir nombres con espacios, normalizando solo al consultar API.
+  QA: 68 tests frontend/dominio, lint/tipos/build web; Chrome siete anchos,
+  condiciones agrupadas, cantidades/limites, detalle y precio de variante,
+  filtros, espacios, reload, paginacion, reduced-motion y vacio/error/reintento.
+  Checkout de tres unidades, pago y recuperacion probados en base/API temporales.
+  Sin cambios de API/DTO, migraciones, datos, publicaciones ni dependencias.
 - Pulido visual y movimiento de tienda: entrada breve/escalonada de cartas,
   banner y dialogos, hover solo con mouse, transiciones de foco/botones/filtros
   y scroll suave. Sin desplazar vecinos ni agrandar imagenes. Mantiene negro,

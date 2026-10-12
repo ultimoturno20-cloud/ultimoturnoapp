@@ -1,10 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ShoppingCart, X, Plus, Minus, Trash2, Check, RotateCcw } from "lucide-react";
 import { defaultStoreSettings, type StoreCatalogItem, type StoreCatalogPage, type StoreSettings, type StoreOrderInput, type StoreOrderReceipt } from "@ultimoturno/domain";
-import { readStoreCart, writeStoreCart, storeCartTotal, readPendingStoreOrder, pendingStoreOrderKey, type StoreCartLine } from "./store-cart-state.js";
+import { readStoreCart, writeStoreCart, storeCartTotal, readPendingStoreOrder, pendingStoreOrderKey, addStoreCartQuantity, type StoreCartLine } from "./store-cart-state.js";
 const money=new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:2,minimumFractionDigits:0});
 export function useStoreCart() {
-  const [lines,setLines]=useState<StoreCartLine[]>(()=>{try{return readStoreCart(localStorage);}catch{return [];}});
+  const [lines,updateLines]=useState<StoreCartLine[]>(()=>{try{return readStoreCart(localStorage);}catch{return [];}});
+  const currentLines=useRef(lines);
+  const setLines:React.Dispatch<React.SetStateAction<StoreCartLine[]>>=next=>{
+    // Snapshot sincronico para agregar varias unidades sin pisar otro click.
+    const value=typeof next==="function"?next(currentLines.current):next;
+    currentLines.current=value;updateLines(value);
+  };
   const [opened,setOpened]=useState(false),[notice,setNotice]=useState("");
   const [feedback,setFeedback]=useState<{id:string;version:number}|null>(null);
   const [pending,setPending]=useState<StoreOrderInput|null>(()=>{try{return readPendingStoreOrder(sessionStorage);}catch{return null;}});
@@ -13,14 +19,14 @@ export function useStoreCart() {
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),5000);return()=>clearTimeout(timer);},[notice]);
   useEffect(()=>{if(!feedback)return;const timer=setTimeout(()=>setFeedback(null),1000);return()=>clearTimeout(timer);},[feedback]);
   useEffect(()=>{const controller=new AbortController();fetch('/api/store/settings',{credentials:'omit',cache:'no-store',signal:controller.signal}).then(response=>{if(!response.ok)throw new Error();return response.json();}).then(setSettings).catch(()=>undefined);return()=>controller.abort();},[]);
-  function add(item:StoreCatalogItem){
-    if(pending){setFeedback(null);setNotice("Hay un pedido sin confirmar. Abri el carrito para recuperar el mismo envio.");setOpened(true);return;}
-    const current=lines.find(line=>line.item.id===item.id);
-    if(current && current.quantity>=Math.min(99,item.availableQuantity)){setFeedback(null);setNotice("Alcanzaste las unidades disponibles o el limite por articulo.");return;}
-    if(!current && lines.length>=30){setFeedback(null);setNotice("El carrito admite hasta 30 articulos distintos.");return;}
-    setLines(values=>current?values.map(line=>line.item.id===item.id?{item,quantity:line.quantity+1}:line):[...values,{item,quantity:1}]);
+  function add(item:StoreCatalogItem,quantity=1){
+    if(pending){setFeedback(null);setNotice("Hay un pedido sin confirmar. Abri el carrito para recuperar el mismo envio.");setOpened(true);return false;}
+    const result=addStoreCartQuantity(currentLines.current,item,quantity);
+    if(!result.ok){setFeedback(null);setNotice(result.error);return false;}
+    setLines(result.lines);
     setFeedback(previous=>({id:item.id,version:(previous?.version||0)+1}));
     setNotice(`${item.name} agregado al carrito.`);
+    return true;
   }
   return {lines,setLines,opened,setOpened,notice,setNotice,settings,add,pending,setPending,feedback,count:lines.reduce((sum,line)=>sum+line.quantity,0)};
 }

@@ -29,6 +29,13 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Busqueda en lista entregada: al escribir, filas comparables y banner oculto;
+  cantidad por condicion y lapiz admin por oferta. Grilla sigue seleccionable.
+  Filtros de lista en dialogo, incluso en escritorio; eleccion de vista en URL.
+- Mantener agrupado solo visual/exacto y IDs/precios/stock por condicion.
+  Contador/paginacion siguen contando variantes, no cartas agrupadas; ofertas
+  pueden quedar en paginas diferentes. No pedir datos privados para agrupar,
+  ni inventar rating/rareza/ilustrador cuando no existan en catalogo publico.
 - Pulido de movimiento entregado: entradas cortas, hover discreto, dialogos,
   carga y feedback del carrito. Mantener cartas compactas y dimensiones estables;
   no agregar efectos continuos al catalogo ni reordenar filas para animar.

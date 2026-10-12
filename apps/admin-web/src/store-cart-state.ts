@@ -1,5 +1,15 @@
 import type { StoreCatalogItem, StoreOrderInput } from "@ultimoturno/domain";
 export type StoreCartLine = { item: StoreCatalogItem; quantity: number };
+export function remainingStoreCartQuantity(lines: StoreCartLine[], item: StoreCatalogItem) {
+  return Math.max(0,Math.min(99,item.availableQuantity)-(lines.find(line=>line.item.id===item.id)?.quantity||0));
+}
+export function addStoreCartQuantity(lines: StoreCartLine[], item: StoreCatalogItem, quantity: number): {ok:true;lines:StoreCartLine[]}|{ok:false;error:string} {
+  if (!Number.isInteger(quantity) || quantity<1 || quantity>99) return {ok:false,error:"Cantidad invalida. Selecciona entre 1 y 99 unidades."};
+  if (quantity>remainingStoreCartQuantity(lines,item)) return {ok:false,error:"Alcanzaste las unidades disponibles o el limite por articulo."};
+  const current=lines.find(line=>line.item.id===item.id);
+  if (!current && lines.length>=30) return {ok:false,error:"El carrito admite hasta 30 articulos distintos."};
+  return {ok:true,lines:current?lines.map(line=>line.item.id===item.id?{item,quantity:line.quantity+quantity}:line):[...lines,{item,quantity}]};
+}
 export const storeCartKey = "ultimoturno.public-cart.v1";
 export const pendingStoreOrderKey = "ultimoturno.public-order.pending.v1";
 export function readPendingStoreOrder(storage: Pick<Storage,"getItem">): StoreOrderInput|null {

@@ -1,5 +1,43 @@
 # Traspaso de contexto - UltimoTurno
 
+## Busqueda en filas y cantidad por variante - 2026-10-12
+
+Referencia visual del usuario: busqueda CoolStuff con foto izquierda y opciones
+de condicion/precio/cantidad/carrito a derecha. Se adopta estructura, no colores
+claros/amarillos, ratings, favoritos, rareza ni notas sin datos reales.
+Solo frontend, sin API/DTO/migraciones/dependencias ni escrituras productivas.
+
+store-search-list.tsx muestra filas de ancho completo con bandas alternadas,
+foto completa 118x165 desktop/82x115 movil, nombre/numero/edicion y metadata
+publica. Filtros en dialogo en lista, sidebar solo en grilla desktop.
+Search sin banner y encabezado compacto; query no vacia elige lista salvo
+override manual. view=grid/list queda en URL y reload/popstate lo recuperan.
+Input conserva espacios mientras se escribe; API recibe query normalizada.
+
+store-search-results.ts agrupa solo coincidencias EXACTAS de nombre/edicion/
+numero/idioma/acabado/grading/imagen/tipo/categoria. No recorta nombres ni
+interpreta variantes por fuzzy matching. Condicion/precio/cantidad/ID quedan
+individuales en offers; carpeta incluye ID en key y permanece unica.
+Agrupado de pagina actual: paginacion/contador reales de 36 variantes, no
+grupos; distintas condiciones de una carta pueden ocupar paginas diferentes.
+
+StoreOfferRow conserva input por ID y abre detalle/precio de esa oferta, no
+del primer miembro del grupo. Lapiz solo admin verificado; endpoints iguales.
+Cantidad entera 1..min(stock,99) menos unidades ya en carrito. add(item,qty=1)
+usa addStoreCartQuantity atomico: no parcial ni mas de 30 items, conserva ID/
+precio actual y otras condiciones separadas. setLines mantiene ref sincronica
+para que clicks consecutivos no usen un snapshot anterior. Payload/reintentos/
+reservas/pago no cambian; intento ambiguo sigue bloqueando nuevos agregados.
+StoreImage compartido entre grilla, lista y detalle conserva carga/fallback.
+
+QA: 68 tests frontend/dominio (8 nuevos agrupado/vistas/condiciones/cantidades),
+lint/typecheck/build web. .work/store-search-qa.mts: Chrome siete anchos,
+ofertas agrupadas, cantidad multiple/limites/decimal, detalle LP, precio LP sin
+tocar NM, espacios, filtros, vista/reload, paginacion, reduced-motion/error.
+Screenshots inspeccionados. Checkout-browser-test con tres unidades tambien
+paso: orden/pago/recarga/reintento solo en base y API temporales. .work ignorado.
+No productos, precios, publicaciones ni pedidos ficticios en produccion.
+
 ## Pulido visual y movimiento de tienda - 2026-10-12
 
 Cambio solo frontend en storefront.css/tsx y store-cart.tsx, sin dependencias,
