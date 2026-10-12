@@ -7,6 +7,21 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Pulido visual y movimiento de tienda: entrada breve/escalonada de cartas,
+  banner y dialogos, hover solo con mouse, transiciones de foco/botones/filtros
+  y scroll suave. Sin desplazar vecinos ni agrandar imagenes. Mantiene negro,
+  carbon y rojo, grilla compacta y navegacion comercial.
+- Carrito confirma agregado con check temporal y contador; rechazos por limite
+  o pedido pendiente no muestran exito. Carga de catalogo/skeletons e imagenes
+  tiene feedback sin ocultar contenido permanentemente. Movimiento reducido
+  desactiva animaciones/transiciones/scroll suave, conservando estados visibles.
+- Controles de vista agrupados, navegacion con subrayado activo, separacion del
+  precio y cifras estables. Toolbar y acciones de carrito contenidas a 320 px.
+  QA: 60 tests frontend/dominio, lint/tipos/build web y Chrome siete anchos,
+  movimiento reducido, hover sin salto, foco/Escape, imagen fallida/cambiada,
+  carrito, filtros, lista y vacio/error/reintento. Checkout/Pago/Reintento
+  verificados contra base/API temporales. Cero escrituras de prueba en produccion;
+  sin cambios de API, datos, migraciones, configuracion ni dependencias.
 - Edicion de precio central desde tienda entregada: cualquier cuenta admin de
   UltimoTurno usa su sesion existente o ingresa desde Acceso admin (escudo).
   Un lapiz en tarjeta y detalle abre un editor compacto independiente; no

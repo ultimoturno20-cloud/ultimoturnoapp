@@ -29,6 +29,12 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Pulido de movimiento entregado: entradas cortas, hover discreto, dialogos,
+  carga y feedback del carrito. Mantener cartas compactas y dimensiones estables;
+  no agregar efectos continuos al catalogo ni reordenar filas para animar.
+- Respetar prefers-reduced-motion: estados de compra/carga siguen visibles
+  aunque animaciones, transiciones y scroll suave esten desactivados. Probar
+  ambos modos al extender tienda, teclado y 320 px incluidos.
 - Precios desde tienda: si ya ingresaste como admin, abrir `/` con el mismo
   navegador; o usar Acceso admin (escudo) para ingresar con la cuenta existente.
   El lapiz junto a disponibilidad o dentro de detalle edita el precio central:

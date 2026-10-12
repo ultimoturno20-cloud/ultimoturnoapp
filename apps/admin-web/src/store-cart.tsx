@@ -6,23 +6,26 @@ const money=new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maxim
 export function useStoreCart() {
   const [lines,setLines]=useState<StoreCartLine[]>(()=>{try{return readStoreCart(localStorage);}catch{return [];}});
   const [opened,setOpened]=useState(false),[notice,setNotice]=useState("");
+  const [feedback,setFeedback]=useState<{id:string;version:number}|null>(null);
   const [pending,setPending]=useState<StoreOrderInput|null>(()=>{try{return readPendingStoreOrder(sessionStorage);}catch{return null;}});
   const [settings,setSettings]=useState<StoreSettings>({...defaultStoreSettings});
   useEffect(()=>{try{writeStoreCart(localStorage,lines);}catch{/* Sin storage. */}},[lines]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),5000);return()=>clearTimeout(timer);},[notice]);
+  useEffect(()=>{if(!feedback)return;const timer=setTimeout(()=>setFeedback(null),1000);return()=>clearTimeout(timer);},[feedback]);
   useEffect(()=>{const controller=new AbortController();fetch('/api/store/settings',{credentials:'omit',cache:'no-store',signal:controller.signal}).then(response=>{if(!response.ok)throw new Error();return response.json();}).then(setSettings).catch(()=>undefined);return()=>controller.abort();},[]);
   function add(item:StoreCatalogItem){
-    if(pending){setNotice("Hay un pedido sin confirmar. Abri el carrito para recuperar el mismo envio.");setOpened(true);return;}
+    if(pending){setFeedback(null);setNotice("Hay un pedido sin confirmar. Abri el carrito para recuperar el mismo envio.");setOpened(true);return;}
     const current=lines.find(line=>line.item.id===item.id);
-    if(current && current.quantity>=Math.min(99,item.availableQuantity)){setNotice("Alcanzaste las unidades disponibles o el limite por articulo.");return;}
-    if(!current && lines.length>=30){setNotice("El carrito admite hasta 30 articulos distintos.");return;}
+    if(current && current.quantity>=Math.min(99,item.availableQuantity)){setFeedback(null);setNotice("Alcanzaste las unidades disponibles o el limite por articulo.");return;}
+    if(!current && lines.length>=30){setFeedback(null);setNotice("El carrito admite hasta 30 articulos distintos.");return;}
     setLines(values=>current?values.map(line=>line.item.id===item.id?{item,quantity:line.quantity+1}:line):[...values,{item,quantity:1}]);
+    setFeedback(previous=>({id:item.id,version:(previous?.version||0)+1}));
     setNotice(`${item.name} agregado al carrito.`);
   }
-  return {lines,setLines,opened,setOpened,notice,setNotice,settings,add,pending,setPending,count:lines.reduce((sum,line)=>sum+line.quantity,0)};
+  return {lines,setLines,opened,setOpened,notice,setNotice,settings,add,pending,setPending,feedback,count:lines.reduce((sum,line)=>sum+line.quantity,0)};
 }
 type Cart=ReturnType<typeof useStoreCart>;
-export function StoreCartButton({cart}:{cart:Cart}){return <button type="button" className="shop-cart-button" onClick={()=>cart.setOpened(true)} aria-label={`Carrito, ${cart.count} articulos`}><ShoppingCart aria-hidden="true"/><span>Carrito</span><b>{cart.count}</b></button>;}
+export function StoreCartButton({cart}:{cart:Cart}){return <button type="button" className="shop-cart-button" data-has-items={cart.count>0} onClick={()=>cart.setOpened(true)} aria-label={`Carrito, ${cart.count} articulos`}><ShoppingCart aria-hidden="true"/><span>Carrito</span><b key={cart.count}>{cart.count}</b></button>;}
 export function StoreCartDialog({cart}:{cart:Cart}){
   const dialog=useRef<HTMLDialogElement>(null),submitting=useRef(false);
   const [stage,setStage]=useState<'cart'|'checkout'>(cart.pending?'checkout':'cart'),[busy,setBusy]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState('');

@@ -1,5 +1,36 @@
 # Traspaso de contexto - UltimoTurno
 
+## Pulido visual y movimiento de tienda - 2026-10-12
+
+Cambio solo frontend en storefront.css/tsx y store-cart.tsx, sin dependencias,
+API, migraciones ni datos. Conserva paleta negro/carbon/rojo y densidad compacta.
+Entradas CSS 200-420 ms, stagger de cartas acotado a 100 ms por indice modulo6;
+solo al montar, sin ocultar items por scroll/IntersectionObserver. Hover con
+mouse mueve tarjeta 3 px sin relayout de vecinos y no hace zoom/crop de imagen.
+Dialogos nativos animan apertura, no retrasan cierre/Escape ni alteran foco.
+
+prefers-reduced-motion reduce anula animaciones/transiciones/smooth-scroll,
+incluidos pseudo-elementos, hover/active y carga. Barra de carga estatica y
+check de carrito permanecen visibles; no elimina feedback funcional.
+Imagenes con decoding async y opacidad breve al cargar, estado asociado a URL
+para recuperarse de error si cambia el src sin cambiar el ID. Sin imagen sigue
+disponible. Titulo completo en tooltip de nombre truncado.
+
+useStoreCart agrega feedback local id/version por 1 s solo en altas exitosas;
+temporizador se reinicia ante otro agregado. Rechazo por limite/pedido pendiente
+limpia feedback. No cambia cantidades limite, persistence, payload/idempotencia
+ni reservas. Check reemplaza icono, no boton: conserva foco y dimensiones.
+Contador animado solo con articulos y cifras tabulares. Notice discreto y
+acciones de carrito separadas. Toolbar cabe en 320 px con selector agrupado.
+
+QA 60 tests frontend/dominio + lint/typecheck/build web correctos.
+.work/storefront-motion-qa.mts usa respuestas API simuladas y fotos publicas
+solo leidas: Chrome siete anchos 1788/1440/1280/1024/768/390/320, grilla/lista,
+hover sin desplazar vecinos, precio largo, feedback/limites, imagen rota y
+cambio de URL, filtros/admin/precio en 320, foco/Escape, reduced-motion y
+vacio/error/reintento. Capturas inspeccionadas. Checkout-browser-test tambien
+paso con orden/pago/reintento solo en base/API temporales. Sin writes productivos.
+
 ## Admin y precio central desde tienda - 2026-10-12
 
 Pedido explicito del usuario: cualquier admin logueado debe editar precios desde
