@@ -7,6 +7,16 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Catalogo compacto: grilla adaptable con 5-6 cartas por fila en escritorio,
+  4-5 en tablet y dos en celular, incluso a 320 px. Imagenes completas dentro
+  de marcos estables de hasta 240 px (220 px en movil); cargar una foto no
+  estira la tarjeta. Espaciado/textos/precios compactos sin cambiar valores.
+  Detalle conserva imagen grande; lista y paginacion de 36 siguen disponibles.
+- QA de densidad: Chrome en diez anchos de 320 a 1788 px, tarjetas de unos
+  400-475 px frente a los 718 px anteriores a 1440 px. Contencion de imagenes,
+  precios largos, estabilidad al cargar, lista/detalle y paginacion correctos.
+  42 pruebas frontend/dominio, lint, tipos y build web correctos. Lecturas
+  simuladas, cero escrituras; sin cambios de API, publicaciones ni datos reales.
 - Categorias comerciales de tienda: Todo el catalogo, Singles, Sellado,
   Accesorios y Otros. Los tipos Pokemon/Supporter/Item/Stadium/Tool/Energia
   quedan dentro de los filtros de Singles, no en la navegacion principal.
@@ -25,7 +35,7 @@ Actualizado: 2026-10-12
 - Redisenio de tienda con identidad propia: encabezado con busqueda amplia,
   navegacion por productos y banner con arte original de UltimoTurno reutilizado.
   Catalogo con filtros laterales, busqueda de expansiones, filtros activos,
-  grilla/lista, fotos grandes y Ver detalle. En movil, filtros en dialogo;
+  grilla/lista, fotos contenidas y Ver detalle. En movil, filtros en dialogo;
   foco/cierre/scroll contenidos. Sin carrito, cuentas de compradores ni checkout.
 - Conserva API, publicacion, precios numericos y reglas de disponibilidad.
   ARS muestra centavos solo cuando existen; no hay conversion nueva. Solo

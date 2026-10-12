@@ -1,5 +1,26 @@
 # Traspaso de contexto - UltimoTurno
 
+## Catalogo compacto e imagenes contenidas - 2026-10-12
+
+Cambio solo en storefront.css: grilla auto-fill con minimo 160 px (155 px en
+el breakpoint intermedio) y dos columnas <=600 px, incluido 320 px. En QA se
+ven 5-6 columnas en escritorio y 4-5 en tablet. Marcos de imagen hasta 240 px,
+220 px movil, aspect-ratio 5/7. Imagen absoluta con object-fit: contain para
+que el tamano intrinseco no estire la grilla ni el marco de detalle. Detalle
+conserva sus dimensiones grandes, sin filtros/recorte de las fotos originales.
+
+Espaciado y tipografia compactos, nombres/expansiones en dos lineas, variante
+abreviada con ellipsis y valor ARS completo. Precio ajustado al contenedor, no
+al viewport. Listado y paginacion de 36 se conservan. No cambia React/API/schema,
+categorias, filtros, precios, publicaciones, cantidades ni checkout.
+
+QA: 42 tests frontend/dominio, lint/tipos/build web, Chrome en diez anchos
+1788/1440/1366/1280/1024/900/768/600/390/320 px. Tarjetas ~400-475 px (antes
+~718 px a 1440). Comprueba precios largos, imagenes dentro del marco,
+estabilidad al cargar fotos, lista, detalle/Escape y paginacion 36/4.
+Respuestas simuladas en memoria, cero escrituras y cero lecturas privadas;
+scripts/capturas en .work ignorado. Datos reales no modificados.
+
 ## Categorias comerciales de tienda - 2026-10-12
 
 Esta entrega reemplaza la navegacion por cardType: header muestra Singles,

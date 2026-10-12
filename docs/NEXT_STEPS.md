@@ -29,6 +29,10 @@ Actualizado: 2026-10-12
 
 ### Tienda publica y separacion del admin
 
+- Densidad corregida: catalogo con imagenes completas y compactas, 5-6 cartas
+  por fila en escritorio y dos en celular. Detalle mantiene una imagen grande.
+  Conservar marcos estables y precios completos al sumar carrito/checkout;
+  la paginacion sigue en 36 y no cambia la publicacion de los productos.
 - Navegacion comercial: Singles, Sellado, Accesorios y Otros. Para ubicar un
   producto, usar Inventario > Detalles > Categorias: singles, sellado, accesorios
   u otros, manteniendo las etiquetas de trabajo que ya tenga. Elegir una sola
