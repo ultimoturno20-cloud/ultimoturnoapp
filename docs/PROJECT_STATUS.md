@@ -7,6 +7,18 @@ Actualizado: 2026-10-12
 
 ## Resumen vigente
 
+- Cotizacion autorizada de Jugable del claim del 12 de octubre: 77 de 129
+  entradas actualizadas exclusivamente en claim_cards.final_price_ars. Precios
+  Near Mint leidos hoy en productos exactos de CoolStuff, usando su cache solo
+  para localizar enlaces, no para reutilizar precios antiguos. Cambio fijo
+  confirmado por el usuario: 1540 ARS/USD; redondeo unitario hacia arriba a 500,
+  sin sumar otro escalon cuando ya es multiplo exacto ni aplicar minimo 800.
+  Quedan 52 sin modificar: 13 especiales, 23 sin enlace exacto confirmado,
+  10 sin expansion mapeada y 6 por idioma/variante. No usar otra edicion ni PC
+  como reemplazo automatico. Las 359 cartas, cantidades, compradores, imagenes,
+  USD y otras secciones se conservaron; snapshots de inventario, precios
+  centrales y ventas iguales antes/despues. Evidencia en .work/claim-oct12-coolstuff*
+  ignorado. Sin cambios de codigo ni migraciones; lint y 23 pruebas CoolStuff OK.
 - Recuperacion autorizada del claim del 12 de octubre: 243 imagenes faltantes
   completadas; 359 cartas conservadas, cero faltantes finales. Solo se modifico
   claim_cards.image_url mediante filtros por negocio/claim/ID e imagen previa.

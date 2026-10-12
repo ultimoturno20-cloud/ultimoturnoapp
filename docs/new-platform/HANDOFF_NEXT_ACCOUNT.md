@@ -1,5 +1,32 @@
 # Traspaso de contexto - UltimoTurno
 
+## Cotizacion CoolStuff de Jugable - 2026-10-12
+
+El usuario autorizo cotizar Jugable del claim activo y confirmo cambio fijo
+1540 ARS/USD. Se revisaron 129 entradas en borrador, sin compradores. Cache
+CoolStuff usado solo para enlaces; 77 productos se consultaron de nuevo hoy,
+con pausas de 10 segundos, titulo/numero/expansion/acabado y condicion exactos.
+Se reutilizo matchCoolstuffProduct y sus pruebas. Cotizaciones Near Mint/RAW;
+redondeo ceil(centavosUSD * 1540 / 50000) * 500, por unidad, sin minimo 800.
+REST PATCH solamente final_price_ars, limitado a negocio/claim/seccion/ID,
+estado draft, comprador vacio, cantidad, precio USD cero, ARS anterior y updated_at.
+Antes de guardar se verifico hash de campos protegidos y claim abierto.
+Resultado: 77 guardadas, cero conflictos, 52 pendientes sin modificar. Motivos:
+13 ediciones especiales; 23 sin enlace exacto; 10 sin expansion mapeada;
+6 por idioma/variante. Buscador CS devolvio contenido vacio; no confundir falta
+de enlace con producto inexistente ni usar una oferta Played por Near Mint.
+Consulta adicional de Ogerpon #211 en pagina especifica no dio oferta confiable.
+Las 359 cartas se conservaron; hashes de cantidades/compradores/imagenes/USD
+y campos protegidos iguales, otras secciones intactas. Snapshots de inventory_items,
+current_prices, sales y sale_items iguales antes/despues. No se cambiaron valores
+PC/sugeridos, inventario, precios de tienda, ordenes ni se publicaron cartas.
+Scripts y evidencia ignorados: .work/claim-oct12-coolstuff-direct.mts,
+.work/claim-oct12-coolstuff.json y .work/claim-oct12-coolstuff-result.json.
+La lectura por expansion completa se detuvo para reducir pedidos y la lectura
+directa descarta encabezados vacios, exigiendo un unico titulo de producto.
+Sin cambios de API/frontend/migraciones; lint y 23 pruebas CoolStuff pasaron.
+Operacion puntual: no hay nuevo control de cotizacion masiva en la interfaz.
+
 ## Reparacion real de las 243 imagenes del claim - 2026-10-12
 
 El usuario autorizo completar imagenes del claim actual y actualizo Supabase a Pro.

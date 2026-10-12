@@ -27,6 +27,19 @@ Actualizado: 2026-10-12
 
 ## Prioridades vigentes
 
+### Precios de Jugable del claim
+
+- Recargar el claim del 12 de octubre: 77 de 129 entradas ya tienen precio final
+  ARS de CoolStuff con cambio fijo 1540 y redondeo unitario superior a 500.
+  Operacion puntual autorizada; no agrega un boton ni modifica precios centrales.
+- Revisar las 52 restantes con su identidad exacta: 13 especiales (Prize Pack,
+  Cosmos, estampados), 23 sin enlace confirmado, 10 sin expansion mapeada y
+  6 por idioma/variante. No equivalen todas a productos inexistentes en CoolStuff:
+  el buscador no devolvio contenido y no se reemplazaron por versiones normales.
+  Plan con motivos, precios y enlaces en .work/claim-oct12-coolstuff.json;
+  resultado aplicado en .work/claim-oct12-coolstuff-result.json. No versionar
+  evidencia operativa ni volver a aplicar precios sobre compradores asignados.
+
 ### Imagenes de claims
 
 - Claim del 12 de octubre reparado: las 243 faltantes ya tienen imagen y cargan
