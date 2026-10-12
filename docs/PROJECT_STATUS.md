@@ -22,6 +22,8 @@ Actualizado: 2026-10-12
   con /stock?fresh=1. Inicio/cierre de sesion tambien se comparte entre pestanas.
   Sin token guardado, tienda no consulta API privada. Carrito sigue independiente.
 - QA precios Web: 189 tests completos, nueve focalizados nuevos, lint/tipos/build.
+  Regresion adicional verifica rewrite Vercel explicito /api/store-admin/*:
+  rutas anidadas deben pasar al dispatcher, no al catch-all directo.
   Chrome + API/base temporales en siete anchos: dos admins, edicion central,
   sincronizacion con panel, conflicto, respuesta perdida, vuelta al detalle,
   logout/expiracion y rechazo de no-admin/clave legacy. Cero escrituras de prueba

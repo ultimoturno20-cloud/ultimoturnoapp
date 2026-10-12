@@ -20,6 +20,11 @@ GET/PUT /store-admin/items/:id/price exigen Bearer individual vigente, admin y
 negocio, sin fallback a clave legacy. DTO permitido id/name/priceArs/priceUsd,
 Cache-Control private/no-store y body limitado a 4 KB. Edita solo item activo,
 publicado y available del negocio. JSON invalido 400; permisos 401/403.
+
+vercel.json requiere rewrite explicito /api/store-admin/:path* al dispatcher;
+sin esa regla el catch-all de Vercel devuelve 404 para rutas anidadas. Test
+frontend adicional verifica configuracion del rewrite; no depende de localhost.
+
 Solo current_prices cambia: ARS minimo 800/redondeo100 y USD calculado con blue
 de servidor; manual_override=true. Inventario, cantidades, propietarios, costos,
 etiquetas, publicacion y lineas de ventas/reservas existentes quedan intactos.

@@ -44,6 +44,7 @@
     { "source": "/manifest.webmanifest", "destination": "/admin/manifest.webmanifest", "permanent": true }
   ],
   "rewrites": [
+    { "source": "/api/store-admin/:path*", "destination": "/api/dispatch?path=/store-admin/:path*" },
     { "source": "/api/store/:path*", "destination": "/api/dispatch?path=/store/:path*" },
     { "source": "/pricecharting-images/:path*", "destination": "/api/dispatch?path=/pricecharting-images/:path*" },
     { "source": "/api/tournament-space/:path*", "destination": "/api/dispatch?path=/tournament-space/:path*" },
