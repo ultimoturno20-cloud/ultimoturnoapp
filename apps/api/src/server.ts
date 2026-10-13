@@ -4947,7 +4947,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/claims/close" && request.method === "POST") {
-      sendJson(response, 200, await closeActiveClaim(db, user));
+      const body = await readJson<{ claimId?: string }>(request, 4096).catch(error => {
+        if (error instanceof SyntaxError) throw Object.assign(new Error("El claim elegido no es valido."), { statusCode: 400 });
+        throw error;
+      });
+      if (!body || (body.claimId !== undefined && (typeof body.claimId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.claimId)))) {
+        throw Object.assign(new Error("El claim elegido no es valido."), { statusCode: 400 });
+      }
+      sendJson(response, 200, await closeActiveClaim(db, user, body.claimId));
       return;
     }
 

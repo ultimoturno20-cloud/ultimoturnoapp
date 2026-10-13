@@ -6945,41 +6945,59 @@ export async function addClaimFree(db: PGlite, input: ClaimFreeInput, actor: Aut
   return listClaimsWorkspace(db, actor.businessId);
 }
 
-export async function closeActiveClaim(db: PGlite, actor: AuthenticatedUser): Promise<ClaimsWorkspace> {
-  const workspace = await listClaimsWorkspace(db, actor.businessId);
-  const claim = workspace.activeClaim;
-  if (!claim) throw new Error("No hay un claim activo.");
-  const orderPlan = buildClaimOrderPlan(workspace);
-  const saleIds: string[] = [];
+export async function closeActiveClaim(db: PGlite, actor: AuthenticatedUser, expectedClaimId?: string): Promise<ClaimsWorkspace> {
+  const claimId = expectedClaimId ?? (await listClaimsWorkspace(db, actor.businessId)).activeClaim?.id;
+  if (!claimId) throw new Error("No hay un claim activo.");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claimId)) throw new Error("El claim elegido no es valido.");
   await inventoryTransaction(db, async (connection) => {
     const lockedClaim = await connection.query<{ status: string }>(`
       select status
       from claim_sessions
       where id = $1 and business_id = $2
       for update
-    `, [claim.id, actor.businessId]);
+    `, [claimId, actor.businessId]);
+    // A lost HTTP response can be retried for this exact claim, never its successor.
+    if (expectedClaimId && lockedClaim.rows[0]?.status === "closed") return;
     if (lockedClaim.rows[0]?.status !== "open") {
       throw new Error("El claim ya fue cerrado. Actualiza la vista para ver las ordenes.");
     }
-    for (const card of workspace.cards) await syncClaimCardStock(connection, card.id, actor);
+    await connection.query("select id from claim_cards where claim_id = $1 and business_id = $2 order by id for update", [claimId, actor.businessId]);
+    await connection.query("select id from claim_frees where claim_id = $1 and business_id = $2 order by id for update", [claimId, actor.businessId]);
+    const workspace = await listClaimsWorkspace(connection, actor.businessId);
+    const claim = workspace.activeClaim;
+    if (claim?.id !== claimId) throw new Error("El claim activo cambio. Actualiza la vista antes de cerrar.");
+    const orderPlan = buildClaimOrderPlan(workspace);
+    const inventoryByCard = await prepareClaimCloseInventory(connection, workspace.cards, actor);
+    const inventoryIds = [...new Set(inventoryByCard.values())].sort();
+    const inventoryRows = await connection.query<{ id: string; quantity_on_hand: number; quantity_reserved: number }>(`
+      select id, quantity_on_hand, quantity_reserved from inventory_items
+      where business_id = $1 and id = any($2::uuid[]) order by id for update
+    `, [actor.businessId, inventoryIds]);
+    const inventory = new Map(inventoryRows.rows.map(row => [String(row.id), { onHand: Number(row.quantity_on_hand), reserved: Number(row.quantity_reserved) }]));
+    const sales: unknown[][] = [], items: unknown[][] = [], reservations: unknown[][] = [], movements: unknown[][] = [];
+    const reservedInventoryIds = new Set<string>();
+    const saleIds: string[] = [];
     for (const buyerOrder of orderPlan.buyers) {
       const saleId = crypto.randomUUID();
       saleIds.push(saleId);
-      await connection.query(`
-        insert into sales (id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, payment_due_at, created_by)
-        values ($1, $2, $3, 'reservation', 'pending', 'claim', $4, $5, nullif($6, '')::date, $7)
-      `, [saleId, actor.businessId, buyerOrder.buyer, buyerOrder.totalArs, buyerOrder.totalUsd, resolvePaymentDueAt(claim.paymentDueAt), actor.id]);
+      sales.push([saleId, actor.businessId, buyerOrder.buyer, "reservation", "pending", "claim", buyerOrder.totalArs, buyerOrder.totalUsd, resolvePaymentDueAt(claim.paymentDueAt) || null, actor.id]);
       let lineIndex = 1;
       for (const line of buyerOrder.lines.filter((item): item is ClaimOrderPlanCardLine => item.kind === "card")) {
-        const inventoryItemId = await reserveInventoryForClaimCard(connection, claim.id, line.card, saleId, buyerOrder.buyer, line.quantity, actor);
+        const inventoryItemId = inventoryByCard.get(line.claimCardId);
+        const stock = inventoryItemId ? inventory.get(inventoryItemId) : undefined;
+        if (!inventoryItemId || !stock) throw new Error(`No se pudo preparar stock para ${line.productName}.`);
+        reservedInventoryIds.add(inventoryItemId);
+        const addedQuantity = Math.max(0, line.quantity - (stock.onHand - stock.reserved));
+        stock.onHand += addedQuantity;
+        stock.reserved += line.quantity;
+        if (addedQuantity > 0) movements.push([
+          crypto.randomUUID(), actor.businessId, inventoryItemId, "claim_stock_in", addedQuantity, "claim", claim.id,
+          `claim-close-stock-${claim.id}-${line.claimCardId}-${saleId}`, `Ingreso automatico al cerrar claim por faltante: ${line.productName}`, actor.id
+        ]);
+        reservations.push([crypto.randomUUID(), actor.businessId, inventoryItemId, line.quantity, "active", "claim", saleId, `claim-reservation-${claim.id}-${line.claimCardId}-${saleId}`]);
+        movements.push([crypto.randomUUID(), actor.businessId, inventoryItemId, "reservation", 0, "sale", saleId, `movement-claim-reservation-${claim.id}-${line.claimCardId}-${saleId}`, `Reserva claim para ${buyerOrder.buyer}`, actor.id]);
         const priceCurrency = line.unitPriceUsd > 0 && line.unitPriceArs <= 0 ? "USD" : "ARS";
-        await connection.query(`
-          insert into sale_items (
-            id, business_id, sale_id, inventory_item_id, quantity, unit_price_ars, unit_price_usd,
-            line_total_ars, line_total_usd, price_currency, display_name, sku_snapshot, source_reference
-          )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        `, [
+        items.push([
           crypto.randomUUID(),
           actor.businessId,
           saleId,
@@ -6996,28 +7014,76 @@ export async function closeActiveClaim(db: PGlite, actor: AuthenticatedUser): Pr
         ]);
       }
       for (const line of buyerOrder.lines.filter((item): item is ClaimOrderPlanFreeLine => item.kind === "free")) {
-        await connection.query(`
-          insert into sale_items (
-            id, business_id, sale_id, inventory_item_id, quantity, unit_price_ars, unit_price_usd,
-            line_total_ars, line_total_usd, price_currency, display_name, sku_snapshot, source_reference
-          )
-          values ($1, $2, $3, null, $4, 0, 0, 0, 0, 'FREE', $5, $6, $7)
-        `, [
+        items.push([
           crypto.randomUUID(),
           actor.businessId,
           saleId,
+          null,
           line.quantity,
+          0, 0, 0, 0, "FREE",
           line.displayName,
           line.priceChartingId ? `PKM-PC-${line.priceChartingId}` : "",
           `claim:${claim.id}:free:${line.claimFreeId}`
         ]);
       }
     }
+    const updates = [...inventory.entries()].filter(([id]) => reservedInventoryIds.has(id)).map(([id, stock]) => ({ id, on_hand: stock.onHand, reserved: stock.reserved }));
+    await connection.query(`
+      update inventory_items item set quantity_on_hand = source.on_hand, quantity_reserved = source.reserved, updated_at = now()
+      from jsonb_to_recordset($1::jsonb) as source(id uuid, on_hand integer, reserved integer)
+      where item.id = source.id and item.business_id = $2
+    `, [JSON.stringify(updates), actor.businessId]);
+    await insertClaimCloseRows(connection, "sales", sales);
+    await insertClaimCloseRows(connection, "sale_items", items);
+    await insertClaimCloseRows(connection, "reservations", reservations);
+    await insertClaimCloseRows(connection, "inventory_movements", movements);
     await connection.query("update claim_cards set status = 'sold', updated_at = now() where claim_id = $1 and business_id = $2 and nullif(buyer, '') is not null and status <> 'ignored'", [claim.id, actor.businessId]);
     await connection.query("update claim_sessions set status = 'closed', closed_at = now(), updated_at = now(), closed_sale_ids = $1::jsonb where id = $2 and business_id = $3", [JSON.stringify(saleIds), claim.id, actor.businessId]);
     await writeAudit(connection, actor, "claim.close", "claim", claim.id, workspace, { saleIds });
   });
   return listClaimsWorkspace(db, actor.businessId);
+}
+
+const claimCloseColumns = {
+  sales: "id, business_id, customer_name, sale_type, status, channel, total_ars, total_usd, payment_due_at, created_by",
+  sale_items: "id, business_id, sale_id, inventory_item_id, quantity, unit_price_ars, unit_price_usd, line_total_ars, line_total_usd, price_currency, display_name, sku_snapshot, source_reference",
+  reservations: "id, business_id, inventory_item_id, quantity, status, channel, external_cart_id, idempotency_key",
+  inventory_movements: "id, business_id, inventory_item_id, movement_type, quantity_delta, reference_type, reference_id, idempotency_key, note, created_by"
+} as const;
+
+async function insertClaimCloseRows(db: PGlite, table: keyof typeof claimCloseColumns, rows: unknown[][]): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += 200) {
+    const batch = rows.slice(offset, offset + 200);
+    const params: unknown[] = [];
+    const values = batch.map(row => `(${row.map(value => { params.push(value); return `$${params.length}`; }).join(",")})`);
+    await db.query(`insert into ${table} (${claimCloseColumns[table]}) values ${values.join(",")}`, params);
+  }
+}
+
+async function prepareClaimCloseInventory(db: PGlite, cards: ClaimCard[], actor: AuthenticatedUser): Promise<Map<string, string>> {
+  const states = await db.query<{ id: string; inventory_item_id: string | null; stock_origin: string; quantity: number; stocked_quantity: number; item_exists: boolean; created_here: boolean }>(`
+    select cc.id, cc.inventory_item_id, cc.stock_origin, cc.quantity, cc.stocked_quantity,
+      ii.id is not null as item_exists,
+      exists (select 1 from audit_log a where a.business_id = cc.business_id
+        and a.action = 'inventory.create_from_claim' and a.entity_type = 'inventory_item'
+        and a.entity_id = cc.inventory_item_id::text and a.after_data->>'claimCardId' = cc.id::text) as created_here
+    from claim_cards cc left join inventory_items ii on ii.id = cc.inventory_item_id and ii.business_id = cc.business_id
+    where cc.business_id = $1 and cc.id = any($2::uuid[])
+  `, [actor.businessId, cards.map(card => card.id)]);
+  const byId = new Map(states.rows.map(row => [String(row.id), row]));
+  const result = new Map<string, string>();
+  for (const card of cards) {
+    const state = byId.get(card.id);
+    if (state?.inventory_item_id && state.stock_origin === "existing" && !state.item_exists) throw new Error(`${card.productName}: la carta vinculada ya no existe en stock.`);
+    // Already-synced cards need no catalog/whole-stock reads or per-card writes.
+    if (state?.inventory_item_id && state.item_exists && (state.stock_origin === "existing"
+      || (state.created_here && Number(state.quantity) === Number(state.stocked_quantity)))) {
+      result.set(card.id, String(state.inventory_item_id));
+    } else {
+      result.set(card.id, await syncClaimCardStock(db, card.id, actor, card));
+    }
+  }
+  return result;
 }
 
 export async function previewActiveClaimOrders(db: PGlite, actor: AuthenticatedUser): Promise<ClaimOrderPreview> {
@@ -7147,7 +7213,7 @@ export async function reconcileActiveClaimStock(
   });
 }
 
-async function syncClaimCardStock(db: PGlite, cardId: string, actor: AuthenticatedUser): Promise<string> {
+async function syncClaimCardStock(db: PGlite, cardId: string, actor: AuthenticatedUser, preparedCard?: ClaimCard): Promise<string> {
   const state = await db.query<{ claim_id: string; quantity: number; stocked_quantity: number; inventory_item_id: string | null; stock_origin: string }>(`
     select claim_id, quantity, stocked_quantity, inventory_item_id, stock_origin
     from claim_cards
@@ -7156,7 +7222,7 @@ async function syncClaimCardStock(db: PGlite, cardId: string, actor: Authenticat
   `, [cardId, actor.businessId]);
   const row = state.rows[0];
   if (!row) throw new Error("La carta ya no existe en el claim activo.");
-  const card = (await listClaimCards(db, String(row.claim_id), actor.businessId)).find((item) => item.id === cardId);
+  const card = preparedCard ?? (await listClaimCards(db, String(row.claim_id), actor.businessId)).find((item) => item.id === cardId);
   if (!card) throw new Error("No se pudo preparar la carta del claim para stock.");
   const resolved = row.inventory_item_id
     ? { inventoryItemId: row.inventory_item_id, created: false }
@@ -7252,59 +7318,6 @@ async function syncClaimCardStock(db: PGlite, cardId: string, actor: Authenticat
         updated_at = now()
     where id = $3 and business_id = $4
   `, [inventoryItemId, targetQuantity, cardId, actor.businessId]);
-  return inventoryItemId;
-}
-
-async function reserveInventoryForClaimCard(db: PGlite, claimId: string, card: ClaimCard, saleId: string, buyer: string, quantity: number, actor: AuthenticatedUser): Promise<string> {
-  const linked = await db.query<{ inventory_item_id: string | null }>(
-    "select inventory_item_id from claim_cards where id = $1 and business_id = $2 limit 1",
-    [card.id, actor.businessId]
-  );
-  const inventoryItemId = linked.rows[0]?.inventory_item_id
-    || (await resolveInventoryItemForClaimCard(db, card, actor)).inventoryItemId;
-  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
-  const reserved = await db.query<{ added_quantity: number }>(`
-    with locked as (
-      select quantity_on_hand, quantity_reserved
-      from inventory_items
-      where id = $2 and business_id = $3
-      for update
-    )
-    update inventory_items as item
-    set quantity_on_hand = item.quantity_on_hand + greatest(0, $1 - (locked.quantity_on_hand - locked.quantity_reserved)),
-        quantity_reserved = item.quantity_reserved + $1,
-        updated_at = now()
-    from locked
-    where item.id = $2 and item.business_id = $3
-    returning greatest(0, $1 - (locked.quantity_on_hand - locked.quantity_reserved))::integer as added_quantity
-  `, [safeQuantity, inventoryItemId, actor.businessId]);
-  if (!reserved.rows[0]) throw new Error(`No se pudo preparar stock para ${card.productName}.`);
-  const addedQuantity = Math.max(0, Number(reserved.rows[0].added_quantity) || 0);
-  if (addedQuantity > 0) {
-    await db.query(`
-      insert into inventory_movements (
-        id, business_id, inventory_item_id, movement_type, quantity_delta,
-        reference_type, reference_id, idempotency_key, note, created_by
-      ) values ($1, $2, $3, 'claim_stock_in', $4, 'claim', $5, $6, $7, $8)
-    `, [
-      crypto.randomUUID(),
-      actor.businessId,
-      inventoryItemId,
-      addedQuantity,
-      claimId,
-      `claim-close-stock-${claimId}-${card.id}-${saleId}`,
-      `Ingreso automatico al cerrar claim por faltante: ${card.productName}`,
-      actor.id
-    ]);
-  }
-  await db.query(`
-    insert into reservations (id, business_id, inventory_item_id, quantity, status, channel, external_cart_id, idempotency_key)
-    values ($1, $2, $3, $4, 'active', 'claim', $5, $6)
-  `, [crypto.randomUUID(), actor.businessId, inventoryItemId, safeQuantity, saleId, `claim-reservation-${claimId}-${card.id}-${saleId}`]);
-  await db.query(`
-    insert into inventory_movements (id, business_id, inventory_item_id, movement_type, quantity_delta, reference_type, reference_id, idempotency_key, note, created_by)
-    values ($1, $2, $3, 'reservation', 0, 'sale', $4, $5, $6, $7)
-  `, [crypto.randomUUID(), actor.businessId, inventoryItemId, saleId, `movement-claim-reservation-${claimId}-${card.id}-${saleId}`, `Reserva claim para ${buyer}`, actor.id]);
   return inventoryItemId;
 }
 

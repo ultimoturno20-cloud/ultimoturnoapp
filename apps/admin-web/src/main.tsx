@@ -2140,16 +2140,29 @@ function App() {
   }
 
   async function closeClaim() {
-    if (claimClosing) return;
+    const claimId = claims.activeClaim?.id;
+    if (claimClosing || !claimId) return;
     setClaimClosing(true);
-    try {
-      const result = await api<ClaimsWorkspace>("/claims/close", { method: "POST" });
+    const finishClose = async (result: ClaimsWorkspace) => {
       setClaims(result);
       showMessage("Claim cerrado. Las ordenes quedaron pendientes en Ordenes.");
-      await refresh();
       setView("orders");
+      try { await refreshViewData("orders"); }
+      catch { showError(new Error("El claim ya esta cerrado. No se pudieron actualizar las ordenes; recarga Ordenes.")); }
+    };
+    try {
+      const result = await api<ClaimsWorkspace>("/claims/close", { method: "POST", body: { claimId } });
+      await finishClose(result);
     } catch (nextError) {
-      showError(nextError);
+      try {
+        const latest = await api<ClaimsWorkspace>("/claims");
+        setClaims(latest);
+        if (latest.history.some(claim => claim.id === claimId && claim.status === "closed")) {
+          await finishClose(latest);
+          return;
+        }
+      } catch { /* Keep the original failure when recovery cannot be confirmed. */ }
+      showError(new Error(`${nextError instanceof Error ? nextError.message : String(nextError)}. No se confirmo el cierre. Actualiza el claim antes de reintentar.`));
     } finally {
       setClaimClosing(false);
     }

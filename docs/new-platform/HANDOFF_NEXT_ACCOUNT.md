@@ -1,5 +1,46 @@
 # Traspaso de contexto - UltimoTurno
 
+## Cierre de claim HTTP 504 - 2026-10-13
+
+Usuario reporto POST /api/dispatch?path=%2Fclaims%2Fclose -> 504. Lectura
+tecnica REST sin nombres ni writes: claim abierto, cero closed_sale_ids,
+423 cartas vinculadas (350 existentes y 73 claim_added), sin cantidades
+pendientes de sincronizacion. No se ejecuto el cierre real durante la reparacion.
+
+closeActiveClaim antes recorria todas las cartas con syncClaimCardStock:
+cada vuelta leia todo el claim y getInventoryItem leia todo el stock; luego
+reservaba e insertaba cada linea con multiples round trips secuenciales.
+Ahora prepareClaimCloseInventory verifica en lote vinculo/auditoria/cantidad,
+omite esas lecturas/escrituras para cartas sincronizadas y conserva el helper
+anterior para pendientes o legado (con ClaimCard preparada, sin releer todas).
+Inserciones de sales/sale_items/reservations/inventory_movements en tandas de
+200; simulacion secuencial de faltantes por linea sobre inventario bloqueado
+y actualizacion agrupada de los items reservados. Mantiene source_reference,
+claves de movimientos/reservas, precios, frees y vencimiento del cierre anterior.
+Una sola transaccion: rollback de todos los lotes ante cualquier error.
+
+Plan construido dentro de la transaccion despues de bloquear claim, cartas y
+frees; inventario por ID ordenado. POST acepta claimId opcional validado y
+acotado al negocio. Frontend lo envia siempre. Si ese claim esta cerrado,
+replay no escribe ni cierra el nuevo activo; dos requests del mismo ID no
+duplican. Clientes previos sin body conservan el flujo anterior y rechazo
+de segundo cierre, no adivinan el ultimo claim cerrado.
+Ante error HTTP, frontend GET /claims y confirma el ID cerrado en historial;
+de lo contrario informa cierre sin confirmar. Refresh de Ordenes fallido
+despues de confirmar no dice que el cierre fallo.
+
+QA: 228 tests completos aprobados, tipos/lint/build/DB verify OK. Tres nuevas
+regresiones DB: 423 cartas/32 queries, paridad con preview ARS/USD/frees/slots,
+stock intacto fuera de reservas, replays/negocio/claim siguiente, rollback de
+lote posterior y plan actualizado bajo lock/faltante de inventario compartido.
+Tiempo local PGlite <1s, no SLA ni medicion productiva. Chrome/API reales en
+PGlite temporal con wrapper Vercel: 504 antes de commit, respuesta 504 despues
+de commit, recuperacion, replays, otro claim abierto y cierre normal. Cero
+requests de QA a produccion. Scripts/capturas .work/claim-close-* ignorados.
+Demo aislada http://127.0.0.1:5287/demo. TEMP/TMP en .work/claim-close-tmp en D:
+para repetir la suite tras fallos de falta de espacio de C:. No se borraron
+archivos ni bases previas. Sin migraciones ni cambios de datos reales.
+
 ## Ranking de compradores y lista de sorteo - 2026-10-13
 
 El usuario pidio mayores compradores antes del cierre para premios, y quienes

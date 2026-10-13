@@ -42,6 +42,22 @@ primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
+- Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
+  y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos
+  se insertan en tandas de 200 y el stock reservado se actualiza agrupado, dentro
+  de una sola transaccion. Conserva faltantes, frees, precios finales y vencimiento.
+  Plan leido despues de bloquear claim/cartas/frees; inventario bloqueado por ID.
+  Frontend envia claimId: reintentar ese claim cerrado devuelve su resultado sin
+  duplicar ordenes ni cerrar el siguiente. API sin body conserva compatibilidad.
+  Ante respuesta perdida, panel consulta historial para confirmar el cierre;
+  fallo de refresh posterior no se presenta como cierre fallido.
+  QA: 228 tests completos, tipos/lint/build/DB verify y Chrome/API/dispatcher
+  temporales OK. Fixture de 423 cartas: 32 consultas y menos de 1 segundo en
+  PGlite local, no medicion de latencia productiva. Rollback y reintentos probados.
+  Casi lleno el disco C: local: suite repetida con TEMP/TMP en .work/claim-close-tmp
+  de D:, sin borrar archivos. Lectura real inicial: claim abierto, 423 cartas
+  vinculadas, cero ordenes de cierre; no se cerro ni altero para verificar.
+  Sin migraciones, secretos en Git ni escrituras productivas de QA.
 - Ranking antes de cerrar claim: /admin/claims > Compradores y premios abre
   listado por mayor compra y lista de Sorteo. Suma precios finales ARS y USD
   convertidos a la cotizacion vigente de la plataforma, elegida por el usuario.

@@ -8,7 +8,12 @@ Actualizado: 2026-10-13
 
 ## Orden de continuidad
 
-1. Antes de cerrar, abrir Claims > Compradores y premios: revisar ranking,
+1. Correccion del 504 de cierre entregada: recargar /admin/claims antes de
+   reintentar Cerrar claim. El panel envia el ID exacto y recupera cierres ya
+   confirmados si se pierde la respuesta, sin duplicar ni cerrar otro claim.
+   No hubo cierre productivo de prueba. Si la respuesta sigue sin confirmar,
+   actualizar Claims/Ordenes y revisar estado antes de repetir la accion.
+   Antes de cerrar, abrir Claims > Compradores y premios: revisar ranking,
    empates y lista Sorteo (mas de 10000 ARS, incluyendo USD al cambio vigente).
    Completar precios/asignaciones por revisar antes de decidir premios.
    Revisar las 52 pendientes de Jugable con identidad exacta y comprobar primero
