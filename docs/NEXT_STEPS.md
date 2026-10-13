@@ -1,7 +1,39 @@
 # UltimoTurno - proximos pasos
 
+Actualizado: 2026-10-13
 
-## Usar el espacio independiente Torneos
+> Usar primero el orden de continuidad y el prompt de este documento.
+> Los detalles por sector conservan verificaciones pendientes, no autorizan
+> operaciones ficticias en produccion. El archivo de septiembre es historico.
+
+## Orden de continuidad
+
+1. Revisar las 52 pendientes de Jugable con identidad exacta y comprobar primero
+   el claim y sus compradores actuales. Las 77 ya aplicadas no se vuelven a
+   cotizar ni sobrescribir por defecto. La regla 1540/500 fue puntual, no global.
+2. Pilotear la tienda con operaciones reales: confirmar publicacion de productos
+   fuera del claim, instrucciones publicas y configuracion elegida de solo retiro
+   con reserva de 30 minutos. Habilitar pedidos solo desde admin cuando el
+   operador este listo. No se verifico hoy si ya estan habilitados.
+3. Completar referencias de carpetas reales y revisar clasificacion pendiente;
+   conservar contenido, promos elegidas, estado No venta y valuacion sin duplicar.
+4. Validar lotes, devoluciones, saldos y cupos de revendedores en trabajo real.
+   Comprobantes/recepcion fisica y rendiciones por ventas seleccionadas siguen
+   siendo desarrollo pendiente; no reinterpretar movimientos anteriores.
+5. Pilotear Torneos con cuentas independientes, ingreso tardio, rondas manuales
+   y bajas. Recuperar conflictos con Recargar datos, no reemplazar el estado.
+6. Retomar la propuesta de agenda operativa de Inicio como siguiente mejora
+   de producto a definir con el usuario. La primera etapa de consistencia visual
+   ya se entrego; no confundir sugerencias de chat con funcionalidades terminadas.
+7. Backlog posterior: rentabilidad neta con costos desconocidos visibles,
+   ubicaciones/lista de preparacion/QR, ficha de cliente/listas de deseos,
+   sincronizacion de vistas entre dispositivos y recuperacion de backups probada
+   en entorno aislado. Pagos automaticos, envios y avisos automaticos son etapas
+   separadas, no condiciones faltantes para reconstruir el checkout manual.
+
+## Prioridades vigentes
+
+### Usar el espacio independiente Torneos
 
 - Abrir `/torneos` y crear una cuenta propia de Torneos. Crear un torneo real o importar
   un JSON guardado desde el programa de escritorio; la importación crea una copia.
@@ -18,14 +50,6 @@
 - Ante conflicto de versión o respuesta no confirmada, recargar y comprobar si
   la acción ya quedó aplicada antes de reenviar. No crear pruebas en producción.
 - Detalles: `docs/new-platform/TOURNAMENTS.md`.
-
-
-Actualizado: 2026-10-12
-
-> Las prioridades vigentes estan en esta primera seccion. El plan del
-> 2026-09-11 se conserva debajo como referencia historica.
-
-## Prioridades vigentes
 
 ### Precios de Jugable del claim
 
@@ -45,8 +69,9 @@ Actualizado: 2026-10-12
 - Claim del 12 de octubre reparado: las 243 faltantes ya tienen imagen y cargan
   en Chrome; recargar el panel. No hace falta volver a ejecutar una busqueda masiva
   sobre este claim. Las 359 cartas y sus valores/compradores/cantidades se conservaron.
-- Reintentar Buscar imagen en Slowpoke de 30th Celebration #16: respaldo TCGdex
-  verificado disponible. Buscar imagenes usa el mismo flujo para el claim activo.
+- El respaldo para Slowpoke de 30th Celebration #16 ya fue verificado.
+  Reintentar solo si aparece un nuevo fallo, no como reparacion pendiente de
+  la tanda completada. Buscar imagenes usa el mismo flujo para el claim activo.
 - Si no hay coincidencia exacta, usar Corregir imagen con URL directa de la foto,
   no una pagina PC bloqueada. No sustituir por otra expansion/idioma/estampado.
   Respaldo TCGdex automatico limitado a ingles; otros idiomas usan cache/storage
@@ -131,13 +156,10 @@ Actualizado: 2026-10-12
 - Siguiente alcance: pagos automaticos, seguimiento y cotizacion de envio,
   despues de pilotear pedidos manuales. DTO publico ya excluye
   costos, propietarios, notas, compradores e identificadores externos.
-- Antes del claim, evitar ofrecer simultaneamente sus mismas unidades: el
-  flujo actual reserva al cerrar y puede agregar faltantes. Primera tienda
-  debe excluir articulos del claim activo o coordinar disponibilidad de forma
-  transaccional. No publicar automaticamente toda la base de inventario.
-- Checkout necesita precios/stock validados en servidor, idempotencia, limite
-  de abuso y vencimiento/liberacion de reservas. Probar concurrencia en base
-  temporal; nunca crear compras o claims ficticios en produccion.
+- Estas protecciones ya estan implementadas: catalogo excluye items de claims
+  abiertos; checkout valida precios/stock, reserva atomicamente, controla abuso
+  y reintentos y libera nuevas reservas Web sin pago al vencer. Conservarlas
+  al extender la tienda. No publicar la base completa ni probar compras reales.
 
 ### Consistencia visual y vistas operativas
 
@@ -263,7 +285,7 @@ ARS/USD nunca convierte, duplica ni descarta importes.
 
 ### Pilotear la PWA en celulares reales
 
-- En Android, abrir `https://ultimoturno.app/inicio`, pulsar `Instalar
+- En Android, abrir `https://ultimoturno.app/admin`, pulsar `Instalar
   UltimoTurno` y confirmar que el icono abra la plataforma en pantalla completa.
 - En iPhone, usar Safari > Compartir > Agregar a inicio y confirmar que conserva
   sesion y abre dentro del alcance de `ultimoturno.app`.
@@ -353,9 +375,10 @@ reservas coinciden y nunca se genera stock negativo o doble reserva.
 - Confirmar el primer ingreso de Mayra, Seb y Melo como administradores y de
   German como propietario de stock; cambiar las claves temporales si se decide
   una politica distinta de acceso.
-- Ingresar siempre por `/inicio`: una cuenta revendedora debe abrir solamente su
-  portal, German debe ver solo `Cargar stock` y `Asignar a revendedores`, y una
-  cuenta administradora debe conservar el panel completo.
+- Administradores y propietarios de stock ingresan por `/admin`; revendedores
+  por `/portal-revendedor`, viendo solamente su portal. German debe ver solo
+  `Cargar stock` y `Asignar a revendedores`; una cuenta administradora conserva
+  el panel completo.
 - Cargar una carta con German y asignarla a un revendedor. Intentar luego una
   asignacion de stock perteneciente a UltimoTurno: la API debe rechazarla.
 - Escribir manualmente `/inventario`, `/ordenes` y `/admin` con la sesion de
@@ -587,47 +610,29 @@ orden de produccion.
 ## Prompt para iniciar otro chat
 
 ```text
-Estamos trabajando en UltimoTurno. Usa exclusivamente el workspace
-D:\UltimoTurno\Stock; no uses C:\Users\skype\Documents\Stock.
+Continuemos trabajando en UltimoTurno.
 
-Antes de responder lee AGENTS.md, docs/PROJECT_STATUS.md y docs/NEXT_STEPS.md.
-Revisa git status antes de editar. Produccion es
-https://ultimoturno.app/ con Vercel, Supabase/Postgres y Supabase
-Storage.
+Usa exclusivamente D:\UltimoTurno\Stock.
+Antes de modificar nada lee AGENTS.md, docs/PROJECT_STATUS.md,
+docs/NEXT_STEPS.md y docs/new-platform/HANDOFF_NEXT_ACCOUNT.md.
 
-Hay un claim activo y ordenes reales en produccion: no los elimines, canceles ni
-recrees durante pruebas. No pongas secretos en Git.
+Revisa git status, git log -1 y
+https://ultimoturno.app/api/public-status.
+Base verificada el 2026-10-13 antes de la consolidacion documental: 9f267b8.
+No asumir que ese SHA sigue siendo el ultimo; comparar Git y despliegue actuales.
 
-Base funcional de produccion confirmada: `3b06aa7`. Revisar igualmente
-`git log -1` y
-`/api/public-status` antes de editar, porque puede existir un despliegue mas
-nuevo.
+Produccion tiene stock, ordenes y claims reales. No borrar, recrear ni hacer
+escrituras de prueba. Nunca guardar secretos o datos de compradores en Git.
+La tienda esta en /; el panel en /admin/...; Torneos en /torneos con cuenta propia.
 
-Trabajo reciente: PWA instalable, vistas moviles dedicadas para Ordenes y
-Revendedores, capa movil para Inicio/Inventario/Caja/Claims, carga de stock en
-pagina completa, busqueda de catalogo rapida, mejoras de claim y sistema de
-revendedores en consignacion. Tambien se agregaron vencimientos automaticos a 7
-dias, carga masiva de costos por porcentaje o CSV y pagos parciales separados en
-ARS/USD.
-UltimoTurno siempre conserva prioridad sobre el stock y la venta del revendedor
-revalida disponibilidad antes de descontar.
+Imagenes del claim reparadas el 12/10. Jugable: 77 de 129 precios CoolStuff
+aplicados; 52 pendientes, sin reemplazos de edicion/idioma. Cambio puntual 1540
+y redondeo unitario a 500. No volver a aplicar a compradores asignados.
+No hay nuevo boton de cotizacion masiva ni cobros/envios automaticos.
 
-La carga de stock tiene una version compacta para pantallas de hasta 620 px:
-sin cabecera/navegacion global, filtros horizontales, campo y lupa en una fila,
-resultados densos y espacio inferior para teclado/barra del navegador. Esta
-version esta online; falta validarla durante una carga real con
-los telefonos de los operadores.
-
-La navegacion principal y el portal usan URLs reales por sector. La pantalla
-visible se actualiza cada 15 segundos y al recuperar el foco, sin F5 ni perdida
-de formularios, carrito, filtros o scroll. El boton superior actualiza solo el
-sector actual. Antes de cambiar esto, revisar la implementacion de History API,
-los mapas de rutas y `vercel.json`.
-
-Objetivo inmediato: validar vencimientos, carga de costos y pagos mixtos con una
-muestra pequena; despues validar la PWA/carga movil y la sincronizacion con dos
-sesiones. Luego pilotear revendedores con pocas cartas reales y continuar
-cobertura de imagenes y validacion de CSV reales.
+Retomar el orden de continuidad de NEXT_STEPS.md. Separar entregado, operacion
+puntual, propuesta y pendiente. Preservar los datos actuales, validar en base
+aislada y hacer commit, push y verificacion online al terminar cada cambio.
 ```
 
 ---

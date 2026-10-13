@@ -3,11 +3,17 @@
 La aplicacion instalable usa directamente la plataforma productiva:
 
 ```text
-https://ultimoturno.app/inicio
+https://ultimoturno.app/admin
 ```
 
 No requiere APK, Expo Go ni una configuracion separada. Usa los mismos usuarios,
-permisos y datos que la web.
+permisos y datos que la web administrativa.
+
+Desde la separacion de tienda/panel, start_url y scope son /admin. La raiz /
+es la tienda publica; /torneos y /portal-revendedor tienen espacios propios.
+El id historico /inicio del manifiesto se conserva para no duplicar instalaciones,
+pero no es la ruta de inicio vigente. En instalaciones anteriores, abrir con
+conexion para actualizar el worker; la API no se cachea y no hay cola de ventas.
 
 ## Android
 

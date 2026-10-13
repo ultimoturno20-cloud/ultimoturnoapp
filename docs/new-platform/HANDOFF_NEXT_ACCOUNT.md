@@ -1,5 +1,85 @@
 # Traspaso de contexto - UltimoTurno
 
+## Continuidad consolidada - 2026-10-13
+
+Se revisaron este chat completo del 7 al 12 de octubre y los chats recientes
+de estado, solicitud de mini-programa y desarrollo de Torneos. Se contrastaron
+sus entregas con Git, las guias actuales, el manifiesto PWA y evidencia local.
+No se volcaron conversaciones, credenciales ni datos de compradores a Git.
+La solicitud de mini-programa no tiene una entrega final propia registrada;
+la entrega web de Torneos se confirma en sus commits y guia especifica.
+El repositorio del programa de escritorio es externo y no se inspecciono ni
+modifico: todo el trabajo de esta revision queda en D:\UltimoTurno\Stock.
+
+Antes de editar: main limpio en 9f267b8; produccion tambien 9f267b8 segun
+public-status, HTTP 200, ok=true, Postgres transaction pooler accesible,
+PILOTO REAL y ejemplos deshabilitados. Esto reemplaza como referencia actual
+los SHA a20cf29/3b06aa7 de prompts anteriores; no borra su historia.
+Consultar nuevamente Git y public-status al retomar, sin fijar un SHA eterno.
+
+### Decisiones que no hay que revertir
+
+- Tienda en /, panel/login en /admin y sectores /admin/...; Torneos en /torneos
+  con cuentas propias, sin exigir admin de Stock. Portal en /portal-revendedor.
+- Identidad negro/carbon/rojo. Tienda abre en filas, grilla opcional; imagenes
+  completas contenidas y precios legibles. No restaurar grilla por defecto.
+- Categorias comerciales Singles/Sellado/Accesorios/Otros. Pokemon/Supporter/
+  Item/Stadium/Tool/Energy son filtros de Singles, no navegacion comercial.
+- Carpetas son items unicos del inventario con contenido y valuacion dinamica.
+  No reconstruir el modulo separado de Colecciones ni un master set hardcodeado.
+  Estado No venta es la restriccion; un tag de coleccion no la sustituye.
+  Plantilla 151 EN mas promos elegidas a mano; no presupone todas las promos
+  existentes ni convierte el contenido en singles disponibles para venta.
+- Tipos desde datos confiables del catalogo, override conservado al agregar
+  unidades y Sin clasificar si no hay evidencia. No adivinar por nombre/imagen.
+- Revendedores: stock central prioritario, lotes atomicos y reintentos seguros.
+  Cuenta corriente existente no equivale a rendiciones imputadas por venta.
+- Checkout manual ya existe, sin cuenta obligatoria del comprador. Preferencia
+  confirmada: solo retiro, reserva de 30 minutos y configuracion desde admin.
+  No se confirmo hoy la habilitacion ni el texto publico guardado. No inventar
+  datos bancarios ni abrir pedidos automaticamente durante un cambio de codigo.
+- Cualquier admin autenticado puede editar precio central desde tienda. No
+  extender ese permiso a visitantes/revendedores ni cambiar ordenes previas.
+
+### Fuentes de precio y operaciones puntuales
+
+| Uso | Regla registrada | Alcance |
+|---|---|---|
+| Precio central desde tienda | Cotizacion de plataforma; minimo 800 y redondeo superior a 100 ARS | current_prices, con permisos/conflictos/auditoria existentes |
+| Cotizacion PriceCharting del 12/10 | API oficial, loose-price Ungraded; 1540 ARS/USD sin margen ni regla 500 | Respuesta de chat y CSV, sin aplicar a produccion |
+| Jugable del 12/10 | CoolStuff condicion exacta NM/RAW, 1540 ARS/USD y ceil unitario a 500, sin minimo 800 | Solo final_price_ars de 77 entradas; 52 pendientes |
+
+No globalizar el cambio fijo de una cotizacion, confundir precio de mercado
+con precio de venta, ni usar retail-loose-sell como loose-price.
+Las 243 imagenes fueron reparadas y las 77 cotizaciones aplicadas el 12/10,
+con 359 entradas conservadas. Son evidencia de ese dia, no una nueva inspeccion
+del claim activo de hoy. Esta consolidacion no vuelve a ejecutar esos scripts.
+Los archivos .work son ignorados/locales: un clon de Git puede no tenerlos.
+Su ausencia no significa que la operacion productiva no se haya aplicado.
+
+### Cotizaciones y comunicacion entregadas en chat
+
+La cotizacion PC contiene 46 entradas/57 unidades, total USD 300.86 y
+ARS 463324.40 a cambio 1540. Archivos locales, no secretos ni datos de clientes:
+.work/quote-csv-20261012/cotizacion-pricecharting-2026-10-12.csv y
+.work/quote-csv-20261012/variantes-alternativas-2026-10-12.csv.
+Los CSV tienen cantidades, precio/subtotal, fecha UTC e IDs/links exactos.
+Se asumieron reediciones 30th para Sneasel #25 y Solgaleo GX #89, y Nidorina
+#101 sin sello Pokemon Center; originales/estampada separados como alternativas.
+Pikachu #27 aparece dos veces en la lista y se conservo, sin deduplicar.
+No trasladar estos valores historicos a stock/claim ni llamarlos precios de hoy.
+Mensaje de presentacion del claim para WhatsApp redactado; no se envio al grupo.
+
+### Como retomar
+
+Leer primero Continuidad confirmada de PROJECT_STATUS.md y Orden de continuidad
+de NEXT_STEPS.md. El prompt vigente esta en NEXT_STEPS.md; los avisos/prompts
+del 7 de octubre mas abajo son referencia historica, no prioridades actuales.
+Para Torneos usar docs/new-platform/TOURNAMENTS.md; para PWA docs/PWA_INSTALL.md.
+Los resultados QA anteriores son historicos. Para esta revision documental
+comprobar diff, enlaces, lint y estado online; no atribuirse una nueva suite
+completa, una auditoria de seguridad o pruebas de compra en produccion.
+
 ## Cotizacion CoolStuff de Jugable - 2026-10-12
 
 El usuario autorizo cotizar Jugable del claim activo y confirmo cambio fijo
@@ -619,7 +699,7 @@ Inicio conserva libres/asignadas y suma no venta; Caja agrega tambien reservadas
 El precio manual solo se usa para venta/ganancia potencial, sin incluir coleccion.
 Tests monetarios en `apps/admin-web/tests/stock-value.test.ts`, incluidos en npm test.
 
-## Aviso vigente - 2026-10-07
+## Aviso historico - 2026-10-07
 
 Este documento contiene historia extensa del proyecto. Para estado operativo y
 prioridades actuales usar primero:
@@ -695,7 +775,7 @@ Migraciones vigentes mas recientes:
 0053_sale_amount_paid_usd.sql
 ```
 
-## Prompt vigente para el proximo chat
+## Prompt anterior - 2026-10-07 (usar el vigente de NEXT_STEPS.md)
 
 ```text
 Estamos trabajando en UltimoTurno. Usa exclusivamente el workspace

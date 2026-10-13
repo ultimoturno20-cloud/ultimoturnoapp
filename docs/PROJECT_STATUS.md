@@ -1,15 +1,48 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-12
+Actualizado: 2026-10-13
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
+
+## Continuidad confirmada al 2026-10-13
+
+Revision de los chats recientes, contrastada con Git y las guias de modulos.
+Antes de consolidar: main limpio en 9f267b8 y public-status HTTP 200, ok=true,
+deployment.commitSha=9f267b8. Postgres por transaction pooler accesible,
+perfil PILOTO REAL, ejemplos deshabilitados y datos operativos presentes.
+Esta revision es documental: no cambia codigo, configuracion ni datos reales.
+
+| Sector | Estado entregado | Commits de referencia |
+|---|---|---|
+| Carpetas | Item unico en stock, contenido visual, plantilla 151 EN, promos manuales y valuacion dinamica sin duplicar; No venta no habilita carrito | e137a8e, 265f365, c988c23 |
+| Tipos | Clasificacion desde catalogo para inventario y altas; override manual y Sin clasificar cuando falta evidencia | 2aeab26 |
+| Revendedores | Catalogos, lotes atomicos, ficha por pestanas, cuenta corriente y solicitudes compactas; prioridad del stock central | f9e716d, bad381f, 7e43e72, e831500 |
+| Operacion | Vistas de Inventario y filtros recuperables de Ordenes/Caja/Compras; editor de stock fuera de grilla y precios contenidos | 7c4be1d, 9b41388, d064d8b |
+| Torneos | /torneos con cuentas independientes, Swiss/top cut, altas tardias, rondas manuales y bajas durante Swiss | 49ca4c6, ee3ab5c, 6639a41 |
+| Tienda | Raiz publica, admin en /admin, publicacion explicita, categorias comerciales, carrito y checkout manual | 4c9f3e2, f129abf, d04801f, 77d185f |
+| Tienda visual | Negro/carbon/rojo, lista por defecto y grilla opcional, cantidades por condicion, imagenes compactas y movimiento reducido | 3e2a80d, a958ce5, 568a906, 25cecd0 |
+| Precio central | Admin autenticado edita desde tienda; misma fuente del panel, conflictos controlados y ordenes previas intactas | e5c7ff5, c190ede |
+| Claim: imagenes | Respaldo al 403 y reparacion de 243 faltantes; 359 entradas conservadas y cero faltantes al finalizar el 12/10 | af52584, 3ba991f |
+| Claim: Jugable | 77/129 precios CoolStuff aplicados el 12/10; 52 pendientes, cambio fijo 1540 y ceil unitario a 500 | 9f267b8 |
+
+Decision de chat para tienda: solo retiro y reserva de 30 minutos, configurables
+en /admin/configuracion. Checkout se entrego pausado por defecto; no se
+confirmaron hoy su habilitacion ni las instrucciones publicas guardadas.
+Torneos no requiere admin ni cuenta de Stock: docs/new-platform/TOURNAMENTS.md.
+La PWA administrativa inicia en /admin: docs/PWA_INSTALL.md.
+
+Los 212 tests funcionales y los 23 tests CoolStuff son resultados de sus
+entregas, no pruebas ejecutadas nuevamente hoy. Las cifras del claim son
+evidencia del 12/10, no un nuevo censo del claim activo.
+El detalle inferior registra entregas incrementales: las limitaciones de una
+primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
 - Cotizacion autorizada de Jugable del claim del 12 de octubre: 77 de 129
   entradas actualizadas exclusivamente en claim_cards.final_price_ars. Precios
-  Near Mint leidos hoy en productos exactos de CoolStuff, usando su cache solo
+  Near Mint leidos el 2026-10-12 en productos exactos de CoolStuff, usando su cache solo
   para localizar enlaces, no para reutilizar precios antiguos. Cambio fijo
   confirmado por el usuario: 1540 ARS/USD; redondeo unitario hacia arriba a 500,
   sin sumar otro escalon cuando ya es multiplo exacto ni aplicar minimo 800.
@@ -160,7 +193,8 @@ Actualizado: 2026-10-12
   navegacion por productos y banner con arte original de UltimoTurno reutilizado.
   Catalogo con filtros laterales, busqueda de expansiones, filtros activos,
   grilla/lista, fotos contenidas y Ver detalle. En movil, filtros en dialogo;
-  foco/cierre/scroll contenidos. Sin carrito, cuentas de compradores ni checkout.
+  foco/cierre/scroll contenidos. Esta entrega visual precedio al carrito y
+  checkout manual ya implementados; no hay cuentas propias de compradores.
 - Conserva API, publicacion, precios numericos y reglas de disponibilidad.
   ARS muestra centavos solo cuando existen; no hay conversion nueva. Solo
   frontend, Lucide con version fija y asset de marca de 193 KB. Sin promociones,
@@ -911,6 +945,9 @@ Actualizado: 2026-10-12
 
 ## Commits funcionales recientes
 
+Las referencias del 8 al 12 de octubre estan en la tabla de continuidad al
+inicio. La lista siguiente conserva la base anterior al 7 de octubre.
+
 ```text
 3b06aa7 Merge pull request #27 (pagos parciales en USD)
 8a8d9ce feat: record partial USD payments on orders
@@ -980,6 +1017,10 @@ OPENAI_CLAIM_MODEL=gpt-4o-mini
 Nunca copiar valores reales a Git, logs compartidos o documentacion.
 
 ## Verificacion y deploy
+
+Lectura el 2026-10-13 antes del cambio documental: local limpio y produccion
+coinciden en 9f267b8; public-status HTTP 200 y DB accesible. No se ejecutaron
+una nueva reparacion, cotizacion ni configuracion productiva en esta revision.
 
 Verificacion local del estado integrado `3b06aa7` realizada el 2026-10-07:
 lint OK, typecheck OK, build OK y `92/92` tests aprobados. Incluye pruebas
