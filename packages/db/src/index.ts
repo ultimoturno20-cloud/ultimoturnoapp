@@ -13,6 +13,7 @@ export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchRes
 export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
 import { guardStoreOrder } from "./store-checkout.js";
+import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
 
 const minimumSalePriceArs = 800;
 
@@ -8374,20 +8375,8 @@ function splitClaimBuyers(value: string): string[] {
   return String(value || "").split(",").map((buyer) => buyer.trim()).filter(Boolean);
 }
 
-function splitClaimBuyerSlots(value: string, quantity: number): string[] {
-  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
-  const text = String(value || "");
-  if (!text.trim()) return [];
-  const raw = text.split(",").map((buyer) => buyer.trim());
-  if (!text.includes(",") && raw[0]) return Array.from({ length: safeQuantity }, () => raw[0]);
-  if (raw.length > safeQuantity) {
-    throw new Error(`Hay ${raw.length} compradores cargados pero la cantidad es ${safeQuantity}. Revisá los campos por unidad.`);
-  }
-  return [...raw, ...Array.from({ length: Math.max(0, safeQuantity - raw.length) }, () => "")];
-}
-
 function normalizeBuyerKey(value: string): string {
-  return String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("es-AR");
+  return normalizeClaimBuyerKey(value);
 }
 
 type ClaimOrderPlanCardLine = ClaimOrderPreviewLine & {
@@ -8411,29 +8400,11 @@ type ClaimOrderPlan = Omit<ClaimOrderPreview, "buyers"> & {
 };
 
 function claimCardBuyerAllocations(card: ClaimCard): Array<{ buyer: string; quantity: number }> {
-  const quantity = Math.max(1, Math.floor(Number(card.quantity) || 1));
-  const buyers = splitClaimBuyerSlots(card.buyer, quantity).filter(Boolean);
-  if (!buyers.length) return [];
-  const grouped = new Map<string, { buyer: string; quantity: number }>();
-  for (const buyer of buyers) {
-    const key = normalizeBuyerKey(buyer);
-    const current = grouped.get(key);
-    grouped.set(key, { buyer: current?.buyer || buyer, quantity: (current?.quantity || 0) + 1 });
-  }
-  return [...grouped.values()];
+  return allocateClaimBuyerUnits(card.buyer, card.quantity);
 }
 
 function claimFreeBuyerAllocations(free: ClaimFree): Array<{ buyer: string; quantity: number }> {
-  const quantity = Math.max(1, Math.floor(Number(free.quantity) || 1));
-  const buyers = splitClaimBuyerSlots(free.buyer, quantity).filter(Boolean);
-  if (!buyers.length) return [];
-  const grouped = new Map<string, { buyer: string; quantity: number }>();
-  for (const buyer of buyers) {
-    const key = normalizeBuyerKey(buyer);
-    const current = grouped.get(key);
-    grouped.set(key, { buyer: current?.buyer || buyer, quantity: (current?.quantity || 0) + 1 });
-  }
-  return [...grouped.values()];
+  return allocateClaimBuyerUnits(free.buyer, free.quantity);
 }
 
 function buildClaimOrderPlan(workspace: ClaimsWorkspace): ClaimOrderPlan {

@@ -8,7 +8,10 @@ Actualizado: 2026-10-13
 
 ## Orden de continuidad
 
-1. Revisar las 52 pendientes de Jugable con identidad exacta y comprobar primero
+1. Antes de cerrar, abrir Claims > Compradores y premios: revisar ranking,
+   empates y lista Sorteo (mas de 10000 ARS, incluyendo USD al cambio vigente).
+   Completar precios/asignaciones por revisar antes de decidir premios.
+   Revisar las 52 pendientes de Jugable con identidad exacta y comprobar primero
    el claim y sus compradores actuales. Las 77 ya aplicadas no se vuelven a
    cotizar ni sobrescribir por defecto. La regla 1540/500 fue puntual, no global.
 2. Pilotear la tienda con operaciones reales: confirmar publicacion de productos
@@ -32,6 +35,21 @@ Actualizado: 2026-10-13
    separadas, no condiciones faltantes para reconstruir el checkout manual.
 
 ## Prioridades vigentes
+
+### Compradores y premios antes del cierre
+
+- Disponible en /admin/claims, sin exigir cerrar ni generar ordenes. Usa el
+  claim completo guardado, no los filtros de la mesa ni campos sin guardar.
+- Ranking descendente por total ARS equivalente; ARS/USD separados visibles.
+  Empates comparten puesto y no se decide ganador automaticamente.
+- Sorteo es estrictamente mayor que 10000 ARS. Copiar participantes incluye
+  todos los elegibles una sola vez, aun si hay una busqueda activa.
+- Frees y cartas ignoradas no suman. Si falta precio o hay compradores de mas
+  por unidad, revisar el aviso provisional. Un importe conocido ya superior
+  al minimo habilita participar aunque aun falten otros precios del comprador.
+- La cotizacion puede cambiar el orden/ingreso de compras USD; ver la cotizacion
+  mostrada al tomar la lista. No se congela ni guarda un sorteo o resultado.
+  Asignar premios/frees y realizar el sorteo siguen siendo decisiones manuales.
 
 ### Usar el espacio independiente Torneos
 

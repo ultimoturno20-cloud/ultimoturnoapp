@@ -11,7 +11,8 @@ Revision de los chats recientes, contrastada con Git y las guias de modulos.
 Antes de consolidar: main limpio en 9f267b8 y public-status HTTP 200, ok=true,
 deployment.commitSha=9f267b8. Postgres por transaction pooler accesible,
 perfil PILOTO REAL, ejemplos deshabilitados y datos operativos presentes.
-Esta revision es documental: no cambia codigo, configuracion ni datos reales.
+Esa consolidacion de chats fue documental. Las entregas posteriores con codigo,
+incluido el ranking del claim, se registran en Resumen vigente.
 
 | Sector | Estado entregado | Commits de referencia |
 |---|---|---|
@@ -32,14 +33,28 @@ confirmaron hoy su habilitacion ni las instrucciones publicas guardadas.
 Torneos no requiere admin ni cuenta de Stock: docs/new-platform/TOURNAMENTS.md.
 La PWA administrativa inicia en /admin: docs/PWA_INSTALL.md.
 
-Los 212 tests funcionales y los 23 tests CoolStuff son resultados de sus
-entregas, no pruebas ejecutadas nuevamente hoy. Las cifras del claim son
-evidencia del 12/10, no un nuevo censo del claim activo.
+Los 212 tests funcionales y los 23 tests CoolStuff corresponden a entregas
+anteriores. La nueva entrega de ranking ejecuto la suite de 225 tests indicada
+en Resumen vigente. Las cifras del claim son evidencia del 12/10, no un nuevo
+censo del claim activo.
 El detalle inferior registra entregas incrementales: las limitaciones de una
 primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
+- Ranking antes de cerrar claim: /admin/claims > Compradores y premios abre
+  listado por mayor compra y lista de Sorteo. Suma precios finales ARS y USD
+  convertidos a la cotizacion vigente de la plataforma, elegida por el usuario.
+  Sorteo exige mas de 10000 ARS, no incluye exactamente 10000; una entrada
+  por comprador normalizado, independientemente de sus unidades compradas.
+  Reutiliza con el cierre la asignacion por unidad; conserva casilleros vacios,
+  excluye ignoradas y frees y muestra empates, importes parciales y errores.
+  Filtros de la mesa no recortan el ranking. Copiar participantes copia todos
+  los elegibles, aunque se busque un nombre. Sin premios automaticos, cierre,
+  nuevas ordenes, migraciones ni cambios de datos reales.
+  QA: 225 tests completos, 13 focalizados revalidados, tipos/lint/build/DB verify
+  OK y Chrome con API/PGlite temporal en siete anchos, clipboard/foco/Escape,
+  actualizacion de precios, solo frees y sorteo vacio. Cero writes productivos.
 - Cotizacion autorizada de Jugable del claim del 12 de octubre: 77 de 129
   entradas actualizadas exclusivamente en claim_cards.final_price_ars. Precios
   Near Mint leidos el 2026-10-12 en productos exactos de CoolStuff, usando su cache solo

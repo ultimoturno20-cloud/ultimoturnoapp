@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { stockItemValues } from "./stock-value.js";
 import { defaultResellerCatalogFilters, filterResellerCatalog, resellerCatalogTags, type ResellerCatalogItem, type ResellerCatalogFilters } from "./reseller-catalog.js";
 import "./styles.css";
@@ -19,6 +20,8 @@ import { adminViewPaths as viewPaths, adminViewFromUrl, isAdminPath, isResellerP
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
 import { StoreSettingsPanel } from "./store-settings.js";
 import { storePriceChangeKey } from "./store-admin-state.js";
+import { Trophy } from "lucide-react";
+import { ClaimBuyerRanking } from "./claim-buyers.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -5768,8 +5771,10 @@ function ClaimsView(props: {
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
   const [claimSearch, setClaimSearch] = useState("");
   const [claimPriceFilter, setClaimPriceFilter] = useState<"all" | "missing_price" | "buyer_missing_price" | "missing_buyer">("all");
+  const [buyersOpen, setBuyersOpen] = useState(false);
   const [free, setFree] = useState({ buyer: "", finalName: "", quantity: 1, tags: "", notes: "" });
   const active = props.workspace.activeClaim;
+  useEffect(() => setBuyersOpen(false), [active?.id]);
   const summary = props.workspace.summary;
   const sections = props.workspace.sections;
   const claimCatalogStock = useMemo(() => {
@@ -5864,6 +5869,9 @@ function ClaimsView(props: {
   };
   return (
     <section className="view claims-layout">
+      {active && buyersOpen ? createPortal(<ResellerAdminDialog title="Compradores y premios" busy={false} onClose={() => setBuyersOpen(false)}>
+        <ClaimBuyerRanking cards={props.workspace.cards} exchangeRate={props.blueRate.sell} rateSource={props.blueRate.source} rateFallback={props.blueRate.fallback} />
+      </ResellerAdminDialog>, document.body) : null}
       <section className="panel claims-hero">
         <div className="claims-hero-left">
           <p className="eyebrow">Claims</p>
@@ -5880,6 +5888,7 @@ function ClaimsView(props: {
               <button className="secondary-action" onClick={props.onGenerateGrid}><Icon name="image" />Grilla 5x6</button>
               <button className="secondary-action" onClick={props.onExportClaimCsv}><Icon name="download" />Exportar CSV</button>
               <button className="secondary-action" disabled={!canClose} onClick={props.onExportOrders}><Icon name="download" />Exportar ordenes</button>
+              <button className="secondary-action" type="button" onClick={() => setBuyersOpen(true)}><Trophy size={16} />Compradores y premios</button>
               <button className="primary-action" disabled={!canClose || props.claimClosing} onClick={props.onCloseClaim}><Icon name="close" />{props.claimClosing ? "Cerrando..." : "Cerrar claim"}</button>
               <button className="secondary-action danger-action" onClick={props.onArchiveClaim}><Icon name="close" />Cancelar claim</button>
               {summary.missingPrices ? <span className="quality-warning">{summary.missingPrices} con comprador sin precio</span> : null}

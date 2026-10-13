@@ -1,5 +1,52 @@
 # Traspaso de contexto - UltimoTurno
 
+## Ranking de compradores y lista de sorteo - 2026-10-13
+
+El usuario pidio mayores compradores antes del cierre para premios, y quienes
+compraron mas de 10000 ARS para sorteo. Confirmo sumar USD convertidos usando
+la cotizacion actual de la plataforma, no el fijo 1540 de Jugable.
+Compradores y premios en /admin/claims abre un dialogo de lectura con ranking,
+importes ARS/USD, unidades y elegibilidad; pestana Sorteo y copia de listas.
+Usa workspace.cards completo y actualizado, no filtros ni borradores sin guardar.
+No consulta nuevos endpoints, no cierra el claim ni genera premios/ordenes.
+
+packages/domain/src/claim-buyers.ts comparte normalizeClaimBuyerKey y
+allocateClaimBuyerUnits con los wrappers de cierre en packages/db/src/index.ts.
+Un nombre legado sin coma recibe todas las unidades; comas son slots por unidad,
+incluidos vacios. Agrupa mayusculas/espacios como el cierre, sin quitar acentos
+ni unir identidades por fuzzy matching. Frees conservan su asignacion para
+ordenes, pero no se incluyen en el ranking ni habilitan sorteo por si solos.
+Ignoradas y cartas sin comprador quedan fuera. Mas compradores que unidades
+es un error, no se trunca; falta de precio hace el ranking provisional.
+
+Suma centavos de precios finales por unidades y convierte el subtotal USD
+al sell vigente, redondeando el equivalente a centavos. Participa solo si
+el total conocido supera 10000; exactamente 10000 no entra. Cada comprador
+normalizado participa una vez, sin tickets por unidad o cada 10000 gastados.
+Conocido >10000 sigue habilitado con otros precios faltantes; por debajo queda
+Por revisar si falta precio. USD sin cotizacion no se convierte a cero:
+total pendiente; si los ARS conocidos ya superan el minimo, igualmente entra.
+No usa PC/sugerido ni costos.
+Puestos empatados son 1,1,3; nombre ordena solo su presentacion, no desempata.
+No se declara automaticamente ganador de premios ni se realiza un sorteo.
+
+apps/admin-web/src/claim-buyers.tsx/css contiene la vista; main.tsx reutiliza
+ResellerAdminDialog en portal al body para evitar recortes por contenedores
+transformados. Mantiene foco/Escape/body scroll y cierra al cambiar claim.
+Copiar participantes incluye TODOS los elegibles aun con busqueda activa.
+Clipboard fallido muestra error sin afirmar exito. No persiste nombres/listas
+en storage ni agrega API publica. No hay migraciones ni escrituras reales.
+
+QA: 225 tests completos; 12 de dominio + 1 DB revalidados tras extraer parser,
+paridad con preview de ordenes, sin alterar workspace ni crear ventas al leer.
+Tipos, lint, build completo y DB verify OK. Chrome en 1788/1440/1024/768/640/
+390/320 px contra API y PGlite temporales: ranking, empates, umbral, USD,
+frees/ignoradas, copia completa/errores, busquedas, filtros de mesa independientes,
+foco/Escape, refresh con nuevo precio y sorteo vacio. Solo fixtures locales
+se modificaron para simular cambios; cero requests/writes de QA a produccion.
+Scripts/capturas ignorados en .work/claim-buyers-*; demo local aislada en
+http://127.0.0.1:5286/demo. No confundirla con datos o sesiones productivas.
+
 ## Continuidad consolidada - 2026-10-13
 
 Se revisaron este chat completo del 7 al 12 de octubre y los chats recientes
