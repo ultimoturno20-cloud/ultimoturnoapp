@@ -91,6 +91,7 @@ import {
   listUnifiedCatalogCards,
   listSales,
   listSalesForActor,
+  listOperationalHistory,
   listResellers,
   listStockForBusiness,
   listStockForActor,
@@ -4560,6 +4561,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (url.pathname === "/inventory-adjustments" && request.method === "POST") {
       const body = await readJson<Parameters<typeof adjustInventoryQuantity>[1]>(request);
       sendJson(response, 201, { item: await finishInventoryChange(db, await adjustInventoryQuantity(db, body, user)) });
+      return;
+    }
+
+    if (url.pathname === "/operational-history" && request.method === "GET") {
+      sendJson(response, 200, await listOperationalHistory(db, user, Object.fromEntries(url.searchParams)));
       return;
     }
 

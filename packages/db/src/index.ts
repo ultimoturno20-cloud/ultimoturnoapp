@@ -12,6 +12,7 @@ export { createResellerStockRequestBatch, assignResellerStockBatch, resolveResel
 export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchResult } from "./reseller-batches.js";
 export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
+export { listOperationalHistory } from "./operational-history.js";
 import { guardStoreOrder } from "./store-checkout.js";
 import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
 

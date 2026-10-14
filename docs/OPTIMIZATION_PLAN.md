@@ -34,6 +34,14 @@ presentan como latencia de produccion ni como promesas sin medicion.
 - [ ] OP-1.4: paginar/filtrar las lecturas grandes en servidor donde sea posible;
   separar resumen global de pagina. Exportaciones y acciones masivas siguen
   trabajando sobre el alcance completo explicitamente elegido.
+- [x] OP-1.4a: historial de movimientos/auditoria con consulta filtrada y
+  paginada en SQL, totales independientes y carga solo de pestana activa.
+- [ ] OP-1.4b: adaptar Inventario con endpoint paginado separado, manteniendo
+  busqueda/orden/precios, resumen/facetas, carrito, seleccion y exportacion
+  completas. No reemplazar stock.items global por una pagina parcial.
+- [ ] OP-1.4c: adaptar las otras lecturas grandes despues de mapear consumidores:
+  ingreso movil, pickers de ordenes/compras/claim y planificador. Rankings,
+  propuestas, exportaciones y cierres conservan su alcance completo.
 - [ ] OP-1.5: registrar consultas, filas, bytes y tiempos antes/despues en
   fixtures de inventario y claim grandes; agregar presupuestos de regresion.
 
@@ -168,3 +176,59 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   Sin migraciones, nuevas dependencias ni cambios de datos comerciales reales.
   Siguiente entrega OP-1.4: paginacion/filtros en servidor conservando resumen,
   seleccion completa, exportaciones y acciones masivas. Etapa 1 sigue en curso.
+- 2026-10-14, OP-1.4a (entrega parcial de OP-1.4): /admin/movimientos usa
+  GET /operational-history. Solo lee la pestana activa, 50 filas por defecto
+  (25/50/100 seleccionables); filtros por texto literal, tipo y fecha en SQL.
+  Fecha inclusiva de usuario en America/Argentina/Buenos_Aires. Una sentencia
+  obtiene pagina acotada, total global del negocio/tipo, total filtrado, facetas
+  y variacion neta filtrada; los totales no se calculan con las filas visibles.
+  Cursor (created_at, id) con precision SQL, sin OFFSET. Limite temporal asOf
+  conserva el recorrido frente a altas posteriores; no es un snapshot MVCC
+  durable ni congela escrituras retrofechadas o ediciones de datos historicos.
+  Recarga manual vuelve a primera pagina con el mismo filtro; refresh automatico
+  actualiza primera pagina o conserva cursor/limite en paginas anteriores.
+  Flechas arriba/abajo, estados vacio/error/carga, cancelacion de filtros viejos
+  y reintento sin cache adicional. Admin requerido; negocio acota filas,
+  totales/facetas y joins. DTO no trae before_data/after_data innecesarios;
+  no se borran de DB y /movements y /audit legacy conservan sus contratos.
+  Antes: dos GET de 100 filas cada uno aun viendo una sola pestana. Chrome:
+  ahora un GET de 50 filas al entrar. Fixture con 1000 registros por tipo y
+  snapshots de auditoria sinteticos de 4 KB: payload legacy combinado 861265
+  bytes; pagina de auditoria de 25 filas aproximadamente 7402 bytes. Comparacion
+  de ese fixture/alcance, no latencia ni tamano de datos productivos.
+  QA: 260 tests completos; 18 regresiones finales DB/HTTP/contrato/transporte;
+  tipos/lint/build/db:verify OK. Chrome con API/PGlite temporal: tres paginas,
+  vuelta anterior, filtros, manual, respuesta retenida obsoleta y 503/reintento.
+  Restablecer filtros ya vacios y elegir tab activo tambien recargan sin dejar
+  la lista vacia; casos finales repetidos en Chrome con el bundle compilado.
+  Viewports 320/390/768/1440/1788 sin overflow de pagina, tabla con scroll propio,
+  teclado y reduced-motion; regresion OP-1.2 mantiene cinco metadata sin GET
+  stock extra, cantidades/imagenes y fallos conservados. Cero requests productivos.
+  Sin migraciones, dependencias, cambios en stock/ordenes/claims reales ni
+  nuevas caches persistentes. OP-1.4 NO esta completo; sigue OP-1.4b.
+
+## Mapa previo a OP-1.4b
+
+main.tsx usa stock.items completo en Inventario, Inicio, Caja, Compras,
+Revendedores, Ordenes, Claims y Planificador. Mantener /stock completo para
+esos consumidores hasta adaptar cada uno; no agregar un limit global a la ruta.
+
+- visibleItems usa ranking de busqueda, filtros, duplicados y orden por precio
+  de fuente/cambio/valor de carpeta. La pagina nueva debe conservar esas reglas.
+- InventoryView deriva propietarios, disponibilidad y conteos por fuente de
+  allItems; summary y quality tambien son globales. Deben venir como agregados
+  independientes, no calcularse sobre una pagina o solo las filas cargadas.
+- Seleccionar vista incluye todos los items filtrados, no los primeros 24
+  renderizados. El nuevo flujo debe resolver IDs/alcance completo para lotes
+  y publicacion, conservar seleccion al navegar y probar mas de una pagina.
+- exportInventoryCsv(items) exporta el filtro completo. Requiere una lectura
+  explicita completa con los mismos filtros/orden, no exportar la pagina actual.
+- Carrito, detalles y editores necesitan resolver items seleccionados fuera de
+  pagina y datos frescos despues de guardar. Reusar getter puntual OP-1.1;
+  no sobrescribir el stock global con una lista parcial ni guardar otro stock.
+- Claims prioriza catalogo con cantidades agrupadas por PriceCharting ID;
+  Ordenes/Compras/Planificador buscan entre todos los candidatos. Adaptarlos
+  por separado con busqueda servidor/agregados, sin recortar ranking o propuesta.
+- Ingreso movil pide hasta 20000 entradas; revisar filtros y acciones antes
+  de paginarlo. Detalle de item depende hoy de movimientos recientes globales:
+  conviene una lectura exacta por item con sus permisos, no filtrar una pagina.

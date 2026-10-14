@@ -5,6 +5,8 @@ export type { StoreCatalogItem, StoreCatalogQuery, StoreCatalogPage, StoreCatego
 export { defaultStoreSettings } from "./store-checkout.js";
 export type { StoreSettings, StoreOrderInput, StoreOrderReceipt } from "./store-checkout.js";
 export type { StoreAdminSession, StoreAdminPrice } from "./store-admin.js";
+export { normalizeHistoryQuery, historyRequestPath } from "./operational-history.js";
+export type { HistoryKind, HistoryCursor, HistoryQuery, HistoryEntry, HistoryPage } from "./operational-history.js";
 
 export type Business = {
   id: string;

@@ -10,11 +10,17 @@ Actualizado: 2026-10-14
 
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
 sus cinco etapas por IDs con pruebas/commit/push/online en cada entrega.
-OP-1.1 online en 3414fb1 y OP-1.2 online en e63a864. OP-1.3 implementado con
+OP-1.1 online en 3414fb1, OP-1.2 en e63a864 y OP-1.3 en ca89cca, con
 QA DB/HTTP/Chrome: GET superpuestos 8 -> 4, stock 3 -> 1, sesiones aisladas,
 recarga manual/entre pestanas y descarte de respuestas anteriores a guardados.
-Seguir con OP-1.4 (paginacion sin perder resumen/seleccion/exportaciones), luego
-OP-1.5 (metricas). Verificar siempre SHA del ultimo commit en public-status.
+OP-1.4 en curso: OP-1.4a entrega historial Movimientos/Auditoria con filtros
+y paginas SQL, carga solo de pestana activa y totales fuera de la pagina.
+QA: 260 tests completos, regresiones finales y Chrome/API temporal aprobados.
+Seguir con OP-1.4b (Inventario sin perder resumen/seleccion/exportaciones) y
+OP-1.4c (otros consumidores grandes), luego OP-1.5 (metricas).
+El mapa previo de consumidores y requisitos esta en OPTIMIZATION_PLAN.md.
+No limitar /stock global ni exportar/seleccionar solo las filas de una pagina.
+Verificar siempre SHA del ultimo commit en public-status.
 Actualizar checklist y evidencia en cada entrega; etapa 1 todavia en curso.
 No abandonar el plan por una unica optimizacion ni confundir los pasos
 operativos reales de abajo con autorizacion para ejecutar QA productivo.

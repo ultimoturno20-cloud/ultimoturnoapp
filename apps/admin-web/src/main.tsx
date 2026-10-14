@@ -23,6 +23,7 @@ import { StoreSettingsPanel } from "./store-settings.js";
 import { storePriceChangeKey } from "./store-admin-state.js";
 import { Trophy } from "lucide-react";
 import { ClaimBuyerRanking } from "./claim-buyers.js";
+import { OperationalHistoryView, type OperationalHistoryHandle } from "./operational-history.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -1047,6 +1048,7 @@ function App() {
   const loadedViewsAt = useRef(new Map<View, { at: number; revision: number }>());
   const pendingPriceRefresh = useRef(false);
   const activeViewRefreshes = useRef(0);
+  const historyView = useRef<OperationalHistoryHandle>(null);
   const routeInitialized = useRef(false);
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
@@ -1279,8 +1281,7 @@ function App() {
         const [purchasesData, stockData] = await Promise.all([api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         updates.push(() => { setPurchases(purchasesData.purchases); setStock(stockData); });
       } else if (targetView === "movements") {
-        const [movementData, auditData] = await Promise.all([api<{ movements: MovementRow[] }>("/movements"), api<{ audit: AuditRow[] }>("/audit")]);
-        updates.push(() => { setMovements(movementData.movements); setAudit(auditData.audit); });
+        await historyView.current?.refresh(force);
       } else if (targetView === "import") {
         const data = await api<{ imports: ImportRunRow[] }>("/imports");
         updates.push(() => setImportRuns(data.imports));
@@ -3093,7 +3094,7 @@ function App() {
           onResetInventoryStock={() => void resetInventoryStockFromAdmin()}
         />
       ) : null}
-      {view === "movements" ? <MovementsView movements={movements} audit={audit} /> : null}
+      {view === "movements" ? <OperationalHistoryView ref={historyView} request={api} readAndApply={adminApi.readAndApply} revision={adminApi.revision} invalidate={adminApi.invalidate} movementLabel={movementLabel} auditLabel={auditLabel} /> : null}
       {view === "import" ? (
         <ImportView applying={importApplying} feedback={importFeedback} csvText={csvText} rows={previewRows} resolutions={importResolutions} importBatch={importBatch} importRuns={importRuns} blueRate={blueRate} onTextChange={(text) => { if (importRequest.current) return; setCsvText(text); setPreviewRows([]); setImportResolutions({}); setImportFeedback(""); }} onBatchChange={setImportBatch} onPreview={() => void previewSnapshot()} onPreviewText={(text) => void previewSnapshot(text)} onApply={applySnapshot} onLoadExampleCsv={environment.allowExamples ? () => setCsvText(exampleSnapshotCsv) : undefined} onResolve={(rowNumber, resolution) => setImportResolutions((current) => ({ ...current, [rowNumber]: resolution }))} onResolveMany={(nextResolutions) => setImportResolutions((current) => ({ ...current, ...nextResolutions }))} onClearResolutions={() => setImportResolutions({})} />
       ) : null}
@@ -4828,31 +4829,6 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
       </div>
       <div className="modal-footer"><button type="button" className="secondary-action" disabled={saving} onClick={onCancel}><Icon name="close" />Cancelar</button><button className="primary-action" disabled={saving || choosingCatalogCard}><Icon name="check" />{saving ? "Guardando..." : choosingCatalogCard ? "Elegí una carta" : form.itemKind === "folder" && !editing ? "Crear carpeta" : submitLabel}</button></div>
     </form>
-  );
-}
-
-function MovementsView({ movements, audit }: { movements: MovementRow[]; audit: AuditRow[] }) {
-  const [tab, setTab] = useState<"stock" | "system">("stock");
-  return (
-    <section className="view panel">
-      <div className="section-heading">
-        <div><h2>Movimientos</h2><p>Una sola seccion para seguir stock y cambios administrativos.</p></div>
-        <div className="mode-toggle activity-toggle">
-          <button className={tab === "stock" ? "active" : ""} onClick={() => setTab("stock")}>Stock</button>
-          <button className={tab === "system" ? "active" : ""} onClick={() => setTab("system")}>Cambios del sistema</button>
-        </div>
-      </div>
-      {tab === "stock" ? <MovementList movements={movements} /> : (
-        audit.length ? <div className="movement-list">{audit.map((row) => (
-          <article className="movement-row" key={row.id}>
-            <div><strong>{auditLabel(row.action)}</strong><span>{row.entityType}</span></div>
-            <div>{row.actorName || "Sistema"}</div>
-            <div>{formatDate(row.createdAt)}</div>
-            <p>{row.entityId}</p>
-          </article>
-        ))}</div> : <EmptyState title="Sin cambios administrativos" body="Las altas, ediciones y ajustes aparecen aca." />
-      )}
-    </section>
   );
 }
 

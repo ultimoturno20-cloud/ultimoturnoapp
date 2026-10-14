@@ -60,10 +60,46 @@ fallback/fallos conservados. Nuevos tests versionados: admin-api.test.ts (8),
 stock-read-cache.test.ts (7), mas HTTP real y revocacion de ticket en DB.
 QA final: 250 tests completos, tipos/lint/build/db:verify aprobados.
 Temporales .work/optimization-op13-* y demo http://127.0.0.1:5289/demo aislados.
-Siguiente OP-1.4: inventariar consumidores completos antes de paginar stock /
-claims; resumen, seleccion global, exportacion y operaciones masivas no deben
-quedar restringidos a una pagina. OP-1.4/1.5 y etapas 2-5 siguen pendientes.
-No cerrar el plan por estas tres entregas ni hacer QA autentificado en produccion:
+OP-1.3 confirmado online en ca89cca. OP-1.4 en curso, solo OP-1.4a entregado:
+historial /admin/movimientos llama /operational-history con kind stock/system,
+query, action, from/to (dias inclusivos de Argentina), limit 1..100, asOf y
+cursor JSON (fecha SQL exacta e ID). Normalizacion/DTO en domain; consulta en
+packages/db/src/operational-history.ts, require admin y business en todos los
+scopes/joins. Una sentencia SQL da pagina LIMIT+1, total global, filtrado,
+facetas y suma filtrada; sin OFFSET. Cursor conserva microsegundos, asOf evita
+altas posteriores durante recorrido normal, no es un snapshot MVCC durable.
+No prometer congelar registros retrofechados o editados. No trae before/after
+en la pagina; DB y /audit legacy conservan snapshots completos. /movements
+legacy sigue con 100 recientes, usado por Inicio y otros consumidores.
+operational-history.tsx reemplaza vista anterior: carga solo tab activo,
+50 filas por defecto, selector 25/50/100, flechas arriba/abajo, filtros y
+totales fuera de pagina. AbortSignal y controles/revision impiden aplicar
+filtros antiguos; usa transporte OP-1.3, no otra cache. Manual reinicia pagina
+y limite temporal, automatico conserva paginas anteriores. Errores visibles
+y reintento, fechas a America/Argentina/Buenos_Aires, scroll propio de tabla.
+QA: 260 tests completos; 18 DB/HTTP/contrato/transporte finales, tipos/lint/
+build/db:verify OK. 1000 registros por tipo recorridos sin duplicados/perdidas,
+fechas, negocio ajeno, roles, precision y altas posteriores probados. Fixture
+auditoria con snapshots sinteticos grandes: legacy combinado 861265 bytes y
+pagina de 25 aproximadamente 7402 bytes, no medicion productiva. Chrome:
+2 GET/200 recientes -> 1 GET/50 en tab stock; tres paginas, anterior, filtros,
+manual, respuesta retenida, 503/reintento, teclado/reduced-motion y screenshots
+320/390/768/1440/1788 sin overflow de pagina. OP-1.2 sigue aprobado.
+Temporales .work/history-*; demo http://127.0.0.1:5290/demo con fixture aislado.
+Sin migraciones, dependencias ni escrituras productivas de prueba.
+
+Siguiente OP-1.4b Inventario y OP-1.4c otros lectores: mapa y requisitos en
+OPTIMIZATION_PLAN.md. No cambiar /stock global a pagina: allItems alimenta
+facetas/propietarios/conteos, duplicados/calidad, carrito, Compras, Ordenes,
+Claims y Planificador. visibleItems tiene busqueda con ranking y orden segun
+fuente/cambio/carpetas; batch/export toman TODO el filtro, no lo renderizado.
+Endpoint paginado separado, resumen/agregados globales, lectura explicita de
+IDs/alcance para seleccionar/exportar/lotes y getter puntual para fuera de
+pagina. Probar filtro/seleccion/exportacion >100 items antes de migrar la vista.
+Ingreso movil pide hasta 20000; movimientos de detalle hoy filtran los recientes
+globales, requieren consulta por item con permisos, no una pagina filtrada.
+OP-1.4b/c, OP-1.5 y etapas 2-5 siguen pendientes; NO marcar OP-1.4 completo.
+No cerrar el plan por estas entregas ni hacer QA autentificado en produccion:
 GET /stock, /sales y catalogo pueden expirar pedidos reales. Online: status,
 assets y rechazo privado sin sesion; comparar SHA publicado con git log -1.
 

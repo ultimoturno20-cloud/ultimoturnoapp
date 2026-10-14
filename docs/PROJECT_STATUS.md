@@ -69,7 +69,21 @@ primera version no reemplazan lo implementado por un commit posterior.
   QA Chrome/API/PGlite temporal: navegacion, manual, precio entre pestanas con
   respuesta vieja retenida y regresion OP-1.2 OK, cero requests productivos.
   QA final OP-1.3: 250 tests completos, tipos/lint/build/DB verify aprobados.
-  Seguir con OP-1.4: paginacion/filtros sin perder resumen/seleccion/exportaciones.
+  OP-1.3 confirmado online en ca89cca. OP-1.4 en curso, NO terminado:
+  OP-1.4a entrega /admin/movimientos con /operational-history, filtros SQL,
+  paginas 25/50/100 y solo pestana activa. Cursor con precision SQL y limite
+  temporal de recorrido; totales globales/filtrados independientes de pagina.
+  Admin requerido, negocios separados; omite snapshots before/after en el
+  listado nuevo sin borrar auditoria ni cambiar /movements y /audit legacy.
+  Chrome: entrada 2 GET/200 registros -> 1 GET/50 registros; fixture de 1000
+  por tipo, auditoria sintetica grande: 861265 bytes combinados -> unos 7402
+  bytes de pagina de auditoria de 25. No son metricas de latencia productiva.
+  QA 260 tests completos, 18 regresiones finales y Chrome/API temporal;
+  tipos/lint/build/DB verify OK. Paginas, filtros, manual, error/reintento,
+  respuestas viejas, teclado y 320/390/768/1440/1788 aprobados sin requests
+  productivos. OP-1.2 sigue sin GET stock extra para cinco metadata.
+  Sigue OP-1.4b Inventario y OP-1.4c otros lectores grandes, con mapa previo
+  en OPTIMIZATION_PLAN.md. Stock global, seleccion y exportaciones no se recortan.
   Sin migraciones, cambios de datos reales ni nuevas dependencias.
 - Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
   y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos
