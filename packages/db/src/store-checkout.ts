@@ -103,7 +103,7 @@ export async function createStoreOrder(db:PGlite,raw:StoreOrderInput,ip:string,b
     await invalidate(connection,businessId);return receipt;
   });
 }
-async function invalidate(db:PGlite,businessId:string){await db.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz where business_id=$1",[businessId]);}
+async function invalidate(db:PGlite,businessId:string){await db.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz, refresh_started_at=null where business_id=$1",[businessId]);}
 export async function expireStoreOrders(db:PGlite,businessId?:string) {
   if(!businessId){const business=await db.query<{id:string}>("select id from businesses where slug='ultimoturno'");businessId=business.rows[0]?.id;if(!businessId)return 0;}
   return inventoryTransaction(db,async connection=>{

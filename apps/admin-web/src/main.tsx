@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
+import { createAdminApi, type ApiOptions } from "./admin-api.js";
 import { stockItemValues } from "./stock-value.js";
 import { defaultResellerCatalogFilters, filterResellerCatalog, resellerCatalogTags, type ResellerCatalogItem, type ResellerCatalogFilters } from "./reseller-catalog.js";
 import "./styles.css";
@@ -1025,7 +1026,7 @@ const fallbackBlueRateSell = 1540;
 const minimumSalePriceArs = 800;
 const catalogPickerSearchCache = new Map<string, { expiresAt: number; entries: PriceChartingCacheEntry[]; totalEntries: number }>();
 const catalogPickerSearchCacheTtlMs = 5 * 60 * 1000;
-const revalidatedApiCache = new Map<string, { etag: string; payload: unknown }>();
+const adminApi = createAdminApi({ url: buildApiRequestUrl, session: () => readLocalStorage(adminSessionTokenKey) });
 const exampleSnapshotCsv = `sku,name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,location,quantityOnHand,quantityReserved,priceArs,priceUsd
 UT-CSV-HORSEA-AQ-EN-NM,Horsea,Aquapolis,85,EN,NM,normal,,,,Caja agua C,2,0,4500,3.6
 ,Flareon EX,Generations,RC28,EN,NM,normal,,,,Caja fuego A,1,0,180000,117
@@ -1042,8 +1043,9 @@ function App() {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [viewRefreshing, setViewRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
-  const viewRefreshRequests = useRef(new Map<View, Promise<void>>());
-  const loadedViewsAt = useRef(new Map<View, number>());
+  const viewRefreshRequests = useRef(new Map<View, { revision: number; request: Promise<void> }>());
+  const loadedViewsAt = useRef(new Map<View, { at: number; revision: number }>());
+  const pendingPriceRefresh = useRef(false);
   const activeViewRefreshes = useRef(0);
   const routeInitialized = useRef(false);
   const [userName, setUserName] = useState("");
@@ -1211,7 +1213,7 @@ function App() {
 
   const [costSaving, setCostSaving] = useState(false);
   async function refreshStock(fresh = false) {
-    setStock(await api<{ summary: StockSummary; items: StockRow[] }>(fresh ? "/stock?fresh=1" : "/stock"));
+    await adminApi.readAndApply(() => api<{ summary: StockSummary; items: StockRow[] }>(fresh ? "/stock?fresh=1" : "/stock"), setStock);
   }
 
   async function fillInventoryCosts(body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) {
@@ -1227,12 +1229,14 @@ function App() {
     }
   }
 
-  async function refreshViewData(targetView: View = view) {
+  async function refreshViewData(targetView: View = view, force = false) {
+    if (force) adminApi.invalidate();
     const existing = viewRefreshRequests.current.get(targetView);
-    if (existing) return existing;
-    const request = (async () => {
-      activeViewRefreshes.current += 1;
-      setViewRefreshing(true);
+    if (existing?.revision === adminApi.revision()) return existing.request;
+    activeViewRefreshes.current += 1;
+    setViewRefreshing(true);
+    const request = adminApi.readAndApply(async () => {
+      const updates: Array<() => void> = [];
       if (targetView === "dashboard") {
         const [stockData, movementData, auditData, salesData] = await Promise.all([
           api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
@@ -1240,41 +1244,49 @@ function App() {
           api<{ audit: AuditRow[] }>("/audit"),
           api<{ sales: SaleRecord[] }>("/sales")
         ]);
-        setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales);
+        updates.push(() => { setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales); });
       } else if (targetView === "inventory") {
         const [stockData, resellerData] = await Promise.all([
           api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
           api<{ resellers: ResellerDashboard[] }>("/resellers")
         ]);
-        setStock(stockData);
-        setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
+        updates.push(() => {
+          setStock(stockData);
+          setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
+        });
       } else if (targetView === "resellers") {
-        await refreshStock();
+        const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
+        updates.push(() => setStock(stockData));
       } else if (targetView === "claims") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
-        setClaims(claimsData); setStock(stockData);
+        updates.push(() => { setClaims(claimsData); setStock(stockData); });
       } else if (targetView === "claim-live") {
-        setClaims(await api<ClaimsWorkspace>("/claims"));
+        const claimsData = await api<ClaimsWorkspace>("/claims");
+        updates.push(() => setClaims(claimsData));
       } else if (targetView === "claim-planner") {
         const [plansData, claimsData, stockData] = await Promise.all([api<ClaimPlansResponse>("/claim-plans"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
-        setClaimPlans(plansData); setClaims(claimsData); setStock(stockData);
+        updates.push(() => { setClaimPlans(plansData); setClaims(claimsData); setStock(stockData); });
       } else if (targetView === "orders") {
         const [salesData, claimsData, stockData, resellerData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<{ resellers: ResellerDashboard[] }>("/resellers")]);
-        setSales(salesData.sales); setClaims(claimsData); setStock(stockData);
-        setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
+        updates.push(() => {
+          setSales(salesData.sales); setClaims(claimsData); setStock(stockData);
+          setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
+        });
       } else if (targetView === "sales") {
         const [salesData, purchasesData, stockData, resellerData] = await Promise.all([api<{ sales: SaleRecord[] }>("/sales"), api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock"), api<{ resellers: ResellerDashboard[] }>("/resellers").catch(() => ({ resellers: [] as ResellerDashboard[] }))]);
-        setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData); setFinanceResellers(resellerData.resellers);
+        updates.push(() => { setSales(salesData.sales); setPurchases(purchasesData.purchases); setStock(stockData); setFinanceResellers(resellerData.resellers); });
       } else if (targetView === "purchases") {
         const [purchasesData, stockData] = await Promise.all([api<{ purchases: PurchaseRecord[] }>("/purchases"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
-        setPurchases(purchasesData.purchases); setStock(stockData);
+        updates.push(() => { setPurchases(purchasesData.purchases); setStock(stockData); });
       } else if (targetView === "movements") {
         const [movementData, auditData] = await Promise.all([api<{ movements: MovementRow[] }>("/movements"), api<{ audit: AuditRow[] }>("/audit")]);
-        setMovements(movementData.movements); setAudit(auditData.audit);
+        updates.push(() => { setMovements(movementData.movements); setAudit(auditData.audit); });
       } else if (targetView === "import") {
-        setImportRuns((await api<{ imports: ImportRunRow[] }>("/imports")).imports);
+        const data = await api<{ imports: ImportRunRow[] }>("/imports");
+        updates.push(() => setImportRuns(data.imports));
       } else if (targetView === "mobile-intake") {
-        setMobileEntries((await api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000")).entries);
+        const data = await api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000");
+        updates.push(() => setMobileEntries(data.entries));
       } else if (targetView === "catalog") {
         const [priceData, imageData, qualityData, indexData, indexListData] = await Promise.all([
           api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
@@ -1283,13 +1295,15 @@ function App() {
           api<CardIndexStatus>("/card-index/status"),
           api<{ entries: CardIndexEntry[]; status: CardIndexStatus }>("/card-index?limit=60")
         ]);
-        setPriceChartingCache(priceData); setPriceChartingImages(imageData); setImageQuality(qualityData);
-        setCardIndexStatus(indexListData.status.totalEntries || indexListData.entries.length ? indexListData.status : indexData);
-        setCardIndexEntries(indexListData.entries);
+        updates.push(() => {
+          setPriceChartingCache(priceData); setPriceChartingImages(imageData); setImageQuality(qualityData);
+          setCardIndexStatus(indexListData.status.totalEntries || indexListData.entries.length ? indexListData.status : indexData);
+          setCardIndexEntries(indexListData.entries);
+        });
       } else if (targetView === "admin") {
         const failures: string[] = [];
         const loadAdminResource = async <T,>(label: string, request: () => Promise<T>, apply: (value: T) => void) => {
-          try { apply(await request()); }
+          try { const value = await request(); updates.push(() => apply(value)); }
           catch (nextError) { failures.push(`${label}: ${errorMessage(nextError)}`); }
         };
         await Promise.all([
@@ -1306,15 +1320,18 @@ function App() {
           loadAdminResource("Automatizacion PriceCharting", () => api<PriceChartingAutoRefreshStatus>("/pricecharting-cache/auto-refresh/status"), setPriceChartingAutoRefresh),
           loadAdminResource("Automatizacion TCGplayer", () => api<TcgplayerPriceAutoRefreshStatus>("/tcgplayer-prices/auto-refresh/status"), setTcgplayerPriceAutoRefresh)
         ]);
-        setAdminDataWarning(failures.length ? `No se pudieron actualizar ${failures.length} fuente(s): ${failures.join(" · ")}` : "");
+        updates.push(() => setAdminDataWarning(failures.length ? `No se pudieron actualizar ${failures.length} fuente(s): ${failures.join(" · ")}` : ""));
       }
-      loadedViewsAt.current.set(targetView, Date.now());
+      return updates;
+    }, (updates) => {
+      updates.forEach((apply) => apply());
+      loadedViewsAt.current.set(targetView, { at: Date.now(), revision: adminApi.revision() });
       setLastSyncedAt(new Date().toISOString());
-    })();
-    viewRefreshRequests.current.set(targetView, request);
+    });
+    viewRefreshRequests.current.set(targetView, { revision: adminApi.revision(), request });
     try { await request; }
     finally {
-      if (viewRefreshRequests.current.get(targetView) === request) viewRefreshRequests.current.delete(targetView);
+      if (viewRefreshRequests.current.get(targetView)?.request === request) viewRefreshRequests.current.delete(targetView);
       activeViewRefreshes.current = Math.max(0, activeViewRefreshes.current - 1);
       if (!activeViewRefreshes.current) setViewRefreshing(false);
     }
@@ -1329,7 +1346,7 @@ function App() {
     setAccessChecking(true);
     try {
       const result = await api<{ token: string; user: { id: string; displayName: string; roles: string[] } }>("/auth/login", { method: "POST", body: loginCredentials, skipSession: true });
-      revalidatedApiCache.clear();
+      adminApi.invalidate();
       const resellerOnly = result.user.roles.includes("reseller") && !result.user.roles.includes("admin") && !result.user.roles.includes("stock_owner");
       if (resellerOnly) {
         removeLocalStorage(adminSessionTokenKey);
@@ -1399,8 +1416,8 @@ function App() {
   useEffect(() => {
     if (!initialLoadComplete || accessRequired) return;
     if (restrictedStockOwner && !stockOwnerViewAllowed(view)) return;
-    const loadedAt = loadedViewsAt.current.get(view) || 0;
-    if (Date.now() - loadedAt < 2_000) return;
+    const loaded = loadedViewsAt.current.get(view);
+    if (loaded?.revision === adminApi.revision() && Date.now() - loaded.at < 2_000) return;
     void refreshViewData(view).catch(showError);
   }, [accessRequired, initialLoadComplete, restrictedStockOwner, view]);
 
@@ -1412,32 +1429,27 @@ function App() {
 
   useEffect(()=>{
     const changed=(event:StorageEvent)=>{
-      if(event.key===adminSessionTokenKey||event.key===null){revalidatedApiCache.clear();window.location.reload();}
+      if(event.key===adminSessionTokenKey||event.key===null){adminApi.invalidate();window.location.reload();}
     };
     window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed);
   },[]);
 
   useEffect(() => {
     if (!initialLoadComplete || accessRequired) return;
-    let priceChanged = false;
     let priceReloading = false;
     const sync = () => {
       if (document.visibilityState !== "visible") return;
       if (priceReloading) return;
-      if (priceChanged) {
-        priceChanged=false;priceReloading=true;
-        void (async()=>{
-          await viewRefreshRequests.current.get(view)?.catch(()=>undefined);
-          revalidatedApiCache.clear();
-          setStock(await api<{summary:StockSummary;items:StockRow[]}>("/stock?fresh=1"));
-        })().catch(()=>{priceChanged=true;}).finally(()=>{priceReloading=false;});
+      if (pendingPriceRefresh.current) {
+        pendingPriceRefresh.current=false;priceReloading=true;
+        void refreshStock(true).catch(()=>{pendingPriceRefresh.current=true;}).finally(()=>{priceReloading=false;});
         return;
       }
       void refreshViewData(view).catch(() => undefined);
     };
     const interval = window.setInterval(sync, 15000);
     const onVisibility = () => { if (document.visibilityState === "visible") sync(); };
-    const onPriceChange = (event:StorageEvent) => { if(event.key===storePriceChangeKey){priceChanged=true;revalidatedApiCache.clear();sync();} };
+    const onPriceChange = (event:StorageEvent) => { if(event.key===storePriceChangeKey){pendingPriceRefresh.current=true;adminApi.invalidate();sync();} };
     window.addEventListener("focus", sync);
     window.addEventListener("storage", onPriceChange);
     document.addEventListener("visibilitychange", onVisibility);
@@ -1537,6 +1549,7 @@ function App() {
   }
 
   function showError(nextError: unknown) {
+    if (nextError instanceof Error && nextError.name === "AbortError") return;
     setError(errorMessage(nextError));
     setMessage("");
   }
@@ -2768,7 +2781,7 @@ function App() {
 
   const logoutPanel = async () => {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
-    revalidatedApiCache.clear();
+    adminApi.invalidate();
     removeLocalStorage(adminSessionTokenKey);
     clearStoredAccessKey();
     window.location.assign(viewPaths.dashboard);
@@ -2790,7 +2803,7 @@ function App() {
             <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`} title={blueRate.source}>Dólar {formatArs(blueRate.sell)}</span>
           </div>
           <span className={`live-sync-status ${viewRefreshing ? "syncing" : ""}`}><i />{viewRefreshing ? "Sincronizando" : lastSyncedAt ? `En vivo · ${new Date(lastSyncedAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}` : "En vivo"}</span>
-          <button className="secondary-action header-refresh" title="Actualizar sector" aria-label={viewRefreshing ? "Actualizando" : "Actualizar sector"} disabled={viewRefreshing} onClick={() => void refreshViewData(view).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
+          <button className="secondary-action header-refresh" title="Actualizar sector" aria-label={viewRefreshing ? "Actualizando" : "Actualizar sector"} disabled={viewRefreshing} onClick={() => void refreshViewData(view, true).catch(showError)}><Icon name="refresh" />{viewRefreshing ? "Actualizando" : "Actualizar sector"}</button>
           {readLocalStorage(adminSessionTokenKey) ? <button className="secondary-action" onClick={() => void logoutPanel()}>Salir</button> : null}
         </div>
       </header>
@@ -9262,34 +9275,8 @@ function buildApiRequestUrl(path: string) {
   return `${apiBase}/dispatch?path=${encodeURIComponent(requestPath)}`;
 }
 
-async function api<T>(path: string, options: { token?: string; method?: string; body?: unknown; signal?: AbortSignal; skipSession?: boolean } = {}): Promise<T> {
-  const sessionToken = options.skipSession ? "" : readLocalStorage(adminSessionTokenKey);
-  const requestUrl = buildApiRequestUrl(path);
-  const method = options.method || "GET";
-  const revalidationKey = method === "GET" && path === "/stock" ? `${path}:${sessionToken}` : "";
-  const cached = revalidationKey ? revalidatedApiCache.get(revalidationKey) : undefined;
-  const response = await fetch(requestUrl, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(cached?.etag ? { "If-None-Match": cached.etag } : {}),
-      ...(options.token || sessionToken ? { Authorization: `Bearer ${options.token || sessionToken}` } : {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal
-  });
-  if (response.status === 304 && cached) return cached.payload as T;
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = String(payload.error || response.statusText || `Error ${response.status}`);
-    const error = new Error(`${method} ${requestUrl} -> ${response.status}: ${detail}`);
-    (error as Error & { status?: number }).status = response.status;
-    throw error;
-  }
-  const etag = response.headers.get("etag") || "";
-  if (revalidationKey && etag) revalidatedApiCache.set(revalidationKey, { etag, payload });
-  if (method !== "GET") revalidatedApiCache.clear();
-  return payload as T;
+function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  return adminApi.request<T>(path, options);
 }
 
 function blankForm(): InventoryFormState {

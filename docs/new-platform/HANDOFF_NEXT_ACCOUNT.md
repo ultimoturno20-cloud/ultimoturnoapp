@@ -32,8 +32,40 @@ y rechazo sin sesion. Chrome con API/PGlite temporal: cinco ediciones metadata
 sin GET stock extra; cantidad/imagen, API vieja y fallos de guardado/refresh OK,
 precio central conservado, cero requests productivos. Tipos/lint/build OK.
 .work/optimization-* ignorado; demo http://127.0.0.1:5288/demo, datos ficticios.
-Siguiente OP-1.3: GET repetidos entre vistas e invalidaciones/peticiones en vuelo.
-OP-1.4/1.5 y etapas 2-5 siguen pendientes. No cerrar el plan por estas dos entregas.
+OP-1.2 confirmado online en e63a864. OP-1.3 implementado despues:
+apps/admin-web/src/admin-api.ts reemplaza el fetch/cache anterior de main.tsx.
+GET simultaneos compartidos por URL completa, bearer efectivo y revision,
+sin TTL nuevo. AbortSignal no comparte fetch. Escrituras invalidan antes y
+despues aun si fallan, no se reenvian; lecturas esperan y reintentan solo GET
+obsoletos, con limite. readAndApply aplica lotes de vistas solo si no cambio
+revision/sesion; una cuenta reemplazada recibe AbortError, no el 401 anterior.
+refresh manual y evento de precio invalidan; stock siguiente usa fresh=1.
+Evento de precio pendiente conserva estado entre cambios de vista/visibilidad.
+Tienda anonima y Torneos siguen separados; token explicito de revendedor se
+mantiene aislado. No compartir este helper privado con otros entrypoints.
+apps/api/src/stock-read-cache.ts reemplaza helpers anteriores, TTL 15s intacto,
+single-flight por negocio y fresh supersede un pending normal. Un lector
+obsoleto recupera el resultado nuevo y no repuebla memoria con el anterior.
+Snapshot SQL publica/limpia con refresh_started_at::text exacto como ticket;
+invalidaciones actuales de DB/handlers lo anulan. No usar Date con precision
+milisegundos para comparar ese ticket ni volver a upsert incondicional.
+Snapshot marcado 1970 no sirve como fallback. Errores se exponen y se pueden
+reintentar, sin devolver stock vacio ni datos invalidados; no hay migracion.
+Fixture antes/despues usa helper de e63a864 y lecturas Claims/Inventario/Ordenes
+superpuestas: 8 -> 4 GET totales, 3 -> 1 stock, 2 -> 1 claims/resellers.
+Chrome con API temporal prueba navegacion (un stock GET), manual fresh y precio
+central entre pestanas con respuesta vieja retenida; cero requests productivos.
+Regresion OP-1.2 con cinco metadata sin stock extra, cantidades/imagenes y
+fallback/fallos conservados. Nuevos tests versionados: admin-api.test.ts (8),
+stock-read-cache.test.ts (7), mas HTTP real y revocacion de ticket en DB.
+QA final: 250 tests completos, tipos/lint/build/db:verify aprobados.
+Temporales .work/optimization-op13-* y demo http://127.0.0.1:5289/demo aislados.
+Siguiente OP-1.4: inventariar consumidores completos antes de paginar stock /
+claims; resumen, seleccion global, exportacion y operaciones masivas no deben
+quedar restringidos a una pagina. OP-1.4/1.5 y etapas 2-5 siguen pendientes.
+No cerrar el plan por estas tres entregas ni hacer QA autentificado en produccion:
+GET /stock, /sales y catalogo pueden expirar pedidos reales. Online: status,
+assets y rechazo privado sin sesion; comparar SHA publicado con git log -1.
 
 ## Cierre de claim HTTP 504 - 2026-10-13
 

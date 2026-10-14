@@ -46,11 +46,12 @@ test("claim metadata updates skip stock refresh while preserving central stock a
 test("claim quantity and image patches require stock refresh including no-op values", async () => {
   const { db, actor, cardId, inventoryItemId } = await fixture();
   try {
-    await db.query("insert into stock_read_snapshots (business_id, payload, refreshed_at) values ($1, '{}'::jsonb, now())", [actor.businessId]);
+    await db.query("insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at) values ($1, '{}'::jsonb, now(), now())", [actor.businessId]);
     const result = await updateClaimCard(db, cardId, { quantity: 3 }, actor);
     assert.equal(result.stockRefreshRequired, true);
     assert.equal(result.cards[0].quantity, 3);
     assert.match((await db.query<{ date: string }>("select refreshed_at::text as date from stock_read_snapshots where business_id=$1", [actor.businessId])).rows[0].date, /^1970-01-01/);
+    assert.equal((await db.query<{ refresh_started_at: string | null }>("select refresh_started_at from stock_read_snapshots where business_id=$1", [actor.businessId])).rows[0].refresh_started_at, null);
     assert.equal((await getInventoryItem(db, inventoryItemId, actor.businessId))!.quantityOnHand, 3);
     assert.equal((await updateClaimCard(db, cardId, { quantity: 3 }, actor)).stockRefreshRequired, true);
     assert.equal((await updateClaimCard(db, cardId, { imageUrl: "https://image.example.test/qa.jpg" }, actor)).stockRefreshRequired, true);

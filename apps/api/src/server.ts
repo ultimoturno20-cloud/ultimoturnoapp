@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import { findExactTcgdexClaimImage, resolveClaimImage } from "./claim-image-resolver.js";
 import {
   listStoreCatalog,
@@ -163,15 +163,13 @@ import type { TournamentCommand } from '@ultimoturno/domain';
 import { normalizeStoreCatalogQuery } from '@ultimoturno/domain';
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
+import { createStockReadCache, readSharedStockSnapshot } from "./stock-read-cache.js";
 
 type CatalogSearchResult = Awaited<ReturnType<typeof listUnifiedCatalogCards>>;
 const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogSearchResult }>();
 const catalogSearchCacheTtlMs = 60_000;
 type StockReadResult = Awaited<ReturnType<typeof listStockForBusiness>>;
-type StockReadCacheEntry = { cachedAt: number; expiresAt: number; result: StockReadResult; pending?: Promise<StockReadResult> };
-type StockReadSnapshotRow = { payload: unknown; payload_compressed: string | null; refreshed_at: string; refresh_started_at: string | null };
-const stockReadCache = new Map<string, StockReadCacheEntry>();
-const stockReadCacheTtlMs = 15_000;
+const stockReadCache = createStockReadCache<StockReadResult>();
 
 const port = Number(process.env.API_PORT || 4000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -201,104 +199,19 @@ const dbPromise = createOperationalDatabase({
 });
 
 async function readStockForRequest(db: Awaited<typeof dbPromise>, businessId: string, fresh = false): Promise<StockReadResult> {
-  if (fresh) return rememberStockSnapshot(businessId, await listStockForBusiness(db, businessId));
-  const now = Date.now();
-  const cached = stockReadCache.get(businessId);
-  if (cached && cached.expiresAt > now) return cached.result;
-  if (cached?.pending) return cached.pending;
-
-  const pending = readSharedStockSnapshot(db, businessId, cached?.result)
-    .finally(() => {
-      const current = stockReadCache.get(businessId);
-      if (current?.pending === pending) stockReadCache.set(businessId, { ...current, pending: undefined });
-    });
-
-  if (cached) stockReadCache.set(businessId, { ...cached, pending });
-  else stockReadCache.set(businessId, { cachedAt: 0, expiresAt: 0, result: { summary: { totalSkus: 0, totalUnits: 0, reservedUnits: 0, availableUnits: 0, stockValueArs: 0, collectionUnits: 0, collectionValueArs: 0, totalValueArs: 0 }, items: [] }, pending });
-  return pending;
+  return stockReadCache.read(businessId, (force, isCurrent) => force
+    ? listStockForBusiness(db, businessId)
+    : readSharedStockSnapshot(db, businessId, isCurrent), fresh);
 }
 
 async function finishInventoryChange(db: Awaited<typeof dbPromise>, item: DbStockRow): Promise<DbStockRow> {
   if (!item.folder) return item;
   stockReadCache.delete(item.businessId);
-  await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [item.businessId]);
+  await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz, refresh_started_at=null where business_id = $1", [item.businessId]);
   const blueRate = await getBlueExchangeRate();
   return { ...item, folder: { ...item.folder, valueArs: Math.round(item.folder.valueUsd * blueRate.sell * 100) / 100 } };
 }
 
-function parseStockSnapshot(payload: unknown, compressed?: string | null): StockReadResult | null {
-  if (compressed) {
-    try {
-      payload = JSON.parse(gunzipSync(Buffer.from(compressed, "base64")).toString("utf8"));
-    } catch {
-      return null;
-    }
-  }
-  if (!payload || typeof payload !== "object") return null;
-  const value = payload as Partial<StockReadResult>;
-  if (Array.isArray(value.items) && value.items.some((item) => typeof item.storefrontPublished !== 'boolean' || (item.itemKind !== 'folder' && !item.cardType))) return null;
-  return value.summary && Array.isArray(value.items) ? value as StockReadResult : null;
-}
-
-function rememberStockSnapshot(businessId: string, result: StockReadResult) {
-  const cachedAt = Date.now();
-  stockReadCache.set(businessId, { cachedAt, expiresAt: cachedAt + stockReadCacheTtlMs, result });
-  return result;
-}
-
-async function readStockSnapshotRow(db: Awaited<typeof dbPromise>, businessId: string) {
-  const snapshot = await db.query<StockReadSnapshotRow>(
-    "select payload, payload_compressed, refreshed_at, refresh_started_at from stock_read_snapshots where business_id=$1",
-    [businessId]
-  );
-  return snapshot.rows[0];
-}
-
-async function readSharedStockSnapshot(db: Awaited<typeof dbPromise>, businessId: string, memoryFallback?: StockReadResult): Promise<StockReadResult> {
-  let row = await readStockSnapshotRow(db, businessId);
-  let shared = parseStockSnapshot(row?.payload, row?.payload_compressed);
-  const refreshedAt = row?.refreshed_at ? new Date(row.refreshed_at).getTime() : 0;
-  if (shared && Date.now() - refreshedAt < stockReadCacheTtlMs) return rememberStockSnapshot(businessId, shared);
-
-  const claimed = await db.query<{ business_id: string }>(`
-    insert into stock_read_snapshots (business_id, payload, refreshed_at, refresh_started_at)
-    values ($1, null, '1970-01-01 00:00:00+00'::timestamptz, now())
-    on conflict (business_id) do update set refresh_started_at = now()
-    where stock_read_snapshots.refreshed_at < now() - interval '15 seconds'
-      and (stock_read_snapshots.refresh_started_at is null or stock_read_snapshots.refresh_started_at < now() - interval '2 minutes')
-    returning business_id
-  `, [businessId]);
-
-  if (!claimed.rows.length) {
-    if (shared) return rememberStockSnapshot(businessId, shared);
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      row = await readStockSnapshotRow(db, businessId);
-      shared = parseStockSnapshot(row?.payload, row?.payload_compressed);
-      if (shared) return rememberStockSnapshot(businessId, shared);
-    }
-  }
-
-  try {
-    const result = await listStockForBusiness(db, businessId);
-    const compressed = gzipSync(Buffer.from(JSON.stringify(result), "utf8"), { level: 6 }).toString("base64");
-    await db.query(`
-      insert into stock_read_snapshots (business_id, payload, payload_compressed, refreshed_at, refresh_started_at)
-      values ($1, null, $2, now(), null)
-      on conflict (business_id) do update set
-        payload=null,
-        payload_compressed=excluded.payload_compressed,
-        refreshed_at=excluded.refreshed_at,
-        refresh_started_at=null
-    `, [businessId, compressed]);
-    return rememberStockSnapshot(businessId, result);
-  } catch (error) {
-    await db.query("update stock_read_snapshots set refresh_started_at=null where business_id=$1", [businessId]).catch(() => undefined);
-    if (shared) return rememberStockSnapshot(businessId, shared);
-    if (memoryFallback) return rememberStockSnapshot(businessId, memoryFallback);
-    throw error;
-  }
-}
 const priceChartingCategory = String(process.env.PRICECHARTING_CATEGORY || "pokemon-cards").trim() || "pokemon-cards";
 const priceChartingBaseUrl = "https://www.pricecharting.com/price-guide/download-custom";
 const priceChartingImageDir = process.env.PRICECHARTING_IMAGE_DIR
@@ -4626,7 +4539,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       }
       if (request.method !== "GET") {
         stockReadCache.delete(user.businessId);
-        await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [user.businessId]);
+        await db.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz, refresh_started_at=null where business_id = $1", [user.businessId]);
       }
       const item = await getInventoryItem(db, inventoryItemId, user.businessId);
       const blueRate = await getBlueExchangeRate();

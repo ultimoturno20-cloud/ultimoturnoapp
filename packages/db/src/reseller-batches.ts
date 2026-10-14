@@ -59,7 +59,7 @@ async function runBatch(
       if (receipt.rows[0]?.request_hash !== hash) throw new Error("Este identificador ya se uso para otro lote.");
     } else {
       await work(connection);
-      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [actor.businessId]);
+      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz, refresh_started_at=null where business_id = $1", [actor.businessId]);
     }
     return { dashboard: await getResellerDashboard(connection, target, actor.businessId), processedCount: count, replayed };
   });

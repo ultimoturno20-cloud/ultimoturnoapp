@@ -57,7 +57,19 @@ primera version no reemplazan lo implementado por un commit posterior.
   QA: 234 tests completos antes del ajuste final de frescura, siete regresiones
   finales DB/HTTP y Chrome con API temporal; cinco ediciones metadata sin GET
   extra. Precio central y permisos conservados, fallos de guardado/refresh probados.
-  Seguir con OP-1.3: GET duplicados e invalidaciones entre vistas/peticiones.
+  OP-1.2 online en e63a864. OP-1.3 implementado: transporte privado comparte
+  GET en curso por URL/sesion/revision, sin otra cache permanente. Fixture de
+  Claims/Inventario/Ordenes: GET totales 8 -> 4 y stock 3 -> 1; no es latencia
+  productiva. Lotes de vistas y lecturas descartan respuestas viejas despues de
+  guardar; escrituras no se reenvian. Recarga manual y precio entre pestanas
+  fuerzan stock fresco, conservando sesiones, permisos, errores y cancelacion.
+  Cache existente del servidor conserva TTL; lectores viejos no pisan memoria
+  nueva y snapshots solo publican/limpian con ticket vigente. Invalidaciones
+  revocan el ticket; un snapshot invalido no resucita como fallback ante errores.
+  QA Chrome/API/PGlite temporal: navegacion, manual, precio entre pestanas con
+  respuesta vieja retenida y regresion OP-1.2 OK, cero requests productivos.
+  QA final OP-1.3: 250 tests completos, tipos/lint/build/DB verify aprobados.
+  Seguir con OP-1.4: paginacion/filtros sin perder resumen/seleccion/exportaciones.
   Sin migraciones, cambios de datos reales ni nuevas dependencias.
 - Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
   y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos

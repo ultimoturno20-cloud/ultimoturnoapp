@@ -19,7 +19,7 @@ export async function setStorefrontPublication(db: PGlite, input: { inventoryIte
     if (changed.length) {
       await connection.query("update inventory_items set storefront_published = $1, updated_at = now() where business_id = $2 and id = any($3::uuid[])", [input.published, actor.businessId, changed.map(row => row.id)]);
       await connection.query(`insert into audit_log (id, business_id, actor_user_id, action, entity_type, entity_id, before_data, after_data) values ($1,$2,$3,'inventory.storefront_publication','inventory',$4,$5::jsonb,$6::jsonb)`, [crypto.randomUUID(), actor.businessId, actor.id, crypto.randomUUID(), JSON.stringify(changed), JSON.stringify({ inventoryItemIds: changed.map(row => row.id), published: input.published })]);
-      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [actor.businessId]);
+      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz, refresh_started_at=null where business_id = $1", [actor.businessId]);
     }
     return { items: ids.map(id => ({ id, storefrontPublished: input.published })), changedCount: changed.length };
   });

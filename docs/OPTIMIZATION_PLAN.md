@@ -29,7 +29,7 @@ presentan como latencia de produccion ni como promesas sin medicion.
   carpetas solicitadas. Paridad completa del DTO, permisos y valores existentes.
 - [x] OP-1.2: al editar cartas de claim, evitar recargar stock si no cambio;
   mantener recarga ante cantidades, imagenes o reparaciones reales de stock.
-- [ ] OP-1.3: medir y eliminar GET repetidos entre vistas, conservando sesiones,
+- [x] OP-1.3: medir y eliminar GET repetidos entre vistas, conservando sesiones,
   refresh manual, cambio de precio entre pestanas y recuperacion de errores.
 - [ ] OP-1.4: paginar/filtrar las lecturas grandes en servidor donde sea posible;
   separar resumen global de pagina. Exportaciones y acciones masivas siguen
@@ -139,3 +139,32 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   Prueba HTTP queda versionada para que CI vuelva a comprobar las caches.
   Siguiente entrega: OP-1.3, deduplicacion de GET entre vistas y consistencia
   de invalidaciones/peticiones en vuelo. No se marcan OP-1.3/1.4/1.5 completos.
+- 2026-10-14, OP-1.3: cliente administrativo unico reemplaza el helper anterior.
+  Comparte solo GET simultaneos por URL completa, bearer efectivo y revision;
+  no agrega TTL de respuestas. Conserva ETag de stock, errores HTTP y señales
+  de cancelacion independientes. Escrituras se envian una sola vez, invalidan
+  antes/despues aun ante fallo y las lecturas esperan su finalizacion.
+  Lotes de vistas se aplican juntos solo si siguen vigentes; sesion reemplazada
+  descarta respuestas anteriores sin convertirlas en un 401 de la cuenta nueva.
+  Recarga manual y evento de precio invalidan inmediatamente; siguiente stock
+  usa fresh=1, incluido evento recibido con la pestana oculta. Torneos y tienda
+  anonima no importan este transporte ni heredan credenciales administrativas.
+  Cache de stock existente extraida de server.ts, mismo TTL de 15 segundos:
+  lecturas simultaneas comparten trabajo y fresh supersede pendientes viejos.
+  Snapshot compartido publica/limpia solo con su ticket SQL exacto; las
+  invalidaciones existentes revocan ese ticket en la misma transaccion.
+  Datos marcados invalidados no sirven como fallback ante errores: se informa
+  el fallo y se permite reintentar, sin devolver stock vacio ni resucitar datos.
+  Fixture reproducible con helper de e63a864 y cliente actual, vistas Claims /
+  Inventario / Ordenes simultaneas: GET totales 8 -> 4; stock 3 -> 1, claims
+  2 -> 1 y resellers 2 -> 1. No es una medicion de latencia productiva.
+  Chrome con API/PGlite temporal confirma una lectura stock entre tres vistas,
+  recarga manual fresh, precio central desde otra pestana y respuesta vieja
+  retenida. Regresion OP-1.2: cinco metadata -> cero GET extra; cantidad/imagen,
+  API vieja y fallos de guardado/refresh conservados. Cero requests productivos.
+  Pruebas versionadas: admin-api.test.ts (8), stock-read-cache.test.ts (7),
+  claim-stock-cache.test.ts y revocacion SQL en claim-stock-refresh.test.ts.
+  QA final: 250 tests completos aprobados; tipos, lint, build y db:verify OK.
+  Sin migraciones, nuevas dependencias ni cambios de datos comerciales reales.
+  Siguiente entrega OP-1.4: paginacion/filtros en servidor conservando resumen,
+  seleccion completa, exportaciones y acciones masivas. Etapa 1 sigue en curso.

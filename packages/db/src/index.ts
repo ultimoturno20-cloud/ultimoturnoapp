@@ -5318,7 +5318,7 @@ export async function updateStoreAdminPrice(db: PGlite, inventoryItemId: string,
     if (current.priceArs===priceArs) return current;
     if (Math.round(current.priceArs*100)!==Math.round(input.expectedPriceArs*100)) throw Object.assign(new Error("Otro admin cambio este precio. Recargalo antes de guardar."), { statusCode: 409 });
     await connection.query("update current_prices set price_ars=$1,price_usd=$2,manual_override=true,updated_at=now() where inventory_item_id=$3 and business_id=$4",[priceArs,priceUsd,inventoryItemId,actor.businessId]);
-    await connection.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz where business_id=$1",[actor.businessId]);
+    await connection.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz, refresh_started_at=null where business_id=$1",[actor.businessId]);
     await writeAudit(connection,actor,"inventory.store_price.update","inventory_item",inventoryItemId,current,{priceArs,priceUsd});
     return {...current,priceArs,priceUsd};
   });
@@ -6919,7 +6919,7 @@ export async function updateClaimCard(db: PGlite, cardId: string, input: ClaimCa
       `, [imageUrl, actor.businessId, cardId]);
     }
     if (stockRefreshRequired) {
-      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [actor.businessId]);
+      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz, refresh_started_at=null where business_id = $1", [actor.businessId]);
     }
     await writeAudit(connection, actor, "claim.card.update", "claim_card", cardId, before.rows[0], input);
   });
