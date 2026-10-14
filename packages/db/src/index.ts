@@ -4180,6 +4180,7 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
       ii.intake_batch,
       ii.inventory_status,
       ii.tags, ii.purchase_cost, ii.purchase_currency,
+      ii.item_kind,
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
@@ -4334,8 +4335,9 @@ export async function listStock(db: PGlite): Promise<{ summary: DbStockSummary; 
 }
 
 export async function getInventoryItem(db: PGlite, id: string, businessId = demoBusinessId): Promise<DbStockRow | null> {
-  const stock = await listStockForBusiness(db, businessId);
-  return stock.items.find((item) => item.id === id) || null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  const stock = await listStockInternal(db, businessId, id);
+  return stock.items[0] || null;
 }
 
 export async function listStockForBusiness(db: PGlite, businessId: string): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
@@ -4475,7 +4477,7 @@ export async function repairInventorySalePrices(
   return { updated: candidates.length, applied: candidates, preview };
 }
 
-async function listStockInternal(db: PGlite, businessId: string): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
+async function listStockInternal(db: PGlite, businessId: string, inventoryItemId?: string): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select
       ii.id,
@@ -4487,6 +4489,7 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       ii.intake_batch,
       ii.inventory_status,
       ii.tags, ii.purchase_cost, ii.purchase_currency,
+      ii.item_kind,
       ii.quantity_on_hand,
       ii.quantity_reserved,
       ii.active,
@@ -4529,12 +4532,15 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
     left join app_users owner_user on owner_user.id = ii.owner_user_id and owner_user.business_id = ii.business_id
     left join (
       select business_id, inventory_item_id, sum(greatest(0, quantity_assigned - quantity_sold - quantity_returned))::integer as remaining_quantity
-      from reseller_stock_assignments group by business_id, inventory_item_id
+      from reseller_stock_assignments
+      where business_id = $1 ${inventoryItemId ? "and inventory_item_id = $2::uuid" : ""}
+      group by business_id, inventory_item_id
     ) assigned_stock on assigned_stock.business_id = ii.business_id and assigned_stock.inventory_item_id = ii.id
     left join (
       select s.business_id, si.inventory_item_id, sum(si.quantity)::integer as reserved_quantity
       from sales s join sale_items si on si.sale_id = s.id and si.business_id = s.business_id
       where s.sale_type = 'reservation' and s.status in ('pending', 'packed') and s.assigned_reseller_user_id is not null
+        and s.business_id = $1 ${inventoryItemId ? "and si.inventory_item_id = $2::uuid" : ""}
       group by s.business_id, si.inventory_item_id
     ) assigned_orders on assigned_orders.business_id = ii.business_id and assigned_orders.inventory_item_id = ii.id
     join card_products p on p.id = ii.product_id
@@ -4631,8 +4637,9 @@ async function listStockInternal(db: PGlite, businessId: string): Promise<{ summ
       where ei.business_id = ii.business_id and ei.product_id = p.id
     ) identifier_data on true
     where ii.business_id = $1
+      ${inventoryItemId ? "and ii.id = $2::uuid" : ""}
     order by p.name, v.language, v.condition
-  `, [businessId]);
+  `, inventoryItemId ? [businessId, inventoryItemId] : [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
   await attachInventoryFolderValues(db, businessId, items);
   await attachInventoryCardTypes(db, items);
@@ -4691,6 +4698,8 @@ function inventoryCardLanguage(language: string): string {
 }
 
 async function attachInventoryFolderValues(db: PGlite, businessId: string, items: DbStockRow[]) {
+  const folderIds = items.filter(item => item.itemKind === "folder").map(item => item.id);
+  if (!folderIds.length) return;
   const result = await db.query<Record<string, unknown>>(`
     select ii.id, coalesce(sum(fe.quantity), 0)::integer as total_cards,
       coalesce(sum(fe.quantity) filter (where fe.id is not null and pce.loose_price_usd is null), 0)::integer as missing_prices,
@@ -4700,8 +4709,9 @@ async function attachInventoryFolderValues(db: PGlite, businessId: string, items
     left join inventory_folder_entries fe on fe.inventory_item_id = ii.id and fe.business_id = ii.business_id
     left join pricecharting_cache_entries pce on pce.pricecharting_id = fe.pricecharting_id
     where ii.business_id = $1 and ii.item_kind = 'folder'
+      and ii.id = any($2::uuid[])
     group by ii.id
-  `, [businessId]);
+  `, [businessId, folderIds]);
   const values = new Map(result.rows.map((row) => [String(row.id), {
     totalCards: Number(row.total_cards), missingPrices: Number(row.missing_prices),
     valueUsd: Number(row.value_usd), valueArs: 0, updatedAt: String(row.updated_at || "")
@@ -8164,6 +8174,7 @@ function doesProductNameMatchFinish(finish: string, productName: string): boolea
 
 function toStockRow(row: Record<string, unknown>): DbStockRow {
   return {
+    itemKind: row.item_kind === "folder" ? "folder" : "standard",
     storefrontPublished: row.storefront_published === true,
     purchaseCost: optionalNumber(row.purchase_cost) ?? null,
     purchaseCurrency: String(row.purchase_currency || "ARS"),

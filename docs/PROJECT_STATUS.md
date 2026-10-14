@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-13
+Actualizado: 2026-10-14
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -42,6 +42,15 @@ primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
+- Plan integral de optimizacion autorizado el 14/10, con cinco etapas y
+  checklist OP en docs/OPTIMIZATION_PLAN.md. Continuar por IDs, no declarar
+  terminado el plan por resolver un item. Primera entrega OP-1.1: getter
+  puntual por ID/negocio y valuacion acotada de carpetas, compartiendo consulta
+  y mapper existentes. Fixture 1000 items: filas auxiliares 2000 -> 2 y bytes
+  SQL 1297672 -> 1294; no son mediciones de latencia o payload productivo.
+  QA primera entrega: 231 tests, tipos/lint/build/DB verify aprobados.
+  OP-1.2 (recargas de stock al editar claim) es el siguiente trabajo.
+  Sin migraciones, cambios de datos reales ni nuevas dependencias.
 - Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
   y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos
   se insertan en tandas de 200 y el stock reservado se actualiza agrupado, dentro

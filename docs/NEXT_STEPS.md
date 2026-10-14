@@ -1,12 +1,18 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-13
+Actualizado: 2026-10-14
 
 > Usar primero el orden de continuidad y el prompt de este documento.
 > Los detalles por sector conservan verificaciones pendientes, no autorizan
 > operaciones ficticias en produccion. El archivo de septiembre es historico.
 
 ## Orden de continuidad
+
+Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
+sus cinco etapas por IDs con pruebas/commit/push/online en cada entrega.
+OP-1.1 implementado; seguir con OP-1.2 y registrar evidencia y pendientes.
+No abandonar el plan por una unica optimizacion ni confundir los pasos
+operativos reales de abajo con autorizacion para ejecutar QA productivo.
 
 1. Correccion del 504 de cierre entregada: recargar /admin/claims antes de
    reintentar Cerrar claim. El panel envia el ID exacto y recupera cierres ya

@@ -1,5 +1,22 @@
 # Traspaso de contexto - UltimoTurno
 
+## Optimizacion integral - 2026-10-14
+
+Usuario pidio plan completo y comenzar. Seguimiento en OPTIMIZATION_PLAN.md:
+cinco etapas y checklist OP, con criterios y protocolo por entrega. No es una
+reescritura ni otro sistema/base; no se termina al resolver OP-1.1.
+OP-1.1: getInventoryItem reutiliza listStockInternal con filtro por ID/negocio
+y agregados de consignacion acotados. IDs invalidos/no existentes/ajenos dan
+null. SELECT incluye item_kind; valuacion de carpetas solo para IDs devueltos,
+incluido listStock legacy. Un item normal no lee carpetas ajenas. Mismo DTO,
+precios, identidades, tipos, propietarios, cantidades y reservas.
+Prueba de 1000 items: SQL 2000 -> 2 filas y 1297672 -> 1294 bytes; tiempos
+174 -> 48 ms son informativos locales PGlite, no medicion remota. Nueva suite
+inventory-reads.test.ts agrega paridad, frescura, grading, asignaciones,
+negocio ajeno, carpeta y presupuesto de filas/bytes. Sin migraciones,
+dependencias, escrituras productivas ni secretos en Git. QA OP-1.1: 231 tests
+completos, tipos/lint/build/DB verify aprobados. OP-1.2 sigue.
+
 ## Cierre de claim HTTP 504 - 2026-10-13
 
 Usuario reporto POST /api/dispatch?path=%2Fclaims%2Fclose -> 504. Lectura
