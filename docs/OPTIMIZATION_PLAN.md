@@ -27,7 +27,7 @@ presentan como latencia de produccion ni como promesas sin medicion.
 
 - [x] OP-1.1: leer un item por ID sin cargar todo el stock; valorar solo las
   carpetas solicitadas. Paridad completa del DTO, permisos y valores existentes.
-- [ ] OP-1.2: al editar cartas de claim, evitar recargar stock si no cambio;
+- [x] OP-1.2: al editar cartas de claim, evitar recargar stock si no cambio;
   mantener recarga ante cantidades, imagenes o reparaciones reales de stock.
 - [ ] OP-1.3: medir y eliminar GET repetidos entre vistas, conservando sesiones,
   refresh manual, cambio de precio entre pestanas y recuperacion de errores.
@@ -124,4 +124,18 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   Regresiones de DTO completo, grading, reservas, asignaciones, negocio ajeno,
   frescura tras escritura, carpetas y getter legacy. QA: 231 tests completos,
   tipos/lint/build/DB verify aprobados, sin escrituras productivas de prueba.
-  OP-1.2 es la siguiente entrega. La etapa 1 y las posteriores no estan completas.
+  Commit 3414fb1 publicado y confirmado en public-status; stock privado 401
+  sin sesion. La etapa 1 y las posteriores no estan completas.
+- 2026-10-14, OP-1.2: PUT de carta agrega stockRefreshRequired sin reemplazar
+  el workspace. Servidor compara stock antes/despues para metadata y conserva
+  refresh por cantidades/imagenes y reparaciones legacy. Cuando corresponde,
+  invalida snapshot compartido en la transaccion y cache en memoria del handler;
+  panel pide /stock?fresh=1. Respuesta sin flag conserva refresh por seguridad.
+  Chrome/API real temporal: cinco ediciones de metadata -> cero GET extra de
+  stock. Cantidad e imagen refrescan; precio central conservado, fallback de
+  API anterior y errores de guardado/recarga probados. No requests productivos.
+  QA: suite completa de 234 tests antes del ajuste final de frescura; siete
+  regresiones finales DB/HTTP aprobadas con ese ajuste, tipos/lint/build OK.
+  Prueba HTTP queda versionada para que CI vuelva a comprobar las caches.
+  Siguiente entrega: OP-1.3, deduplicacion de GET entre vistas y consistencia
+  de invalidaciones/peticiones en vuelo. No se marcan OP-1.3/1.4/1.5 completos.

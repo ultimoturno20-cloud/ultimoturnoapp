@@ -49,7 +49,15 @@ primera version no reemplazan lo implementado por un commit posterior.
   y mapper existentes. Fixture 1000 items: filas auxiliares 2000 -> 2 y bytes
   SQL 1297672 -> 1294; no son mediciones de latencia o payload productivo.
   QA primera entrega: 231 tests, tipos/lint/build/DB verify aprobados.
-  OP-1.2 (recargas de stock al editar claim) es el siguiente trabajo.
+  OP-1.1 online en 3414fb1. OP-1.2 entregado: API privada de edicion devuelve
+  stockRefreshRequired, omite GET stock para metadata sin impacto y mantiene
+  recarga por cantidades/imagenes/reparaciones. Snapshot compartido invalidado
+  en la transaccion; cache del handler invalidada y panel pide fresh=1 para
+  no mostrar cantidades previas. API anterior sin flag conserva recarga.
+  QA: 234 tests completos antes del ajuste final de frescura, siete regresiones
+  finales DB/HTTP y Chrome con API temporal; cinco ediciones metadata sin GET
+  extra. Precio central y permisos conservados, fallos de guardado/refresh probados.
+  Seguir con OP-1.3: GET duplicados e invalidaciones entre vistas/peticiones.
   Sin migraciones, cambios de datos reales ni nuevas dependencias.
 - Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
   y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos

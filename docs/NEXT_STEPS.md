@@ -10,7 +10,10 @@ Actualizado: 2026-10-14
 
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
 sus cinco etapas por IDs con pruebas/commit/push/online en cada entrega.
-OP-1.1 implementado; seguir con OP-1.2 y registrar evidencia y pendientes.
+OP-1.1 publicado/verificado en 3414fb1 y OP-1.2 implementado con QA DB/HTTP/Chrome.
+Seguir con OP-1.3 (GET duplicados, invalidaciones y requests en vuelo), luego
+OP-1.4 (paginacion sin perder resumen/seleccion/exportaciones) y OP-1.5 (metricas).
+Actualizar checklist y evidencia en cada entrega; etapa 1 todavia en curso.
 No abandonar el plan por una unica optimizacion ni confundir los pasos
 operativos reales de abajo con autorizacion para ejecutar QA productivo.
 

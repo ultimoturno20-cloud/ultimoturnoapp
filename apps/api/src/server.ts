@@ -4920,7 +4920,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       if (body.imageUrl !== undefined) {
         body.imageUrl = await resolveManualClaimImageUrl(cardId, body.imageUrl, user);
       }
-      sendJson(response, 200, await updateClaimCard(db, cardId, body, user));
+      const result = await updateClaimCard(db, cardId, body, user);
+      if (result.stockRefreshRequired) stockReadCache.delete(user.businessId);
+      sendJson(response, 200, result);
       return;
     }
 

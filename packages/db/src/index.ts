@@ -6852,14 +6852,21 @@ export async function refreshActiveClaimPricesFromPriceCharting(db: PGlite, acto
   };
 }
 
-export async function updateClaimCard(db: PGlite, cardId: string, input: ClaimCardPatchInput, actor: AuthenticatedUser): Promise<ClaimsWorkspace> {
+export async function updateClaimCard(db: PGlite, cardId: string, input: ClaimCardPatchInput, actor: AuthenticatedUser): Promise<ClaimsWorkspace & { stockRefreshRequired: boolean }> {
   const before = await db.query<Record<string, unknown>>("select * from claim_cards where id = $1 and business_id = $2 limit 1", [cardId, actor.businessId]);
   if (!before.rows[0]) throw new Error("La carta ya no existe en el claim activo.");
   const sectionId = input.sectionId === undefined
     ? undefined
     : await normalizeClaimSectionId(db, String(before.rows[0].claim_id || ""), actor.businessId, input.sectionId);
+  let stockRefreshRequired = input.quantity !== undefined || input.imageUrl !== undefined;
   await db.transaction(async (tx) => {
     const connection = tx as unknown as PGlite;
+    // Metadata edits can still repair legacy stock; observe that effect before skipping a refresh.
+    const stockBefore = !stockRefreshRequired && before.rows[0].inventory_item_id
+      ? (await connection.query<{ id: string; quantity_on_hand: number; quantity_reserved: number }>(
+        "select id, quantity_on_hand, quantity_reserved from inventory_items where id = $1 and business_id = $2",
+        [before.rows[0].inventory_item_id, actor.businessId]
+      )).rows[0] : null;
     await connection.query(`
       update claim_cards set
         section_id = case when $1::text is null then section_id else nullif($1, '')::uuid end,
@@ -6886,7 +6893,16 @@ export async function updateClaimCard(db: PGlite, cardId: string, input: ClaimCa
       cardId,
       actor.businessId
     ]);
-    await syncClaimCardStock(connection, cardId, actor);
+    const inventoryItemId = await syncClaimCardStock(connection, cardId, actor);
+    if (!stockRefreshRequired) {
+      const stockAfter = (await connection.query<{ id: string; quantity_on_hand: number; quantity_reserved: number }>(
+        "select id, quantity_on_hand, quantity_reserved from inventory_items where id = $1 and business_id = $2",
+        [inventoryItemId, actor.businessId]
+      )).rows[0];
+      stockRefreshRequired = stockBefore?.id !== stockAfter?.id
+        || Number(stockBefore?.quantity_on_hand) !== Number(stockAfter?.quantity_on_hand)
+        || Number(stockBefore?.quantity_reserved) !== Number(stockAfter?.quantity_reserved);
+    }
     if (input.imageUrl !== undefined) {
       const imageUrl = input.imageUrl.trim();
       await connection.query(`
@@ -6902,9 +6918,12 @@ export async function updateClaimCard(db: PGlite, cardId: string, input: ClaimCa
           and ei.external_id = (select pricecharting_id from claim_cards where id = $3 and business_id = $2)
       `, [imageUrl, actor.businessId, cardId]);
     }
+    if (stockRefreshRequired) {
+      await connection.query("update stock_read_snapshots set refreshed_at = '1970-01-01'::timestamptz where business_id = $1", [actor.businessId]);
+    }
     await writeAudit(connection, actor, "claim.card.update", "claim_card", cardId, before.rows[0], input);
   });
-  return listClaimsWorkspace(db, actor.businessId);
+  return { ...await listClaimsWorkspace(db, actor.businessId), stockRefreshRequired };
 }
 
 export async function deleteClaimCard(db: PGlite, cardId: string, actor: AuthenticatedUser): Promise<ClaimsWorkspace> {

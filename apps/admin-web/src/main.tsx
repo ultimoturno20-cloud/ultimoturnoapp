@@ -1210,8 +1210,8 @@ function App() {
   }
 
   const [costSaving, setCostSaving] = useState(false);
-  async function refreshStock() {
-    setStock(await api<{ summary: StockSummary; items: StockRow[] }>("/stock"));
+  async function refreshStock(fresh = false) {
+    setStock(await api<{ summary: StockSummary; items: StockRow[] }>(fresh ? "/stock?fresh=1" : "/stock"));
   }
 
   async function fillInventoryCosts(body: { percentOfSale?: number; onlyMissing?: boolean; rows?: Array<{ sku: string; purchaseCost: number; purchaseCurrency: "ARS" | "USD" }> }) {
@@ -2081,9 +2081,13 @@ function App() {
 
   async function updateClaimCard(cardId: string, patch: Partial<Pick<ClaimCard, "sectionId" | "finalPriceArs" | "finalPriceUsd" | "finalName" | "imageUrl" | "buyer" | "quantity" | "tags" | "status">>) {
     try {
-      const result = await api<ClaimsWorkspace>(`/claims/cards/${cardId}`, { method: "PUT", body: patch });
+      const result = await api<ClaimsWorkspace & { stockRefreshRequired?: boolean }>(`/claims/cards/${cardId}`, { method: "PUT", body: patch });
       setClaims(result);
-      await refreshStock();
+      // Missing flags from an older API remain conservative during rolling deployments.
+      if (result.stockRefreshRequired !== false) {
+        try { await refreshStock(true); }
+        catch { showError(new Error("Carta guardada. No se pudo actualizar el stock; actualiza el sector para recargarlo.")); }
+      }
     } catch (nextError) {
       showError(nextError);
     }

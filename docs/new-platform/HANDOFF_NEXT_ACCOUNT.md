@@ -15,7 +15,25 @@ Prueba de 1000 items: SQL 2000 -> 2 filas y 1297672 -> 1294 bytes; tiempos
 inventory-reads.test.ts agrega paridad, frescura, grading, asignaciones,
 negocio ajeno, carpeta y presupuesto de filas/bytes. Sin migraciones,
 dependencias, escrituras productivas ni secretos en Git. QA OP-1.1: 231 tests
-completos, tipos/lint/build/DB verify aprobados. OP-1.2 sigue.
+completos, tipos/lint/build/DB verify aprobados.
+
+OP-1.1 publicado y confirmado online en 3414fb1. OP-1.2 implementado despues:
+updateClaimCard mantiene el workspace y agrega stockRefreshRequired. Cantidad
+o imagen siempre requieren refresh; metadata compara ID/on_hand/reserved antes
+y despues del sync para no perder reparaciones legacy. Si requiere recarga,
+invalida stock_read_snapshots en la misma transaccion y el handler borra la
+cache de memoria. Panel refresca con fresh=1; flag ausente de API anterior
+mantiene lectura conservadora. Fallo de GET despues de guardar informa Carta
+guardada sin afirmar fallo de la escritura.
+QA: 234 tests completos antes del ajuste final de frescura; siete pruebas
+finales DB/HTTP pasaron con el ajuste. HTTP versionado en claim-stock-cache.test.ts
+prima memoria/snapshot, edita metadata y cantidades y prueba lectura inmediata
+y rechazo sin sesion. Chrome con API/PGlite temporal: cinco ediciones metadata
+sin GET stock extra; cantidad/imagen, API vieja y fallos de guardado/refresh OK,
+precio central conservado, cero requests productivos. Tipos/lint/build OK.
+.work/optimization-* ignorado; demo http://127.0.0.1:5288/demo, datos ficticios.
+Siguiente OP-1.3: GET repetidos entre vistas e invalidaciones/peticiones en vuelo.
+OP-1.4/1.5 y etapas 2-5 siguen pendientes. No cerrar el plan por estas dos entregas.
 
 ## Cierre de claim HTTP 504 - 2026-10-13
 
