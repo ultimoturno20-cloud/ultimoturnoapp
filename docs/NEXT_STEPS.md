@@ -16,8 +16,15 @@ recarga manual/entre pestanas y descarte de respuestas anteriores a guardados.
 OP-1.4 en curso: OP-1.4a entrega historial Movimientos/Auditoria con filtros
 y paginas SQL, carga solo de pestana activa y totales fuera de la pagina.
 QA: 260 tests completos, regresiones finales y Chrome/API temporal aprobados.
-Seguir con OP-1.4b (Inventario sin perder resumen/seleccion/exportaciones) y
-OP-1.4c (otros consumidores grandes), luego OP-1.5 (metricas).
+OP-1.4a confirmado online en ddf5f20. OP-1.4b entregado: Inventario paginado
+24/48/96 por /inventory/view, agregados globales y alcance completo para
+seleccion/CSV. IDs frescos antes de lotes; carrito/editor conservados fuera de
+pagina, sin GET /stock ni dashboards /resellers al entrar. 269 tests completos
+y 20 regresiones finales, API/Chrome temporal, tipos/lint/build/db:verify OK.
+Comparacion 1000 DTO: 1051899 -> 26058 bytes de respuesta para pagina 24 con
+metadata; lectura fria SQL aun construye snapshot completo, no un LIMIT SQL
+ni latencia productiva. Paridad de filtros/precios con ddf5f20 en 1217 casos.
+Seguir con OP-1.4c (otros consumidores grandes), luego OP-1.5 (metricas).
 El mapa previo de consumidores y requisitos esta en OPTIMIZATION_PLAN.md.
 No limitar /stock global ni exportar/seleccionar solo las filas de una pagina.
 Verificar siempre SHA del ultimo commit en public-status.

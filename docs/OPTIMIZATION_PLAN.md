@@ -36,7 +36,7 @@ presentan como latencia de produccion ni como promesas sin medicion.
   trabajando sobre el alcance completo explicitamente elegido.
 - [x] OP-1.4a: historial de movimientos/auditoria con consulta filtrada y
   paginada en SQL, totales independientes y carga solo de pestana activa.
-- [ ] OP-1.4b: adaptar Inventario con endpoint paginado separado, manteniendo
+- [x] OP-1.4b: adaptar Inventario con endpoint paginado separado, manteniendo
   busqueda/orden/precios, resumen/facetas, carrito, seleccion y exportacion
   completas. No reemplazar stock.items global por una pagina parcial.
 - [ ] OP-1.4c: adaptar las otras lecturas grandes despues de mapear consumidores:
@@ -207,7 +207,56 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   Sin migraciones, dependencias, cambios en stock/ordenes/claims reales ni
   nuevas caches persistentes. OP-1.4 NO esta completo; sigue OP-1.4b.
 
+- 2026-10-14, OP-1.4b: Inventario usa /inventory/view, pagina de 24/48/96
+  items, con filtros/orden ejecutados sobre el snapshot existente del negocio.
+  Resumen, calidad/duplicados, facetas, propietarios y conteos por disponibilidad/
+  fuente siguen siendo globales. /stock completo no cambia para otros sectores.
+  Nombres activos de revendedores via consulta acotada, sin sus dashboards.
+  El TTL existente de lecturas normales sigue en 15 segundos; otro cliente
+  necesita refresh fresco para observar inmediatamente metadata modificada.
+  No prometer actualizacion instantanea general entre operadores. Estado de
+  pagina/carrito aislado por usuario/negocio; guardados confirmados prevalecen
+  sobre filas previas aun si falla la recarga posterior.
+  No hay nueva cache persistente: estado React conserva pagina y solo IDs
+  necesarios para detalle/editor/carrito. Las altas guardadas no convierten
+  stock global en una lista parcial; Ingreso carga completo mientras se adapta
+  en OP-1.4c. Refresh manual/escritura/precio entre pestanas pide datos frescos;
+  revision de snapshot cambiada durante recorrido vuelve a primera pagina.
+  Filtros viejos se cancelan/descartan y errores permiten reintentar.
+  Seleccionar vista pide TODOS los IDs del filtro; seleccion individual se
+  conserva entre paginas. CSV pide scope=all con mismos filtros/orden, sin
+  limite de pagina. Antes de lote/publicacion, /inventory/items lee IDs frescos
+  en tandas de hasta 64 con mapper OP-1.1, negocio/roles y 404 generico para
+  faltantes/ajenos. No promete bloqueo de concurrencia entre lectura y PUT
+  legacy ni nueva atomicidad de lotes; publicacion conserva transaccion existente.
+  Escrituras no se reenvian y doble clic queda bloqueado. Fallo de refresh tras
+  guardado no revierte una publicacion confirmada ni se presenta como fallo PUT.
+  Filtros/helpers/precio numerico compartidos en domain, sin imports de DB al
+  navegador. Paridad aislada con ddf5f20: 1217 combinaciones de filtros/orden/
+  fuentes/idioma/propietario/duplicados, incluyendo busqueda fuera de stock.
+  Fixture sintetico de 1000 DTO completos: payload 1051899 -> 26058 bytes
+  (pagina 24 incluyendo metadata). Chrome: cero GET /stock y /resellers al
+  entrar a Inventario; un GET paginado. IMPORTANTE: la lectura fria SQL todavia
+  obtiene el snapshot completo para resumen/calidad/busqueda; NO es un LIMIT
+  SQL de Inventario ni una reduccion medida de latencia productiva. OP-1.5
+  debe medir este costo antes de optimizar la construccion del snapshot.
+  QA: 269 tests completos aprobados, 20 regresiones finales DB/HTTP/domain/
+  transporte; tipos/lint/build/db:verify OK. Chrome/API/PGlite temporal con
+  132 items: paginas y limites, seleccion/CSV de 122 coincidencias, publicacion,
+  lote con precio modificado fuera de pagina, carrito/reserva entre paginas,
+  edicion de precio/cantidad, carpeta dinamica y contenido, 503/reintento,
+  respuesta vieja retenida, precio entre pestanas, teclado/reduced-motion y
+  320/390/768/1440/1788. Etiquetas contenidas e imagenes locales cargadas.
+  Regresion Claims OP-1.2: cinco metadata siguen con cero GET stock extra.
+  Cero requests productivos de QA; sin migraciones, dependencias ni secretos.
+  Temporales .work/inventory-* ignorados, demo http://127.0.0.1:5291/demo.
+  Verificar SHA publicado en public-status despues de commit/push.
+  Sigue OP-1.4c, luego OP-1.5. OP-1.4 y las cinco etapas NO estan completas.
+
 ## Mapa previo a OP-1.4b
+
+Este mapa caracteriza ddf5f20, antes de la entrega OP-1.4b registrada arriba.
+Inventario ya no carga stock completo; los demas consumidores siguen pendientes.
 
 main.tsx usa stock.items completo en Inventario, Inicio, Caja, Compras,
 Revendedores, Ordenes, Claims y Planificador. Mantener /stock completo para

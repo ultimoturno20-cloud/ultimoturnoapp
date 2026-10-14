@@ -35,6 +35,7 @@ import {
   saveInventoryFolderEntry,
   removeInventoryFolderEntry,
   revalueInventoryFolders,
+  summarizeDbStock,
   setInventoryPurchaseCosts,
   inventoryTransaction,
   cancelReservationSale,
@@ -95,6 +96,7 @@ import {
   listResellers,
   listStockForBusiness,
   listStockForActor,
+  getInventoryItemsForActor,
   listManagedUsers,
   listStockImageReview,
   listPriceChartingImageCatalog,
@@ -165,6 +167,7 @@ import { normalizeStoreCatalogQuery } from '@ultimoturno/domain';
 import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 import { createStockReadCache, readSharedStockSnapshot } from "./stock-read-cache.js";
+import { inventoryView } from "./inventory-view.js";
 
 type CatalogSearchResult = Awaited<ReturnType<typeof listUnifiedCatalogCards>>;
 const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogSearchResult }>();
@@ -3180,7 +3183,7 @@ function requestHasCronAccess(request: IncomingMessage) {
 
 function stockOwnerRouteAllowed(pathname: string, method = "GET") {
   if (/^\/inventory\/[^/]+\/contents(?:\/[^/]+)?$/.test(pathname) && ["GET", "POST", "PUT", "DELETE"].includes(method)) return true;
-  if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
+  if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/inventory/view", "/inventory/items", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
   if (method === "POST" && pathname === "/inventory/intake") return true;
   if (method === "POST" && /^\/resellers\/[^/]+\/assignments(?:\/batch)?$/.test(pathname)) return true;
   return false;
@@ -4230,7 +4233,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     const user: AuthenticatedUser = sessionUser || { ...(await operationalUser()), roles: ["admin"] };
 
-    if (["/stock", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
+    if (["/stock", "/inventory/view", "/inventory/items", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
       if (await expireStoreOrders(db, user.businessId)) stockReadCache.delete(user.businessId);
     }
     if (url.pathname === "/store-settings") {
@@ -4355,6 +4358,25 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/auth/me") {
       sendJson(response, 200, { user, roles: user.roles || ["admin"], environment: { dataProfile, allowExamples } });
+      return;
+    }
+
+    if (url.pathname === "/inventory/view" && request.method === "GET") {
+      if (!user.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+      const rate = await getBlueExchangeRate();
+      const stock = user.roles.includes("admin") ? await readStockForRequest(db, user.businessId, url.searchParams.get("fresh") === "1") : await listStockForActor(db, user);
+      const view = inventoryView(revalueInventoryFolders(stock, rate.sell), rate, Object.fromEntries(url.searchParams));
+      if ("metadata" in view) {
+        const names = await db.query<{ user_id: string; display_name: string }>("select u.id as user_id, u.display_name from reseller_profiles rp join app_users u on u.id=rp.user_id and u.business_id=rp.business_id where rp.business_id=$1 and u.active=true order by u.display_name,u.id", [user.businessId]);
+        view.resellers = names.rows.map(row => ({ userId: row.user_id, displayName: row.display_name }));
+      }
+      sendJson(response, 200, view);
+      return;
+    }
+    if (url.pathname === "/inventory/items" && request.method === "GET") {
+      const items = await getInventoryItemsForActor(db, (url.searchParams.get("ids") || "").split(","), user);
+      const rate = await getBlueExchangeRate();
+      sendJson(response, 200, { items: revalueInventoryFolders({ items, summary: summarizeDbStock(items) }, rate.sell).items });
       return;
     }
 

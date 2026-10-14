@@ -26,6 +26,29 @@ function fixture() {
   return { client, calls, session: (value: string) => { session = value; } };
 }
 
+test("paged inventory consumes fresh invalidation without losing filters or using stock ETags", async () => {
+  const { client, calls } = fixture();
+  const path = "/inventory/view?offset=48&limit=24&query=boss&sortMode=price";
+  const old = client.request(path);
+  await tick();
+  const write = client.request("/inventory/qa", { method: "PUT", body: { priceArs: 3000 } });
+  calls[0].response.resolve(json({ items: ["old"] }, '"old-page"'));
+  await tick();
+  calls[1].response.resolve(json({ saved: true }));
+  await write; await tick();
+  const fresh = new URL(calls[2].url, "https://qa.invalid");
+  assert.equal(fresh.searchParams.get("fresh"), "1");
+  assert.equal(fresh.searchParams.get("offset"), "48");
+  assert.equal(fresh.searchParams.get("query"), "boss");
+  assert.equal((calls[2].init?.headers as Record<string, string>)["If-None-Match"], undefined);
+  calls[2].response.resolve(json({ items: ["new"] }));
+  assert.deepEqual(await old, { items: ["new"] });
+  const next = client.request(path); await tick();
+  assert.equal(calls[3].url, "/api" + path);
+  calls[3].response.resolve(json({ items: ["new"] }));
+  await next;
+});
+
 test("shared admin reads: three overlapping views use one GET per resource, not a result TTL", async () => {
   const { client, calls } = fixture();
   const loads = [client.request("/stock"), client.request("/stock"), client.request("/stock")];

@@ -79,7 +79,13 @@ export function createAdminApi(config: { url: (path: string) => string; session:
       await waitForWrites(options.signal);
       checkSession(session, options);
       const startedAt = revision;
-      const readPath = path === "/stock" && freshStock ? "/stock?fresh=1" : path;
+      const inventoryRead = path === "/stock" || path === "/stock?fresh=1" || path.startsWith("/inventory/view?");
+      let readPath = path;
+      if (inventoryRead && freshStock) {
+        const url = new URL(path, "https://admin-read.invalid");
+        url.searchParams.set("fresh", "1");
+        readPath = url.pathname + url.search;
+      }
       const cacheKey = JSON.stringify([config.url("/stock"), token]);
       const cached = readPath === "/stock" ? revalidated.get(cacheKey) : undefined;
       const key = JSON.stringify([config.url(readPath), token, startedAt]);
@@ -88,8 +94,8 @@ export function createAdminApi(config: { url: (path: string) => string; session:
         checkSession(session, options);
         if (revision === startedAt && (readPath === "/stock" || readPath === "/stock?fresh=1")) {
           if (result.etag) revalidated.set(cacheKey, result);
-          freshStock = false;
         }
+        if (revision === startedAt && inventoryRead) freshStock = false;
         return result.payload;
       });
       if (!existing && !options.signal) pending.set(key, read);

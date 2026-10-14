@@ -82,9 +82,24 @@ primera version no reemplazan lo implementado por un commit posterior.
   tipos/lint/build/DB verify OK. Paginas, filtros, manual, error/reintento,
   respuestas viejas, teclado y 320/390/768/1440/1788 aprobados sin requests
   productivos. OP-1.2 sigue sin GET stock extra para cinco metadata.
-  Sigue OP-1.4b Inventario y OP-1.4c otros lectores grandes, con mapa previo
-  en OPTIMIZATION_PLAN.md. Stock global, seleccion y exportaciones no se recortan.
-  Sin migraciones, cambios de datos reales ni nuevas dependencias.
+  OP-1.4a confirmado online en ddf5f20. OP-1.4b entregado: Inventario usa
+  /inventory/view, paginas 24/48/96, resumen/facetas/calidad/conteos globales.
+  Conserva busqueda/orden/precios; paridad con ddf5f20 en 1217 combinaciones.
+  Seleccion de vista y CSV toman TODO el filtro; seleccion/carrito entre paginas
+  y lectura fresca de IDs antes de lotes/publicacion (hasta 64 por request).
+  /stock completo se conserva para los otros sectores. Nombres de revendedores
+  sin cargar dashboards. Frescura/cancelacion/errores y precios entre pestanas
+  conservados, snapshot cambiado reinicia recorrido; no nueva cache persistente.
+  Fixture 1000 DTO: payload 1051899 -> 26058 bytes para pagina 24 con metadata.
+  La lectura fria SQL aun construye snapshot completo, no un LIMIT SQL ni una
+  metrica de latencia productiva. Chrome: entrada sin GET /stock ni /resellers.
+  QA 269 tests completos, 20 focalizados finales, tipos/lint/build/db:verify OK.
+  API/Chrome/PGlite temporal: 132 items, seleccion/CSV de 122, lotes con precio
+  fresco, carrito/reserva entre paginas, cantidad/precio, carpetas, errores,
+  respuestas viejas, cambio entre pestanas y cinco anchos 320..1788. OP-1.2
+  conserva cinco metadata sin GET stock extra. Sigue OP-1.4c y OP-1.5; etapas
+  1-5 no terminadas. Checklist y limites en OPTIMIZATION_PLAN.md.
+  Sin migraciones, cambios de datos reales ni nuevas dependencias/secretos.
 - Correccion de cierre claim HTTP 504: se eliminaron lecturas completas de claim
   y stock por cada carta ya sincronizada. Ordenes, lineas, reservas y movimientos
   se insertan en tandas de 200 y el stock reservado se actualiza agrupado, dentro

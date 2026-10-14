@@ -1,23 +1,10 @@
-export type InventoryFilters = {
-  cardType: string; query: string; expansion: string; language: string;
-  languageGroup: "all" | "english" | "japanese" | "chinese";
-  condition: string; location: string; intakeBatch: string; inventoryStatus: string;
-  tag: string; owner: string;
-  availability: "all" | "in_stock" | "available" | "assigned" | "reserved" | "out";
-  priceSource: "sale" | "pricecharting" | "tcgplayer" | "coolstuff";
-  sortMode: "name" | "expansion" | "number" | "price" | "quantity";
-  issue: "all" | "missingImage" | "missingPriceCharting" | "zeroPrice" | "lowStock" | "duplicates";
-};
+import { defaultInventoryFilters, type InventoryFilters } from "@ultimoturno/domain";
+export { defaultInventoryFilters, type InventoryFilters } from "@ultimoturno/domain";
 export type InventoryViewState = { filters: InventoryFilters; density: "comfortable" | "compact" };
 export type SavedInventoryView = InventoryViewState & { id: string; name: string };
 type Preferences = { version: 1; current: InventoryViewState; views: SavedInventoryView[] };
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 export const maxInventoryViews = 20;
-export const defaultInventoryFilters: InventoryFilters = {
-  cardType: "all", query: "", expansion: "all", language: "all", languageGroup: "all",
-  condition: "all", location: "all", intakeBatch: "all", inventoryStatus: "all",
-  tag: "all", owner: "all", availability: "in_stock", priceSource: "sale", sortMode: "name", issue: "all"
-};
 export const inventoryPresets: SavedInventoryView[] = [
   { id: "stock", name: "En stock", filters: { ...defaultInventoryFilters }, density: "comfortable" },
   { id: "available", name: "Disponibles", filters: { ...defaultInventoryFilters, availability: "available" }, density: "comfortable" },

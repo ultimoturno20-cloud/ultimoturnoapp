@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { buildDuplicateIdentityKeys, summarizeStockQuality, inventoryLanguageGroup, inventoryTags, parseUiSearchQuery, uiSearchTokenVariants, normalizedTextIncludesToken, normalizedWordsIncludeToken, primaryCardNumber, scoreStockSearch, normalizeInventoryText as normalize, inventoryPriceValue, type InventoryMetadata } from "@ultimoturno/domain";
+import { useInventoryPage } from "./use-inventory-page.js";
+import { InventoryPagination } from "./inventory-pagination.js";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { createAdminApi, type ApiOptions } from "./admin-api.js";
@@ -1057,7 +1060,12 @@ function App() {
   const [environment, setEnvironment] = useState<AppEnvironment>({ dataProfile: "EJEMPLOS", allowExamples: true });
   const [blueRate, setBlueRate] = useState<BlueExchangeRate>(() => fallbackBlueRate());
   const [view, setView] = useState<View>(() => viewFromLocation());
-  const [stock, setStock] = useState<{ summary: StockSummary; items: StockRow[] }>({ summary: emptySummary(), items: [] });
+  const [stock, setStockState] = useState<{ summary: StockSummary; items: StockRow[] }>({ summary: emptySummary(), items: [] });
+  const completeStockLoaded = useRef(false);
+  function setStock(next: React.SetStateAction<{ summary: StockSummary; items: StockRow[] }>) {
+    if (typeof next !== "function") { completeStockLoaded.current = true; setStockState(next); }
+    else setStockState(current => completeStockLoaded.current ? next(current) : current);
+  }
   const [movements, setMovements] = useState<MovementRow[]>([]);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
@@ -1168,6 +1176,17 @@ function App() {
   const [imageQuality, setImageQuality] = useState<ImageDatabaseQuality>(() => emptyImageDatabaseQuality());
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
   const restrictedStockOwner = userRoles.includes("stock_owner") && !userRoles.includes("admin");
+  const inventoryPage = useInventoryPage<StockRow>({
+    active: view === "inventory" && initialLoadComplete && !accessRequired,
+    scope: inventoryPreferenceScope,
+    filters: inventoryFilters, keepIds: [selectedId, editingId, ...cart.map(line => line.inventoryItemId)].filter(Boolean),
+    fallback: stock.items, request: api, readAndApply: adminApi.readAndApply, revision: adminApi.revision
+  });
+  useEffect(() => {
+    if (!inventoryPage.page) return;
+    setBlueRate(inventoryPage.page.blueRate);
+    setOrderResellers(inventoryPage.page.resellers);
+  }, [inventoryPage.page]);
 
   async function bootstrap(seedExamplesIfEmpty = false) {
     const [me, rate] = await Promise.all([
@@ -1179,6 +1198,11 @@ function App() {
     setUserId(me.user.id);
     const preferenceScope = inventoryPreferencesKey(me.user.businessId, me.user.id);
     if (preferenceScope && inventoryRestoredScope.current !== preferenceScope) {
+      if (inventoryRestoredScope.current) {
+        setCart([]); setSelectedId(""); setEditingId(""); setProductModalOpen(false);
+        completeStockLoaded.current = false;
+        setStockState({ summary: emptySummary(), items: [] });
+      }
       const preferences = readInventoryPreferences(inventoryPreferenceStorage(), preferenceScope);
       applyInventoryFilters(preferences.current.filters);
       setInventoryDensity(preferences.current.density);
@@ -1215,6 +1239,7 @@ function App() {
 
   const [costSaving, setCostSaving] = useState(false);
   async function refreshStock(fresh = false) {
+    if (view === "inventory") { await inventoryPage.refresh(true, fresh); return; }
     await adminApi.readAndApply(() => api<{ summary: StockSummary; items: StockRow[] }>(fresh ? "/stock?fresh=1" : "/stock"), setStock);
   }
 
@@ -1248,14 +1273,10 @@ function App() {
         ]);
         updates.push(() => { setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales); });
       } else if (targetView === "inventory") {
-        const [stockData, resellerData] = await Promise.all([
-          api<{ summary: StockSummary; items: StockRow[] }>("/stock"),
-          api<{ resellers: ResellerDashboard[] }>("/resellers")
-        ]);
-        updates.push(() => {
-          setStock(stockData);
-          setOrderResellers(resellerData.resellers.filter((item) => item.reseller.active).map((item) => ({ userId: item.reseller.userId, displayName: item.reseller.displayName })));
-        });
+        await inventoryPage.refresh(true, force);
+      } else if (targetView === "stock-intake") {
+        const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
+        updates.push(() => setStock(stockData));
       } else if (targetView === "resellers") {
         const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
         updates.push(() => setStock(stockData));
@@ -1493,56 +1514,12 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [priceChartingImageBackfillRunning, priceChartingImageProcessing, priceChartingImageResumeAt, priceChartingImages.downloadedEntries, priceChartingImages.pendingEntries]);
 
-  const selected = stock.items.find((item) => item.id === selectedId) || stock.items[0];
+  const inventoryContext = inventoryPage.contextItems;
+  const selected = (view === "inventory" ? inventoryContext : [...stock.items, ...inventoryContext]).find(item => item.id === selectedId)
+    || (view === "inventory" ? inventoryPage.page?.items[0] : stock.items[0]);
   const selectedMovements = selected ? movements.filter((movement) => movement.inventoryItemId === selected.id) : [];
   const duplicateKeys = useMemo(() => buildDuplicateIdentityKeys(stock.items), [stock.items]);
   const quality = useMemo(() => summarizeStockQuality(stock.items, duplicateKeys), [duplicateKeys, stock.items]);
-  const options = useMemo(() => ({
-    expansions: unique(stock.items.map((item) => item.product.expansion)),
-    languages: unique(stock.items.map((item) => item.variant.language)),
-    conditions: unique(stock.items.map((item) => item.variant.condition)),
-    locations: unique(stock.items.map((item) => item.location).filter(Boolean)),
-    intakeBatches: unique(stock.items.map((item) => item.intakeBatch).filter(Boolean)),
-    inventoryStatuses: unique(stock.items.map((item) => item.inventoryStatus || "available")),
-    tags: unique(stock.items.flatMap((item) => inventoryTags(item.tags)))
-  }), [stock.items]);
-  const visibleItems = useMemo(() => {
-    const parsedSearch = parseUiSearchQuery(query);
-    return stock.items
-      .map((item) => ({ item, searchScore: scoreStockSearch(item, parsedSearch) }))
-      .filter(({ item, searchScore }) => {
-        return (!parsedSearch.tokens.length || searchScore > 0) &&
-          (expansion === "all" || item.product.expansion === expansion) &&
-          (language === "all" || item.variant.language === language) &&
-          (languageGroup === "all" || inventoryLanguageGroup(item.variant.language) === languageGroup) &&
-          (condition === "all" || item.variant.condition === condition) &&
-          (locationFilter === "all" || item.location === locationFilter) &&
-          (batchFilter === "all" || item.intakeBatch === batchFilter) &&
-          (inventoryStatusFilter === "all" || (item.inventoryStatus || "available") === inventoryStatusFilter) &&
-          (tagFilter === "all" || inventoryTags(item.tags).includes(tagFilter)) &&
-          (cardTypeFilter === 'all' || (item.itemKind !== 'folder' && (item.cardType || 'unknown') === cardTypeFilter)) &&
-          (ownerFilter === "all" || (ownerFilter === "ultimoturno" ? !item.ownerUserId : item.ownerUserId === ownerFilter)) &&
-          (issue === "all" || stockItemIssues(item, duplicateKeys).includes(issue)) &&
-          (availability === "all" ||
-            (parsedSearch.tokens.length > 0 && availability === "in_stock") ||
-            (availability === "in_stock" && item.quantityOnHand > 0) ||
-            (availability === "available" && item.freeQuantity > 0) ||
-            (availability === "assigned" && item.quantityAssigned > 0) ||
-            (availability === "reserved" && item.quantityReserved > 0) ||
-            (availability === "out" && item.quantityOnHand === 0));
-      })
-      .sort((left, right) => {
-        if (parsedSearch.tokens.length && left.searchScore !== right.searchScore) return right.searchScore - left.searchScore;
-        const leftItem = left.item;
-        const rightItem = right.item;
-        if (sortMode === "price") return inventoryPriceSortValue(rightItem, inventoryPriceSource, blueRate) - inventoryPriceSortValue(leftItem, inventoryPriceSource, blueRate);
-        if (sortMode === "quantity") return rightItem.availableQuantity - leftItem.availableQuantity;
-        if (sortMode === "expansion") return `${leftItem.product.expansion} ${leftItem.product.number || ""}`.localeCompare(`${rightItem.product.expansion} ${rightItem.product.number || ""}`, "es", { numeric: true });
-        if (sortMode === "number") return (leftItem.product.number || "").localeCompare(rightItem.product.number || "", "es", { numeric: true });
-        return leftItem.product.name.localeCompare(rightItem.product.name, "es");
-      })
-      .map(({ item }) => item);
-  }, [availability, batchFilter, blueRate, cardTypeFilter, condition, duplicateKeys, expansion, inventoryPriceSource, inventoryStatusFilter, issue, language, languageGroup, locationFilter, ownerFilter, query, sortMode, stock.items, tagFilter]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -1564,6 +1541,7 @@ function App() {
   }
 
   function startRestock(item: StockRow) {
+    inventoryPage.remember(item); setSelectedId(item.id);
     if (item.itemKind === "folder") { startEdit(item); return; }
     setEditingId("");
     setProductReceipt("");
@@ -1573,6 +1551,7 @@ function App() {
   }
 
   function startEdit(item: StockRow) {
+    inventoryPage.remember(item);
     setEditingId(item.id);
     setSelectedId(item.id);
     setForm(formFromItem(item));
@@ -1615,6 +1594,7 @@ function App() {
           : [result.item, ...current.items];
         return { summary: summarizeStockRows(items), items };
       });
+      inventoryPage.remember(result.item);
       setSelectedId(result.item.id);
       const receipt = editingId ? "Item actualizado." : `${result.item.product.name}: +${form.quantityOnHand} unidad(es). Stock actual: ${result.item.quantityOnHand}.`;
       showMessage(receipt);
@@ -1642,6 +1622,7 @@ function App() {
       const changes = new Map(result.items.map(item => [item.id, item.storefrontPublished]));
       setStock(current => ({ ...current, items: current.items.map(item => changes.has(item.id) ? { ...item, storefrontPublished: changes.get(item.id) } : item) }));
       showMessage(`${result.changedCount} item(s): publicacion ${published ? "habilitada" : "oculta"}.`);
+      await inventoryPage.refresh(true).catch(failure => showError(new Error("Publicacion guardada. No se pudo recargar: " + errorMessage(failure))));
     } catch (nextError) {
       setStock(current => ({ ...current, items: current.items.map(item => previous.has(item.id) ? { ...item, storefrontPublished: previous.get(item.id) } : item) }));
       showError(nextError);
@@ -1675,6 +1656,7 @@ function App() {
         }
         const result = await api<{ item: StockRow }>(`/inventory/${item.id}`, { method: "PUT", body });
         updatedItems.set(result.item.id, result.item);
+        if (result.item.id === selectedId || cart.some(line => line.inventoryItemId === result.item.id)) inventoryPage.remember(result.item);
         updated++;
       }
       setStock((current) => {
@@ -1682,9 +1664,11 @@ function App() {
         return { summary: summarizeStockRows(nextItems), items: nextItems };
       });
       showMessage(`Lote actualizado: ${updated} carta(s)${skipped ? `, ${skipped} sin precio de fuente` : ""}.`);
-      void refresh().catch(() => undefined);
+      await refresh().catch(failure => showError(new Error("Lote guardado. No se pudo recargar: " + errorMessage(failure))));
     } catch (nextError) {
       showError(nextError);
+      void refresh().catch(() => undefined);
+      throw nextError;
     }
   }
 
@@ -1695,6 +1679,7 @@ function App() {
         const items = current.items.map((stockItem) => stockItem.id === result.item.id ? result.item : stockItem);
         return { summary: summarizeStockRows(items), items };
       });
+      inventoryPage.remember(result.item);
       setSelectedId(result.item.id);
       showMessage(result.item.tags ? `Categorias: ${result.item.tags}` : "Categorias limpiadas.");
       void refresh().catch(() => undefined);
@@ -1735,6 +1720,7 @@ function App() {
         const items = current.items.map((item) => item.id === result.item.id ? result.item : item);
         return { summary: summarizeStockRows(items), items };
       });
+      inventoryPage.remember(result.item);
       setSelectedId(result.item.id);
       setForm((current) => ({ ...current, imageUrl: result.imageUrl }));
       setPriceChartingImages(await api<PriceChartingImageCacheStatus>("/pricecharting-images/status").catch(() => priceChartingImages));
@@ -1760,7 +1746,9 @@ function App() {
         const items = current.items.map((row) => row.id === result.item.id ? result.item : row);
         return { items, summary: summarizeStockRows(items) };
       });
+      inventoryPage.remember(result.item);
       showMessage(result.message || `Imagen reparada para ${item.product.name}.`);
+      void inventoryPage.refresh(true).catch(showError);
     } catch (nextError) {
       showError(nextError);
     } finally {
@@ -1818,6 +1806,7 @@ function App() {
   }
 
   function addToCart(item: StockRow) {
+    inventoryPage.remember(item);
     if (item.availableQuantity <= 0) return showError(new Error("Esta carta no tiene unidades disponibles."));
     setCart((current) => {
       const existing = current.find((line) => line.inventoryItemId === item.id);
@@ -2899,15 +2888,29 @@ function App() {
 
       {view === "inventory" ? (
         <InventoryView
-          items={visibleItems}
-          allItems={stock.items}
+          key={inventoryPreferenceScope}
+          items={inventoryPage.page?.items || []}
+          allItems={inventoryContext}
+          metadata={inventoryPage.metadata}
+          matchedTotal={inventoryPage.matchedTotal}
+          total={inventoryPage.total}
+          pageOffset={inventoryPage.offset}
+          pageLimit={inventoryPage.limit}
+          loading={inventoryPage.busy}
+          loadError={inventoryPage.error}
+          onPageChange={inventoryPage.navigate}
+          onPageSizeChange={inventoryPage.changeLimit}
+          onRetry={() => { adminApi.invalidate(); void inventoryPage.refresh(true, true).catch(() => undefined); }}
+          onReadItems={inventoryPage.readFreshItems}
+          onSelectAll={inventoryPage.selectAll}
+          onExportAll={async () => exportInventoryCsv(await inventoryPage.exportAll())}
           selected={selected}
           selectedMovements={selectedMovements}
-          options={options}
+          options={inventoryPage.metadata?.options || { expansions: [], languages: [], conditions: [], locations: [], intakeBatches: [], inventoryStatuses: [], tags: [] }}
           filters={inventoryFilters}
           preferenceScope={inventoryPreferenceScope}
           density={inventoryDensity}
-          quality={quality}
+          quality={inventoryPage.metadata?.quality || { missingImage: 0, missingPriceCharting: 0, zeroPrice: 0, lowStock: 0, duplicates: 0 }}
           adjustment={adjustment}
           cart={cart}
           cartMode={cartMode}
@@ -2920,12 +2923,14 @@ function App() {
           onFilterChange={applyInventoryFilters}
           onClearFilters={() => applyInventoryFilters(defaultInventoryFilters)}
           onDensityChange={setInventoryDensity}
-          onBatchUpdate={(items, patch) => void updateInventoryBatch(items, patch)}
+          onBatchUpdate={updateInventoryBatch}
           canPublishStore={userRoles.includes("admin")}
           publicationSaving={publicationSaving}
           onPublicationChange={updateStorefrontPublication}
-          onSelect={(item) => setSelectedId(item.id)}
+          onSelect={(item) => { inventoryPage.remember(item); setSelectedId(item.id); }}
           onStockSaved={(saved) => {
+            inventoryPage.remember(saved); setSelectedId(saved.id);
+            void inventoryPage.refresh(true).catch(showError);
             setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; });
           }}
           onRestock={startRestock}
@@ -2953,7 +2958,7 @@ function App() {
           onChange={setForm}
           receipt={productReceipt}
           recentFolder={restrictedStockOwner && productReceipt && selected?.itemKind === "folder" ? selected : undefined}
-          onFolderSaved={(saved) => setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; })}
+          onFolderSaved={(saved) => { inventoryPage.remember(saved); setSelectedId(saved.id); setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; }); }}
           onCreateNext={startCreate}
           onSubmit={saveProduct}
           onClose={restrictedStockOwner ? () => setView("resellers") : closeStockIntake}
@@ -3540,6 +3545,13 @@ function InventoryQuickIntake({ item, onSaved, onClose, onBusyChange }: { item: 
 }
 
 function InventoryView(props: {
+  metadata?: InventoryMetadata;
+  matchedTotal: number; total: number; pageOffset: number; pageLimit: number;
+  loading: boolean; loadError: string; onRetry: () => void;
+  onPageChange: (offset: number) => void; onPageSizeChange: (limit: number) => void;
+  onReadItems: (ids: string[]) => Promise<StockRow[]>;
+  onSelectAll: () => Promise<string[]>;
+  onExportAll: () => Promise<void>;
   canPublishStore: boolean;
   publicationSaving: boolean;
   onPublicationChange: (items: StockRow[], published: boolean) => Promise<void>;
@@ -3564,7 +3576,7 @@ function InventoryView(props: {
   onFilterChange: (patch: Partial<InventoryFilters>) => void;
   onClearFilters: () => void;
   onDensityChange: (density: InventoryDensity) => void;
-  onBatchUpdate: (items: StockRow[], patch: InventoryBatchPatch) => void;
+  onBatchUpdate: (items: StockRow[], patch: InventoryBatchPatch) => Promise<void>;
   onSelect: (item: StockRow) => void;
   onEdit: (item: StockRow) => void;
   onCreate: () => void;
@@ -3598,25 +3610,7 @@ function InventoryView(props: {
   const [assignmentQuantity, setAssignmentQuantity] = useState("1");
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentError, setAssignmentError] = useState("");
-  const [inventoryPageSize, setInventoryPageSize] = useState(() => window.matchMedia("(max-width: 760px)").matches ? 16 : 24);
-  useEffect(() => {
-    const viewport = window.matchMedia("(max-width: 760px)");
-    const update = () => setInventoryPageSize(viewport.matches ? 16 : 24);
-    viewport.addEventListener("change", update);
-    return () => viewport.removeEventListener("change", update);
-  }, []);
-  const [renderLimit, setRenderLimit] = useState(inventoryPageSize);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
   const filterKey = JSON.stringify(filters);
-  useEffect(() => { setRenderLimit(inventoryPageSize); }, [filterKey, inventoryPageSize]);
-  useEffect(() => {
-    if (!loadMoreRef.current || renderLimit >= items.length) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setRenderLimit((limit) => Math.min(items.length, limit + inventoryPageSize));
-    }, { rootMargin: "300px" });
-    observer.observe(loadMoreRef.current);
-    return () => observer.disconnect();
-  }, [inventoryPageSize, items.length, renderLimit]);
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented && !intakeSaving) { setSideTab(null); setIntakeId(""); setAssignmentItemId(""); } };
     window.addEventListener("keydown", close);
@@ -3627,6 +3621,29 @@ function InventoryView(props: {
   const [quickStockSaving, setQuickStockSaving] = useState(false);
   const [newTagDraft, setNewTagDraft] = useState("");
   const [batchSelection, setBatchSelection] = useState<string[]>([]);
+  const [selectedScope, setSelectedScope] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const actionRequest = useRef(false);
+  const filterRef = useRef(filterKey); filterRef.current = filterKey;
+  const runAction = async (action: () => Promise<void>) => {
+    if (actionRequest.current) return;
+    actionRequest.current = true;
+    setActionBusy(true); setActionError("");
+    try { await action(); }
+    catch (failure) { if (!(failure instanceof Error && failure.name === "AbortError")) setActionError(errorMessage(failure)); }
+    finally { actionRequest.current = false; setActionBusy(false); }
+  };
+  const selectScope = () => runAction(async () => {
+    const expected = filterRef.current;
+    const ids = await props.onSelectAll();
+    if (filterRef.current !== expected) return;
+    setBatchSelection(ids); setSelectedScope(expected);
+  });
+  const publishSelection = (published: boolean) => runAction(async () => {
+    const rows = await props.onReadItems(batchSelection);
+    await props.onPublicationChange(rows, published);
+  });
   const [batchLocation, setBatchLocation] = useState("");
   const [batchIntakeBatch, setBatchIntakeBatch] = useState("");
   const [batchInventoryStatus, setBatchInventoryStatus] = useState("");
@@ -3639,28 +3656,15 @@ function InventoryView(props: {
     const value = filters[key];
     if (key === "inventoryStatus") return inventoryStatusLabel(value);
     if (key === "cardType") return cardTypeLabels[value as CardType] || value;
-    if (key === "owner") return value === "ultimoturno" ? "UltimoTurno" : allItems.find((item) => item.ownerUserId === value)?.ownerName || value;
+    if (key === "owner") return value === "ultimoturno" ? "UltimoTurno" : props.metadata?.owners.find(owner => owner.userId === value)?.name || value;
     if (key === "languageGroup") return ({ english: "Ingles", japanese: "Japones", chinese: "Chino" } as Record<string, string>)[value] || value;
     if (key === "issue") return ({ missingImage: "Sin imagen", missingPriceCharting: "Sin PriceCharting", zeroPrice: "Precio cero", lowStock: "Stock bajo", duplicates: "Duplicados" } as Record<string, string>)[value] || value;
     return value;
   };
-  const ownerOptions = useMemo(() => unique(allItems.filter((item) => item.ownerUserId).map((item) => `${item.ownerUserId}\t${item.ownerName}`)), [allItems]);
-  const availabilityCounts = useMemo(() => ({
-    all: allItems.length,
-    inStock: allItems.filter((item) => item.quantityOnHand > 0).length,
-    available: allItems.filter((item) => item.freeQuantity > 0).length,
-    assigned: allItems.filter((item) => item.quantityAssigned > 0).length,
-    reserved: allItems.filter((item) => item.quantityReserved > 0).length,
-    out: allItems.filter((item) => item.quantityOnHand === 0).length
-  }), [allItems]);
-  const priceSourceCounts = useMemo(() => ({
-    sale: allItems.filter((item) => inventoryPriceDisplay(item, "sale", props.blueRate).hasPrice).length,
-    pricecharting: allItems.filter((item) => inventoryPriceDisplay(item, "pricecharting", props.blueRate).hasPrice).length,
-    tcgplayer: allItems.filter((item) => inventoryPriceDisplay(item, "tcgplayer", props.blueRate).hasPrice).length,
-    coolstuff: allItems.filter((item) => inventoryPriceDisplay(item, "coolstuff", props.blueRate).hasPrice).length
-  }), [allItems, props.blueRate]);
-  const selectedBatchItems = items.filter((item) => batchSelection.includes(item.id));
-  const allVisibleSelected = items.length > 0 && selectedBatchItems.length === items.length;
+  const ownerOptions = (props.metadata?.owners || []).map(owner => owner.userId + "\t" + owner.name);
+  const availabilityCounts = props.metadata?.availability || { all: 0, inStock: 0, available: 0, assigned: 0, reserved: 0, out: 0 };
+  const priceSourceCounts = props.metadata?.priceSources || { sale: 0, pricecharting: 0, tcgplayer: 0, coolstuff: 0 };
+  const allVisibleSelected = selectedScope === filterKey && batchSelection.length > 0;
   const handleSelect = (item: StockRow) => {
     props.onSelect(item);
     setSideTab("detail");
@@ -3740,9 +3744,10 @@ function InventoryView(props: {
     }
   };
   const toggleBatchItem = (itemId: string) => {
+    setSelectedScope("");
     setBatchSelection((current) => current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]);
   };
-  const applyBatchUpdate = () => {
+  const applyBatchUpdate = () => runAction(async () => {
     const patch: InventoryBatchPatch = {};
     if (batchLocation.trim()) patch.location = batchLocation.trim();
     if (batchIntakeBatch.trim()) patch.intakeBatch = batchIntakeBatch.trim();
@@ -3753,19 +3758,20 @@ function InventoryView(props: {
       window.alert("Elegí al menos una accion para aplicar al lote.");
       return;
     }
-    props.onBatchUpdate(selectedBatchItems, patch);
-    setBatchSelection([]);
+    const rows = await props.onReadItems(batchSelection);
+    await props.onBatchUpdate(rows, patch);
+    setBatchSelection([]); setSelectedScope("");
     setBatchTags("");
-  };
+  });
   return (
-    <section className="view stock-layout">
+    <section className="view stock-layout" aria-busy={props.loading || actionBusy}>
       <datalist id="inventory-tag-suggestions">
         {inventoryTagSuggestions.map((tag) => <option value={tag} key={tag} />)}
       </datalist>
       <WorkspaceToolbar className="inventory-toolbar" label="Controles de inventario"
         search={<InventorySearchField value={filters.query} resetKey={searchResetKey} onDraftChange={(query) => { searchDraft.current = query; }} onChange={(query) => props.onFilterChange({ query })} />}
         actions={<>
-          <span className="inventory-result-count" title={`${items.length} de ${allItems.length} cartas`}>{items.length}<span> cartas</span></span>
+          <span className="inventory-result-count" title={`${props.matchedTotal} de ${props.total} cartas`}>{props.matchedTotal}<span> cartas</span></span>
           <label className="sort-control">Ordenar<select aria-label="Ordenar inventario" value={filters.sortMode} onChange={(event) => props.onFilterChange({ sortMode: event.target.value as SortMode })}><option value="name">Nombre</option><option value="expansion">Expansion</option><option value="number">Numero</option><option value="price">Mayor precio</option><option value="quantity">Mayor cantidad</option></select></label>
           <button className={`secondary-action inventory-cart-button ${props.cart.length ? "has-items" : ""}`} type="button" aria-label={`Abrir carrito, ${props.cart.length} carta(s)`} title="Abrir carrito" onClick={() => setSideTab("cart")}><Icon name="cart" /><span className="inventory-cart-count">{props.cart.length}</span></button>
           <button className="primary-action" onClick={props.onCreate}><Icon name="plus" />Agregar stock</button>
@@ -3793,7 +3799,7 @@ function InventoryView(props: {
             <option value="coolstuff">CoolStuff ({priceSourceCounts.coolstuff})</option>
           </select></label>
           <button className={`secondary-action filter-toggle ${filtersOpen ? "active" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls="inventory-filter-options" onClick={() => setFiltersOpen((open) => !open)}><Icon name="filter" />Mas filtros{advancedFilterCount ? ` (${advancedFilterCount})` : ""}</button>
-          <button className="icon-action" type="button" disabled={!items.length} title="Exportar vista" aria-label="Exportar vista" onClick={() => exportInventoryCsv(items)}><Icon name="download" /></button>
+          <button className="icon-action" type="button" disabled={props.loading || actionBusy || !props.matchedTotal} title="Exportar vista" aria-label="Exportar vista" onClick={() => void runAction(props.onExportAll)}><Icon name="download" /></button>
           <button className="icon-action" type="button" title="Restablecer filtros" aria-label="Restablecer filtros" onClick={() => { searchDraft.current = ""; setSearchResetKey((key) => key + 1); props.onClearFilters(); }}><Icon name="refresh" /></button>
         </div>
         {activeFilters.length ? <div className="inventory-active-filters" aria-label="Filtros activos">{activeFilters.map((key) => <button type="button" key={key} title={`Quitar filtro ${filterLabels[key]}`} aria-label={`Quitar filtro ${filterLabels[key]}`} onClick={() => props.onFilterChange({ [key]: defaultInventoryFilters[key] })}><span>{filterLabels[key]}: {activeFilterText(key)}</span><Icon name="close" /></button>)}</div> : null}
@@ -3827,14 +3833,20 @@ function InventoryView(props: {
             <div><h3>Cartas</h3></div>
             <div className="inventory-selection-tools">
               {props.canPublishStore ? <a className="secondary-action inventory-store-link" href="/" target="_blank" rel="noreferrer"><Icon name="external" />Ver tienda</a> : null}
-              <button className="secondary-action" disabled={!items.length} onClick={() => setBatchSelection(allVisibleSelected ? [] : items.map((item) => item.id))}>
+              <button className="secondary-action" disabled={props.loading || actionBusy || !props.matchedTotal} onClick={() => allVisibleSelected ? (setBatchSelection([]), setSelectedScope("")) : void selectScope()}>
                 <Icon name={allVisibleSelected ? "close" : "check"} />{allVisibleSelected ? "Limpiar seleccion" : "Seleccionar vista"}
               </button>
+              {batchSelection.length && !allVisibleSelected ? <button className="secondary-action" disabled={actionBusy} onClick={() => { setBatchSelection([]); setSelectedScope(""); }}><Icon name="close" />Limpiar seleccion</button> : null}
             </div>
           </div>
-          {selectedBatchItems.length ? (
+          <InventoryPagination offset={props.pageOffset} limit={props.pageLimit} total={props.matchedTotal} busy={props.loading || actionBusy} navigate={props.onPageChange} changeLimit={props.onPageSizeChange} />
+          {props.loadError ? <div className="inventory-page-error" role="alert"><span>{props.loadError}</span><button className="secondary-action" disabled={props.loading} onClick={props.onRetry}><Icon name="refresh" />Reintentar</button></div> : null}
+          {actionError ? <p className="field-error" role="alert">{actionError}</p> : null}
+          {props.loading ? <p className="muted" role="status">Cargando inventario...</p> : null}
+          {actionBusy ? <p className="muted" role="status">Procesando seleccion...</p> : null}
+          {batchSelection.length ? (
             <div className="inventory-batch-bar">
-              <strong>{selectedBatchItems.length} seleccionada(s)</strong>
+              <strong>{batchSelection.length} seleccionada(s)</strong>
               <input value={batchLocation} onChange={(event) => setBatchLocation(event.target.value)} placeholder="Ubicacion" />
               <input value={batchIntakeBatch} onChange={(event) => setBatchIntakeBatch(event.target.value)} placeholder="Lote" />
               <select value={batchInventoryStatus} onChange={(event) => setBatchInventoryStatus(event.target.value)}>
@@ -3848,23 +3860,24 @@ function InventoryView(props: {
                 <option value="tcgplayer">Usar TCGplayer</option>
                 <option value="coolstuff">Usar CoolStuff</option>
               </select>
-              <button className="primary-action" onClick={applyBatchUpdate}><Icon name="check" />Aplicar</button>
+              <button className="primary-action" disabled={actionBusy || props.loading} onClick={() => void applyBatchUpdate()}><Icon name="check" />Aplicar</button>
             </div>
           ) : null}
-          {selectedBatchItems.length && props.canPublishStore ? <div className="inventory-publication-bar">
-            <span>{selectedBatchItems.length} item(s) seleccionados</span>
-            <button className="secondary-action" disabled={props.publicationSaving} onClick={() => void props.onPublicationChange(selectedBatchItems, true)}><Icon name="external" />Publicar en tienda</button>
-            <button className="secondary-action" disabled={props.publicationSaving} onClick={() => void props.onPublicationChange(selectedBatchItems, false)}><Icon name="close" />Ocultar de tienda</button>
+          {batchSelection.length && props.canPublishStore ? <div className="inventory-publication-bar">
+            <span>{batchSelection.length} item(s) seleccionados</span>
+            <button className="secondary-action" disabled={props.publicationSaving || actionBusy || props.loading} onClick={() => void publishSelection(true)}><Icon name="external" />Publicar en tienda</button>
+            <button className="secondary-action" disabled={props.publicationSaving || actionBusy || props.loading} onClick={() => void publishSelection(false)}><Icon name="close" />Ocultar de tienda</button>
             {props.publicationSaving ? <span role="status">Guardando publicacion...</span> : null}
           </div> : null}
           {items.length ? (
             <div className={`inventory-card-grid ${props.density === "compact" ? "compact" : ""}`}>
-              {items.slice(0, renderLimit).map((item) => {
+              {items.map((item) => {
                 const displayPrice = inventoryPriceDisplay(item, filters.priceSource, props.blueRate);
                 const itemTags = inventoryTags(item.tags).slice(0, 3);
                 return (
                   <article className={`inventory-card ${selected?.id === item.id ? "selected" : ""} ${item.availableQuantity <= 0 ? "sold-out" : ""} ${item.quantityReserved > 0 ? "has-reserved" : ""} ${item.quantityAssigned > 0 ? "has-assigned" : ""}`} key={item.id}>
-                    <button className="inventory-card-main" onClick={() => item.itemKind === "folder" ? handleSelect(item) : setIntakeId(item.id)}>
+                    <label className="inventory-row-select"><input type="checkbox" aria-label={`Seleccionar ${item.product.name}`} checked={batchSelection.includes(item.id)} disabled={actionBusy} onChange={() => toggleBatchItem(item.id)} /></label>
+                    <button className="inventory-card-main" onClick={() => { props.onSelect(item); item.itemKind === "folder" ? handleSelect(item) : setIntakeId(item.id); }}>
                       <div className="inventory-card-image-wrap">
                         <CardArt src={item.product.imageUrl} alt={item.product.name} label={item.product.name} className="inventory-card-image" fallbackClassName="inventory-card-image placeholder" />
                         <div className="inventory-unit-state-list">
@@ -3890,7 +3903,7 @@ function InventoryView(props: {
                       </div>
                     </button>
                     <div className={`inventory-card-actions ${item.product.imageUrl ? "" : "with-image-repair"}`}>
-                      <button className="primary-action" onClick={() => item.itemKind === "folder" ? props.onEdit(item) : setIntakeId(intakeId === item.id ? "" : item.id)}><Icon name={item.itemKind === "folder" ? "edit" : "plus"} />{item.itemKind === "folder" ? "Editar" : "Stock"}</button>
+                      <button className="primary-action" onClick={() => { props.onSelect(item); item.itemKind === "folder" ? props.onEdit(item) : setIntakeId(intakeId === item.id ? "" : item.id); }}><Icon name={item.itemKind === "folder" ? "edit" : "plus"} />{item.itemKind === "folder" ? "Editar" : "Stock"}</button>
                       <button className="secondary-action" onClick={() => handleSelect(item)}>Detalles</button>
                       <button className="secondary-action" type="button" aria-label={`Asignar ${item.product.name} a un revendedor`} title="Asignar a revendedor" disabled={item.freeQuantity <= 0 || !props.resellers.length} onClick={() => openAssignment(item)}><Icon name="arrow-right" /></button>
                       <button className="secondary-action" aria-label={`Agregar ${item.product.name} al carrito`} disabled={item.availableQuantity <= 0} onClick={() => handleAdd(item)}><Icon name="cart" /></button>
@@ -3900,8 +3913,8 @@ function InventoryView(props: {
                 );
               })}
             </div>
-          ) : <EmptyState title="Sin coincidencias" body="Proba otro nombre, expansion o numero, o revisa los filtros." />}
-          {renderLimit < items.length ? <div className="inventory-load-more" ref={loadMoreRef}><button className="secondary-action" onClick={() => setRenderLimit((limit) => limit + inventoryPageSize)}>Ver mas cartas ({Math.min(renderLimit, items.length)} de {items.length})</button></div> : null}
+          ) : !props.loading && !props.loadError ? <EmptyState title="Sin coincidencias" body="Proba otro nombre, expansion o numero, o revisa los filtros." /> : null}
+          <InventoryPagination offset={props.pageOffset} limit={props.pageLimit} total={props.matchedTotal} busy={props.loading || actionBusy} navigate={props.onPageChange} changeLimit={props.onPageSizeChange} />
         </section>
 
         {intakeItem ? <ResellerAdminDialog title={`Stock: ${intakeItem.product.name}`} busy={intakeSaving} onClose={() => setIntakeId("")}>
@@ -9757,40 +9770,6 @@ async function copyToClipboard(value: string) {
   }
 }
 
-function buildDuplicateIdentityKeys(items: StockRow[]): Set<string> {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    const key = stockIdentityKey(item);
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-  return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key));
-}
-
-function summarizeStockQuality(items: StockRow[], duplicateKeys: Set<string>): StockQualitySummary {
-  return items.reduce<StockQualitySummary>((summary, item) => {
-    const issues = stockItemIssues(item, duplicateKeys);
-    if (issues.includes("missingImage")) summary.missingImage += 1;
-    if (issues.includes("missingPriceCharting")) summary.missingPriceCharting += 1;
-    if (issues.includes("zeroPrice")) summary.zeroPrice += 1;
-    if (issues.includes("lowStock")) summary.lowStock += 1;
-    if (issues.includes("duplicates")) summary.duplicates += 1;
-    return summary;
-  }, { missingImage: 0, missingPriceCharting: 0, zeroPrice: 0, lowStock: 0, duplicates: 0 });
-}
-
-function stockItemIssues(item: StockRow, duplicateKeys: Set<string>): IssueFilter[] {
-  const issues: IssueFilter[] = [];
-  if (!item.product.imageUrl) issues.push("missingImage");
-  if (!item.product.identifiers.some((identifier) => identifier.source === "pricecharting")) issues.push("missingPriceCharting");
-  if (!item.priceArs) issues.push("zeroPrice");
-  if (item.availableQuantity <= 1) issues.push("lowStock");
-  if (duplicateKeys.has(stockIdentityKey(item))) issues.push("duplicates");
-  return issues;
-}
-
-function stockIdentityKey(item: StockRow): string {
-  return normalize([item.product.name, item.product.expansion, item.product.number, item.variant.language, item.variant.condition, item.variant.finish, item.variant.gradingCompany, item.variant.grade, item.variant.gradingCert].join("|"));
-}
 
 function inventoryGradingLabel(item: StockRow): string {
   return [item.variant.gradingCompany, item.variant.grade].filter(Boolean).join(" ");
@@ -9827,15 +9806,6 @@ function LanguageGroupSelector({ value, onChange }: { value: LanguageGroupFilter
   );
 }
 
-function inventoryLanguageGroup(language: string): LanguageGroupFilter {
-  const normalized = normalize(language);
-  const tokens = new Set(normalized.split(" ").filter(Boolean));
-  if (["chinese", "simplified", "traditional", "taiwan"].some((token) => normalized.includes(token))) return "chinese";
-  if (["zh", "cn", "chs", "cht", "china"].some((token) => tokens.has(token))) return "chinese";
-  if (["japanese", "japan", "korean", "korea", "indonesia", "indonesian", "thai", "thailand", "vietnam", "asia"].some((token) => normalized.includes(token))) return "japanese";
-  if (["ja", "jp", "kr", "ko"].some((token) => tokens.has(token))) return "japanese";
-  return "english";
-}
 
 function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blueRate: BlueExchangeRate): {
   label: string;
@@ -9845,9 +9815,10 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
   hasPrice: boolean;
 } {
   const references = item.priceReferences;
+  const value = inventoryPriceValue(item, source, blueRate.sell);
   if (item.folder && (source === "pricecharting" || (source === "sale" && item.inventoryStatus === "not_for_sale"))) {
     return {
-      label: "Valor del contenido", ars: toBlueArs(item.folder.valueUsd, blueRate), usd: item.folder.valueUsd,
+      label: "Valor del contenido", ...value,
       helper: `${formatUsd(item.folder.valueUsd)} · ${item.folder.totalCards} cartas${item.folder.missingPrices ? ` · ${item.folder.missingPrices} sin precio` : ""}`,
       hasPrice: item.folder.totalCards > 0
     };
@@ -9856,8 +9827,7 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
     const usd = references?.priceCharting.usd ?? null;
     return {
       label: "PriceCharting",
-      ars: usd ? toBlueArs(usd, blueRate) : null,
-      usd,
+      ...value,
       helper: usd ? `${formatUsd(usd)} loose` : references?.priceCharting.priceChartingId ? "Sin precio PC" : "Sin link PC",
       hasPrice: usd !== null && usd > 0
     };
@@ -9867,8 +9837,7 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
     const subtype = references?.tcgplayer.subTypeName || "";
     return {
       label: "TCGplayer",
-      ars: usd ? roundRecommendedArs(toBlueArs(usd, blueRate)) : null,
-      usd,
+      ...value,
       helper: usd ? `${formatUsd(usd)} market${subtype ? ` · ${subtype}` : ""}` : references?.tcgplayer.productId ? "Sin market TCG" : "Sin link TCG",
       hasPrice: usd !== null && usd > 0
     };
@@ -9877,24 +9846,17 @@ function inventoryPriceDisplay(item: StockRow, source: InventoryPriceSource, blu
     const usd = references?.coolstuff.usd ?? null;
     return {
       label: "CoolStuff",
-      ars: usd ? toBlueArs(usd, blueRate) : null,
-      usd,
+      ...value,
       helper: "Pendiente",
       hasPrice: usd !== null && usd > 0
     };
   }
   return {
     label: "Venta",
-    ars: item.priceArs || null,
-    usd: item.priceUsd,
+    ...value,
     helper: item.priceUsd ? `${formatUsd(item.priceUsd)} venta` : "Precio local",
     hasPrice: item.priceArs > 0 || Boolean(item.priceUsd && item.priceUsd > 0)
   };
-}
-
-function inventoryPriceSortValue(item: StockRow, source: InventoryPriceSource, blueRate: BlueExchangeRate): number {
-  const price = inventoryPriceDisplay(item, source, blueRate);
-  return price.ars || (price.usd ? toBlueArs(price.usd, blueRate) : 0);
 }
 
 function stockDisplayLabel(item: StockRow): string {
@@ -9908,18 +9870,6 @@ function unique(values: string[]): string[] {
 
 const inventoryTagSuggestions = ["singles", "sellado", "accesorios", "otros", "jugables", "old", "full art", "promo", "staple", "bulk", "vitrina"];
 
-function inventoryTags(value: string): string[] {
-  const seen = new Set<string>();
-  return String(value || "")
-    .split(/[,;|]/)
-    .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .filter((tag) => {
-      if (seen.has(tag)) return false;
-      seen.add(tag);
-      return true;
-    });
-}
 
 function inventoryTagsText(tags: string[]): string {
   return unique(tags.map((tag) => tag.trim().toLowerCase().replace(/\s+/g, " "))).join(", ");
@@ -9932,89 +9882,6 @@ function toggleInventoryTag(tagsText: string, tag: string): string {
   return inventoryTagsText(tagList.includes(normalized) ? tagList.filter((current) => current !== normalized) : [...tagList, normalized]);
 }
 
-function normalize(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseUiSearchQuery(value: string) {
-  const raw = normalize(value);
-  const tokens = raw.split(" ").filter((token) => token && token !== "s");
-  const numberTokens = [...new Set(tokens
-    .map((token) => token.replace(/^#/, ""))
-    .filter((token) => /^[0-9]+[a-z]?$/i.test(token))
-    .map((token) => token.replace(/^0+([0-9])/, "$1")))].slice(0, 1);
-  const textTokens = [...new Set(tokens.filter((token) => !/^[0-9]+[a-z]?$/i.test(token.replace(/^#/, ""))))];
-  return { raw, tokens, textTokens, numberTokens };
-}
-
-function uiSearchTokenVariants(token: string): string[] {
-  const variants = new Set([token]);
-  if (token.endsWith("ies") && token.length > 4) variants.add(`${token.slice(0, -3)}y`);
-  if (token.endsWith("s") && token.length > 3) variants.add(token.slice(0, -1));
-  return [...variants];
-}
-
-function normalizedTextIncludesToken(value: string, token: string): boolean {
-  return uiSearchTokenVariants(token).some((variant) => value.includes(variant));
-}
-
-function normalizedWordsIncludeToken(value: string, token: string): boolean {
-  const words = new Set(value.split(" ").filter(Boolean));
-  return uiSearchTokenVariants(token).some((variant) => words.has(variant));
-}
-
-function primaryCardNumber(value: string) {
-  const raw = String(value || "").trim().split("/")[0] || "";
-  return normalize(raw).replace(/\s+/g, "").replace(/^0+([0-9])/, "$1");
-}
-
-function scoreStockSearch(item: StockRow, query: ReturnType<typeof parseUiSearchQuery>) {
-  if (!query.tokens.length) return 1;
-  const name = normalize(item.product.name);
-  const nameWords = name.split(" ");
-  const expansionText = normalize(item.product.expansion);
-  const skuText = normalize(item.sku);
-  const miscText = normalize([
-    item.variant.language,
-    item.variant.condition,
-    item.variant.finish,
-    item.variant.gradingCompany,
-    item.variant.grade,
-    item.variant.gradingCert,
-    item.location,
-    item.tags,
-    item.product.identifiers.map((identifier) => `${identifier.source} ${identifier.externalId} ${identifier.url || ""}`).join(" ")
-  ].join(" "));
-  const haystack = `${name} ${expansionText} ${skuText} ${miscText}`;
-  let score = 0;
-  for (const token of query.textTokens) {
-    if (normalizedWordsIncludeToken(name, token)) score += 50;
-    else if (normalizedTextIncludesToken(name, token)) score += 34;
-    else if (normalizedTextIncludesToken(skuText, token)) score += 24;
-    else if (normalizedTextIncludesToken(expansionText, token)) score += 16;
-    else if (normalizedTextIncludesToken(miscText, token)) score += 7;
-    else if (normalizedTextIncludesToken(haystack, token)) score += 3;
-    else return 0;
-  }
-  const itemNumber = primaryCardNumber(item.product.number || "");
-  const fullNumber = normalize(item.product.number || "").replace(/\s+/g, "");
-  for (const token of query.numberTokens) {
-    if (itemNumber === token) score += 80;
-    else if (fullNumber.includes(token)) score += 18;
-    else if (skuText.includes(token)) score += 8;
-    else return 0;
-  }
-  if (query.raw && haystack.includes(query.raw)) score += 10;
-  return score;
-}
 
 function searchInventoryCatalogEntries(items: StockRow[], search: string, languageGroup: LanguageGroupFilter, limit: number): PriceChartingCacheEntry[] {
   const query = parseUiSearchQuery(search);

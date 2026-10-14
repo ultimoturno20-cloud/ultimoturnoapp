@@ -4347,6 +4347,17 @@ export async function listStockForBusiness(db: PGlite, businessId: string): Prom
   return listStockInternal(db, businessId);
 }
 
+export async function getInventoryItemsForActor(db: PGlite, ids: string[], actor: AuthenticatedUser): Promise<DbStockRow[]> {
+  if (!actor.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+  if (!Array.isArray(ids) || !ids.length || ids.length > 64 || ids.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) throw Object.assign(new Error("Seleccion de inventario invalida."), { statusCode: 400 });
+  const normalized = [...new Set(ids.map(id => id.toLowerCase()))];
+  const stock = await listStockInternal(db, actor.businessId, normalized);
+  const items = actor.roles.includes("admin") ? stock.items : stock.items.filter(item => item.ownerUserId === actor.id);
+  if (items.length !== normalized.length) throw Object.assign(new Error("Una carta seleccionada no esta disponible o no pertenece a este inventario."), { statusCode: 404 });
+  const byId = new Map(items.map(item => [item.id, item]));
+  return normalized.map(id => byId.get(id)!);
+}
+
 export async function listStockForActor(db: PGlite, actor: AuthenticatedUser): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
   const stock = await listStockInternal(db, actor.businessId);
   if (!actor.roles?.includes("stock_owner") || actor.roles.includes("admin")) return stock;
@@ -4478,7 +4489,7 @@ export async function repairInventorySalePrices(
   return { updated: candidates.length, applied: candidates, preview };
 }
 
-async function listStockInternal(db: PGlite, businessId: string, inventoryItemId?: string): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
+async function listStockInternal(db: PGlite, businessId: string, inventoryItemId?: string | string[]): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
   const result = await db.query<Record<string, unknown>>(`
     select
       ii.id,
@@ -4534,14 +4545,14 @@ async function listStockInternal(db: PGlite, businessId: string, inventoryItemId
     left join (
       select business_id, inventory_item_id, sum(greatest(0, quantity_assigned - quantity_sold - quantity_returned))::integer as remaining_quantity
       from reseller_stock_assignments
-      where business_id = $1 ${inventoryItemId ? "and inventory_item_id = $2::uuid" : ""}
+      where business_id = $1 ${inventoryItemId ? "and inventory_item_id = any($2::uuid[])" : ""}
       group by business_id, inventory_item_id
     ) assigned_stock on assigned_stock.business_id = ii.business_id and assigned_stock.inventory_item_id = ii.id
     left join (
       select s.business_id, si.inventory_item_id, sum(si.quantity)::integer as reserved_quantity
       from sales s join sale_items si on si.sale_id = s.id and si.business_id = s.business_id
       where s.sale_type = 'reservation' and s.status in ('pending', 'packed') and s.assigned_reseller_user_id is not null
-        and s.business_id = $1 ${inventoryItemId ? "and si.inventory_item_id = $2::uuid" : ""}
+        and s.business_id = $1 ${inventoryItemId ? "and si.inventory_item_id = any($2::uuid[])" : ""}
       group by s.business_id, si.inventory_item_id
     ) assigned_orders on assigned_orders.business_id = ii.business_id and assigned_orders.inventory_item_id = ii.id
     join card_products p on p.id = ii.product_id
@@ -4638,9 +4649,9 @@ async function listStockInternal(db: PGlite, businessId: string, inventoryItemId
       where ei.business_id = ii.business_id and ei.product_id = p.id
     ) identifier_data on true
     where ii.business_id = $1
-      ${inventoryItemId ? "and ii.id = $2::uuid" : ""}
+      ${inventoryItemId ? "and ii.id = any($2::uuid[])" : ""}
     order by p.name, v.language, v.condition
-  `, inventoryItemId ? [businessId, inventoryItemId] : [businessId]);
+  `, inventoryItemId ? [businessId, Array.isArray(inventoryItemId) ? inventoryItemId : [inventoryItemId]] : [businessId]);
   const items = result.rows.map((row) => toStockRow(row));
   await attachInventoryFolderValues(db, businessId, items);
   await attachInventoryCardTypes(db, items);

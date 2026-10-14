@@ -88,20 +88,51 @@ manual, respuesta retenida, 503/reintento, teclado/reduced-motion y screenshots
 Temporales .work/history-*; demo http://127.0.0.1:5290/demo con fixture aislado.
 Sin migraciones, dependencias ni escrituras productivas de prueba.
 
-Siguiente OP-1.4b Inventario y OP-1.4c otros lectores: mapa y requisitos en
-OPTIMIZATION_PLAN.md. No cambiar /stock global a pagina: allItems alimenta
-facetas/propietarios/conteos, duplicados/calidad, carrito, Compras, Ordenes,
-Claims y Planificador. visibleItems tiene busqueda con ranking y orden segun
-fuente/cambio/carpetas; batch/export toman TODO el filtro, no lo renderizado.
-Endpoint paginado separado, resumen/agregados globales, lectura explicita de
-IDs/alcance para seleccionar/exportar/lotes y getter puntual para fuera de
-pagina. Probar filtro/seleccion/exportacion >100 items antes de migrar la vista.
-Ingreso movil pide hasta 20000; movimientos de detalle hoy filtran los recientes
-globales, requieren consulta por item con permisos, no una pagina filtrada.
-OP-1.4b/c, OP-1.5 y etapas 2-5 siguen pendientes; NO marcar OP-1.4 completo.
-No cerrar el plan por estas entregas ni hacer QA autentificado en produccion:
-GET /stock, /sales y catalogo pueden expirar pedidos reales. Online: status,
-assets y rechazo privado sin sesion; comparar SHA publicado con git log -1.
+OP-1.4a confirmado online en ddf5f20. OP-1.4b entregado despues:
+domain/inventory-query.ts comparte filtros, busqueda con ranking, identidad/
+duplicados, facetas y precio numerico. API inventory-view.ts filtra snapshot
+existente del negocio y entrega /inventory/view con pagina 24/48/96, revision
+hash y agregados globales independientes. scope=ids selecciona TODO el filtro;
+scope=all exporta TODO el filtro, ambos conservan orden/busqueda y permisos.
+No poner limite global a /stock: otros sectores siguen con su DTO completo.
+Nombres de revendedores activos se consultan sin sus dashboards/cuentas.
+TTL normal existente de 15 segundos: otro cliente requiere fresh para observar
+inmediatamente metadata modificada; no prometer sincronizacion instantanea
+general. Pagina/memoria de seleccion se limpian al cambiar usuario/negocio.
+GET /inventory/items valida 1..64 UUID y usa getInventoryItemsForActor con
+mapper compartido listStockInternal(any uuid[]). Admin o stock_owner propio;
+business/propietario, orden solicitado y 404 generico para faltante/ajeno.
+Frontend use-inventory-page.ts conserva pagina y solo seleccion/carrito/editor,
+descarta filtros viejos, aplica revision del transporte OP-1.3 y pide frescura
+tras escritura/manual/precio entre pestanas. Snapshot distinto al paginar
+reinicia en cero, no promete cursor/MVCC congelado. Lotes/publicacion vuelven
+a leer IDs; doble clic bloqueado, escrituras sin reenvio. PUT legacy de lote
+sigue secuencial, sin nueva atomicidad ni bloqueo entre lectura/escritura.
+Ingreso conserva carga completa mientras se adapta en OP-1.4c; no poblar
+stock global con pagina parcial o una sola alta. Respuesta confirmada de
+guardado prevalece en detalle/carrito aun si luego falla la lectura.
+Fixture 1000 DTO: 1051899 -> 26058 bytes para pagina 24 con metadata.
+Lectura fria SQL TODAVIA construye snapshot completo: no un LIMIT SQL de
+Inventario ni una metrica de latencia productiva. Medirlo en OP-1.5 antes de
+optimizar construir snapshot; no otra cache persistente o TTL duplicado.
+QA: 269 tests completos, 20 regresiones finales versionadas, tipos/lint/build/
+db:verify OK. Paridad con ddf5f20 en 1217 combinaciones aisladas. Chrome con
+API/PGlite temporal de 132 items: seleccion/CSV de 122, publicacion, lote con
+precio actualizado fuera de pagina, carrito y reserva entre paginas, editor
+precio/cantidad, contenido/valor de carpeta, respuestas viejas y precio entre
+pestanas con lectura retenida, error/reintento, teclado/reduced-motion y
+320/390/768/1440/1788. Claims OP-1.2 mantiene cinco metadata sin GET stock extra.
+Pruebas nuevas: inventory-query.test.ts, inventory-view.test.ts,
+inventory-http.test.ts y extensiones inventory-reads/admin-api.test.ts.
+Temporales .work/inventory-* ignorados, demo http://127.0.0.1:5291/demo; sin
+migraciones, dependencias, secretos ni requests productivos de QA.
+Sigue OP-1.4c: ingreso movil (20000), pickers de ordenes/compras/claim y
+planificador, mas movimientos exactos por item donde corresponda. Conservar
+propuestas/rankings/exportaciones/cierres completos. Luego OP-1.5 y etapas 2-5;
+NO marcar OP-1.4 ni el plan completo. Mapa baseline en OPTIMIZATION_PLAN.md.
+No hacer QA autentificado en produccion: GET /stock, /sales, catalogo y las
+nuevas /inventory/view o /inventory/items pueden expirar pedidos reales.
+Online: status, assets y rechazo privado sin sesion; comparar SHA con Git.
 
 ## Cierre de claim HTTP 504 - 2026-10-13
 

@@ -6,7 +6,8 @@ import path from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import {
   createOperationalDatabase, getDefaultOperationalUser, getInventoryItem, listStockForBusiness, listStock,
-  addInventoryStock, createReseller, assignResellerStock, createSale, replacePriceChartingCache, saveInventoryFolderEntry
+  addInventoryStock, createReseller, assignResellerStock, createSale, replacePriceChartingCache, saveInventoryFolderEntry,
+  getInventoryItemsForActor, createManagedUser
 } from "./index.js";
 
 async function fixture() {
@@ -24,6 +25,30 @@ function instrument(db: PGlite) {
   return { measured, queries, totals: () => queries.reduce((sum, query) => ({ rows: sum.rows + query.rows, bytes: sum.bytes + query.bytes }), { rows: 0, bytes: 0 }) };
 }
 
+test("selected-ID reads are fresh, bounded, ordered and isolated by actor", async () => {
+  const { db, actor: base } = await fixture();
+  const actor = { ...base, roles: ["admin"] };
+  try {
+    const owner = await createManagedUser(db, { displayName: "Owner QA", email: "owner@ids.qa", password: "isolated-owner-qa-password", role: "stock_owner" }, actor);
+    const first = await addInventoryStock(db, { name: "First", expansion: "QA", language: "EN", condition: "NM", finish: "normal", quantityOnHand: 3, priceArs: 2000, ownerUserId: owner.id }, actor);
+    const second = await addInventoryStock(db, { name: "Second", expansion: "QA", language: "EN", condition: "NM", finish: "normal", quantityOnHand: 2, priceArs: 3000 }, actor);
+    const measured = instrument(db);
+    const selected = await getInventoryItemsForActor(measured.measured, [second.id, first.id, second.id.toUpperCase()], actor);
+    assert.deepEqual(selected.map(i => i.id), [second.id, first.id]);
+    assert.ok(measured.queries[0].sql.includes("ii.id = any($2::uuid[])"));
+    assert.equal(measured.queries[0].rows, 2);
+    await db.query("update current_prices set price_ars=4500 where inventory_item_id=$1", [first.id]);
+    assert.equal((await getInventoryItemsForActor(db, [first.id], actor))[0].priceArs, 4500);
+    const ownedActor = { ...actor, id: owner.id, roles: ["stock_owner"] };
+    assert.equal((await getInventoryItemsForActor(db, [first.id], ownedActor))[0].id, first.id);
+    await assert.rejects(getInventoryItemsForActor(db, [first.id, second.id], ownedActor), { statusCode: 404 });
+    await assert.rejects(getInventoryItemsForActor(db, [first.id], { ...actor, businessId: crypto.randomUUID() }), { statusCode: 404 });
+    await assert.rejects(getInventoryItemsForActor(db, [crypto.randomUUID()], actor), { statusCode: 404 });
+    await assert.rejects(getInventoryItemsForActor(db, [first.id], { ...actor, roles: ["reseller"] }), { statusCode: 403 });
+    for (const ids of [[], ["bad"], Array.from({ length: 65 }, () => first.id)]) await assert.rejects(getInventoryItemsForActor(db, ids, actor), { statusCode: 400 });
+  } finally { await db.close(); }
+});
+
 test("point lookup preserves full stock DTO, grading, prices, assignments and business isolation", async () => {
   const { db, actor } = await fixture();
   try {
@@ -40,8 +65,8 @@ test("point lookup preserves full stock DTO, grading, prices, assignments and bu
     assert.deepEqual(await getInventoryItem(read.measured, item.id, actor.businessId), full.items.find(row => row.id === item.id));
     assert.ok(read.queries.every(query => /^\s*select\b/i.test(query.sql)), "Read must not write");
     assert.ok(!read.queries.some(query => /inventory_folder_entries/.test(query.sql)), "A single card must not value unrelated folders");
-    assert.ok(read.queries[0].sql.includes("ii.id = $2::uuid"));
-    assert.deepEqual(read.queries[0].params, [actor.businessId, item.id]);
+    assert.ok(read.queries[0].sql.includes("ii.id = any($2::uuid[])"));
+    assert.deepEqual(read.queries[0].params, [actor.businessId, [item.id]]);
     assert.equal(read.queries[0].rows, 1);
     assert.equal(await getInventoryItem(db, item.id, crypto.randomUUID()), null);
     assert.equal(await getInventoryItem(db, crypto.randomUUID(), actor.businessId), null);
