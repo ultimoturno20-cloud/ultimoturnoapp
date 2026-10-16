@@ -2,6 +2,22 @@
 
 Actualizado: 2026-10-16
 
+## Coordinacion Codex + Claude
+
+Preparacion en rama codex/colaboracion-claude, basada en e233094; no es una
+entrega funcional ni un cambio de datos. AGENTS.md pasa a ser comun, CLAUDE.md
+lo referencia y docs/AGENT_COLLABORATION.md define worktrees, propiedad de
+hotspots, contrato primero, revision cruzada y merge humano. Plantillas nativas
+de issue/PR; CI existente incorpora db:verify local y checkout sin credenciales.
+Se reemplaza el push directo a main por ramas/PR; online solo tras merge
+autorizado y verificacion del SHA resultante. El plan OP sigue sin reiniciarse.
+Baseline remoto verificado: main y produccion e233094, public-status ok=true,
+DB accesible, PILOTO REAL, ejemplos deshabilitados. Produccion no se usa para QA.
+Esta preparacion sigue pendiente de integracion mientras su PR no este mergeado.
+Proteccion remota aplicada y releida por API el 16/10: PR + check actualizado
+requeridos incluso para admin, conversaciones resueltas, sin force-push/borrado.
+No se exige autoaprobacion del unico propietario; merge humano por protocolo.
+
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 

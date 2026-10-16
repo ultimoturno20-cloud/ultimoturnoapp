@@ -1,5 +1,19 @@
 # Traspaso de contexto - UltimoTurno
 
+## Codex + Claude Code - 2026-10-16
+
+El usuario pide trabajo paralelo en esta PC. Reglas comunes en AGENTS.md;
+CLAUDE.md solo remite a ellas. Leer docs/AGENT_COLLABORATION.md y usar
+issues/PRs de GitHub como coordinacion, sin asignarse zonas compartidas a ciegas.
+Codex usa checkout canonico, Claude worktree .work/agents/claude del mismo repo.
+Ramas por agente/tarea, contrato primero y revision cruzada. No merge de agentes
+ni pushes directos a main: usuario integra con CI aprobado. Verificar online
+solo despues del merge autorizado, contra el SHA resultante de main.
+Este protocolo reemplaza instrucciones anteriores de push/deploy por entrega;
+conserva commit, push y pruebas, pero distingue PR pendiente de produccion.
+Preparacion basada en e233094, sin nueva funcionalidad ni QA sobre datos reales.
+Proximo alcance funcional sigue OP-1.4c.2b (Ordenes primero), no asignado aun.
+
 ## Optimizacion integral - 2026-10-14
 
 Usuario pidio plan completo y comenzar. Seguimiento en OPTIMIZATION_PLAN.md:

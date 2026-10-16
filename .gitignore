@@ -27,6 +27,8 @@ mobile-app/*.err.log
 .data/
 outputs/
 .work/
+.claude/settings.local.json
+CLAUDE.local.md
 .recovery-tools/
 opencode.json
 siguientes instrucciones.txt
