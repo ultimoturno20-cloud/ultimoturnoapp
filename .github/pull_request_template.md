@@ -13,6 +13,7 @@
 - [ ] Si hay UI: QA desktop/movil, teclado y estados; capturas ficticias sin datos reales.
 - [ ] Sin operaciones de QA productivas, secretos ni datos de compradores en el diff/logs.
 - [ ] Rama actualizada contra main y CI `check` verde antes de integrar.
+- [ ] Sin previews con acceso a datos reales; configuracion/entornos y despliegues antiguos revisados sin publicar secretos.
 
 ## Revision y Entrega
 

@@ -14,6 +14,12 @@ alcance y rama/worktree propios; no hay asignacion funcional automatica a Claude
 AGENTS.md es comun; no duplicar reglas en CLAUDE.md. Ramas y PRs reemplazan pushes
 directos a main. Commit/push/CI por entrega; online se confirma despues del merge
 humano, comparando public-status con el SHA resultante de main.
+Revision de Claude: usar worktree hermano D:\UltimoTurno\Stock-claude, no el
+anidado anterior. Antes del merge de preparacion queda quitar Preview de las
+credenciales compartidas en Vercel y retirar/revisar previews antiguos; el usuario
+debe confirmar esa correccion sin publicar configuracion sensible ni valores.
+El PR agrega bloqueo de auto-deploy Git fuera de main; no modifica env remotas
+ni elimina previews existentes. No iniciar otro PR funcional con ese riesgo abierto.
 
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
 sus cinco etapas por IDs con pruebas/commit/push/PR y online tras merge autorizado.

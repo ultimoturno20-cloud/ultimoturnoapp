@@ -5,7 +5,8 @@
 El usuario pide trabajo paralelo en esta PC. Reglas comunes en AGENTS.md;
 CLAUDE.md solo remite a ellas. Leer docs/AGENT_COLLABORATION.md y usar
 issues/PRs de GitHub como coordinacion, sin asignarse zonas compartidas a ciegas.
-Codex usa checkout canonico, Claude worktree .work/agents/claude del mismo repo.
+Codex usa checkout canonico, Claude worktree hermano D:\UltimoTurno\Stock-claude
+del mismo repo (movido con autorizacion, no usar el anidado anterior).
 Ramas por agente/tarea, contrato primero y revision cruzada. No merge de agentes
 ni pushes directos a main: usuario integra con CI aprobado. Verificar online
 solo despues del merge autorizado, contra el SHA resultante de main.
@@ -13,6 +14,11 @@ Este protocolo reemplaza instrucciones anteriores de push/deploy por entrega;
 conserva commit, push y pruebas, pero distingue PR pendiente de produccion.
 Preparacion basada en e233094, sin nueva funcionalidad ni QA sobre datos reales.
 Proximo alcance funcional sigue OP-1.4c.2b (Ordenes primero), no asignado aun.
+Revision de Claude: CI no cancela commits de main y typecheck/tsc -b ya emite
+paquetes antes de tests; no hay que mover el build final. Guia legacy retirada.
+Vercel: verificar/corregir alcance Preview y revisar despliegues anteriores, sin tocar
+Production. vercel.json limita auto-deploy Git a main, no retira previews viejos
+ni cambia variables remotas. No mergear preparacion hasta verificar aislamiento.
 
 ## Optimizacion integral - 2026-10-14
 
@@ -1102,6 +1108,10 @@ sesiones; luego pilotear revendedores, imagenes faltantes y CSV reales.
 ---
 
 ## Archivo historico
+
+> Este archivo inferior es referencia, no protocolo vigente. Instrucciones
+> antiguas de push, entornos y pruebas quedan reemplazadas por AGENTS.md y
+> AGENT_COLLABORATION.md. No usar bases reales como fixtures ni push a main.
 
 Actualizado: 2026-08-24
 

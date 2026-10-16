@@ -24,8 +24,9 @@ Distinguish local HEAD, origin/main, PR head and deployed SHA; they can differ.
 - Canonical checkout: `D:\UltimoTurno\Stock`.
 - Remote: `https://github.com/ultimoturno20-cloud/ultimoturnoapp.git`.
 - Separate worktrees of THIS repository are allowed for parallel tasks. In
-  this PC, Claude's prepared path is `.work/agents/claude` under the canonical
-  checkout. Verify its remote and branch, not just the directory name.
+  this PC, Claude's prepared path is `D:\UltimoTurno\Stock-claude`, a sibling,
+  NOT a subdirectory of another checkout. Verify remote, branch and dependency
+  resolution inside that worktree, not just the directory name.
 - NEVER use `C:\Users\skype\Documents\Stock`: it is a stale Next/Sites project.
 - Production: `https://ultimoturno.app/`, Vercel + Supabase/Postgres/Storage.
   This is NOT Next.js or OpenAI Sites. Do not use Sites or hosting.json.
@@ -114,8 +115,10 @@ The standard CI/local gate is:
 npm run check:new
 ```
 
-It runs lint, typecheck, tests, local DB verification and build. Typecheck/build
-must precede tests after workspace changes: API tests consume built packages.
+It runs lint, typecheck, tests, local DB verification and build, in that order.
+`typecheck` runs `tsc -b`: composite workspace projects emit their dist packages
+before tests. API tests consume these built packages. Keep that ordering;
+the final build also bundles the Vite apps and runs AFTER tests.
 `npm run db:verify` uses fresh in-memory PGlite, not production. The custom lint
 is not a comprehensive secret scanner. Run `git diff --check` and review staged
 content too. New CI does not need production secrets.
@@ -136,6 +139,11 @@ images and contained prices. Report what was tested and what was not.
   or real exports in Git, issues, PRs, logs or chat. Use environment variables;
   `.env.example` contains placeholders/local examples only. Ignored does not
   mean safe to share. Never copy production credentials to PR previews.
+- Automatic Vercel Git deployments are limited to main in vercel.json until
+  previews have explicitly isolated credentials. This does not disable manual
+  deploys or retire older previews. Do not open/run an API preview until the
+  Vercel scope and old deployments are verified safe; even initialization can
+  migrate Postgres. Keep Production unchanged when removing Preview scope.
 - No automatic `git add .`; stage explicit paths and inspect `git diff --cached`.
   `.work`, `.data`, node_modules and build outputs remain ignored.
 - Each PR documents scope, OP ID, baseline, tests, shared contracts, risks,
