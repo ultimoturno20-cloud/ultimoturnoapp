@@ -17,7 +17,7 @@ La plataforma activa funciona localmente y online:
 - Actualizacion PriceCharting: cron diario de Vercel a las `09:00 UTC`
   (`06:00` de Argentina).
 
-Ultimo cambio funcional documentado antes de esta actualizacion: `708c9aa`.
+Estado y entregas vigentes: `docs/PROJECT_STATUS.md` y `docs/NEXT_STEPS.md`.
 
 Para retomar el trabajo leer, en este orden:
 
@@ -35,6 +35,13 @@ D:\UltimoTurno\Stock
 
 No usar `C:\Users\skype\Documents\Stock`: es un workspace viejo y no es la
 plataforma de produccion.
+
+## Codex y Claude en paralelo
+
+Reglas compartidas: `AGENTS.md`; entrada de Claude Code: `CLAUDE.md`.
+Preparacion, rutas de worktrees, asignacion de tareas y revision:
+`docs/AGENT_COLLABORATION.md`. Una rama por agente/tarea y entrega por PR;
+el usuario autoriza merge. CI verde no significa que el PR ya este en produccion.
 
 ## Cambios operativos recientes
 
@@ -79,8 +86,9 @@ npm run db:verify
 npm run build
 ```
 
-Antes de probar local, confirmar que se usa el perfil `PILOTO REAL` y no una
-base de ejemplos.
+Para QA usar PGlite temporal y datos ficticios, sin credenciales productivas.
+El perfil `PILOTO REAL` no demuestra aislamiento: no usar la base local operativa
+ni iniciar workers para pruebas. Seguir `AGENTS.md` antes de arrancar la API.
 
 ## Componentes principales
 

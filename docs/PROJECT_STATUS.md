@@ -2,6 +2,31 @@
 
 Actualizado: 2026-10-16
 
+## Coordinacion Codex + Claude
+
+Preparacion en rama codex/colaboracion-claude, basada en e233094; no es una
+entrega funcional ni un cambio de datos. AGENTS.md pasa a ser comun, CLAUDE.md
+lo referencia y docs/AGENT_COLLABORATION.md define worktrees, propiedad de
+hotspots, contrato primero, revision cruzada y merge humano. Plantillas nativas
+de issue/PR; CI existente incorpora db:verify local y checkout sin credenciales.
+Se reemplaza el push directo a main por ramas/PR; online solo tras merge
+autorizado y verificacion del SHA resultante. El plan OP sigue sin reiniciarse.
+Baseline remoto verificado: main y produccion e233094, public-status ok=true,
+DB accesible, PILOTO REAL, ejemplos deshabilitados. Produccion no se usa para QA.
+Esta preparacion sigue pendiente de integracion mientras su PR no este mergeado.
+Proteccion remota aplicada y releida por API el 16/10: PR + check actualizado
+requeridos incluso para admin, conversaciones resueltas, sin force-push/borrado.
+No se exige autoaprobacion del unico propietario; merge humano por protocolo.
+
+Revision cruzada de Claude atendida en el mismo PR #28: worktree movido con
+autorizacion a D:\UltimoTurno\Stock-claude, dependencias regeneradas y
+resolucion propia y typecheck aprobados; CI solo cancela PRs, main agrupa por SHA.
+Guia legacy reemplazada y orden tsc -b/tests/build aclarado. vercel.json limita
+auto-deploys Git a main, sin cambios de rutas, datos ni codigo de negocio.
+Bloqueo operativo: verificar aislamiento de credenciales en Preview conservando
+Production y retirar/revisar previews anteriores; sin evidencia de correccion.
+No abrir previews ni mergear la preparacion mientras siga ese pendiente.
+
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
 
@@ -1161,13 +1186,17 @@ npm run db:verify
 npm run build
 ```
 
-Despues de `git push`, comprobar `GET /api/public-status` y confirmar que
-`deployment.commitSha` coincide con el commit enviado. Si no coincide, Vercel
-todavia puede estar construyendo.
+Tras commit/push de rama propia, abrir PR y esperar merge autorizado por el
+usuario. Solo despues comprobar GET /api/public-status contra el SHA resultante
+de main. Un PR pendiente no se despliega en produccion y no debe coincidir.
 
 ---
 
 ## Archivo historico al 2026-09-11
+
+> Referencia historica, no instrucciones vigentes de Git, QA ni despliegue.
+> AGENTS.md y AGENT_COLLABORATION.md prevalecen: ramas/PR, merge humano y
+> pruebas en datos sinteticos aislados, nunca en bases operativas reales.
 
 Actualizado: 2026-09-11
 

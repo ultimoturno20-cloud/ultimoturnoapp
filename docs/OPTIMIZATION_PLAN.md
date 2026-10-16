@@ -122,8 +122,10 @@ metricas documentadas, guias actualizadas y ultimo commit verificado online.
 2. Definir baseline, alcance y prueba de preservacion antes de cambiar codigo.
 3. Implementar y comprobar comportamiento en bases/API temporales.
 4. Actualizar este checklist con evidencia, pendientes y decision siguiente.
-5. Commit, push y verificar public-status con el SHA publicado. No cerrar
-   una entrega como online si el despliegue sigue en un commit anterior.
+5. Commit/push de rama propia y PR con revision cruzada; merge solo humano,
+   segun AGENTS.md y AGENT_COLLABORATION.md. Despues del merge autorizado,
+   verificar public-status contra el SHA resultante de main. Un PR pendiente
+   no esta online; no cerrar como desplegado si produccion tiene otro SHA.
 6. Continuar con el siguiente OP; fallos operativos reales tienen prioridad,
    pero no borran ni reinician este plan.
 

@@ -8,8 +8,21 @@ Actualizado: 2026-10-16
 
 ## Orden de continuidad
 
+Antes de nuevas tareas paralelas: integrar con autorizacion humana la preparacion
+Codex/Claude y seguir docs/AGENT_COLLABORATION.md. Cada tarea requiere propietario,
+alcance y rama/worktree propios; no hay asignacion funcional automatica a Claude.
+AGENTS.md es comun; no duplicar reglas en CLAUDE.md. Ramas y PRs reemplazan pushes
+directos a main. Commit/push/CI por entrega; online se confirma despues del merge
+humano, comparando public-status con el SHA resultante de main.
+Revision de Claude: usar worktree hermano D:\UltimoTurno\Stock-claude, no el
+anidado anterior. Antes del merge de preparacion queda quitar Preview de las
+credenciales compartidas en Vercel y retirar/revisar previews antiguos; el usuario
+debe confirmar esa correccion sin publicar configuracion sensible ni valores.
+El PR agrega bloqueo de auto-deploy Git fuera de main; no modifica env remotas
+ni elimina previews existentes. No iniciar otro PR funcional con ese riesgo abierto.
+
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
-sus cinco etapas por IDs con pruebas/commit/push/online en cada entrega.
+sus cinco etapas por IDs con pruebas/commit/push/PR y online tras merge autorizado.
 OP-1.1 online en 3414fb1, OP-1.2 en e63a864 y OP-1.3 en ca89cca, con
 QA DB/HTTP/Chrome: GET superpuestos 8 -> 4, stock 3 -> 1, sesiones aisladas,
 recarga manual/entre pestanas y descarte de respuestas anteriores a guardados.
@@ -680,7 +693,7 @@ orden de produccion.
 ```text
 Continuemos trabajando en UltimoTurno.
 
-Usa exclusivamente D:\UltimoTurno\Stock.
+Usa exclusivamente el repo D:\UltimoTurno\Stock o tu worktree asignado de ese repo.
 Antes de modificar nada lee AGENTS.md, docs/PROJECT_STATUS.md,
 docs/NEXT_STEPS.md y docs/new-platform/HANDOFF_NEXT_ACCOUNT.md.
 
@@ -700,7 +713,9 @@ No hay nuevo boton de cotizacion masiva ni cobros/envios automaticos.
 
 Retomar el orden de continuidad de NEXT_STEPS.md. Separar entregado, operacion
 puntual, propuesta y pendiente. Preservar los datos actuales, validar en base
-aislada y hacer commit, push y verificacion online al terminar cada cambio.
+aislada y hacer commit, push y PR al terminar cada cambio. Leer tambien
+docs/AGENT_COLLABORATION.md: ramas/worktrees separados, hotspots coordinados y
+merge solo humano. Verificacion online despues del merge contra el SHA de main.
 ```
 
 ---

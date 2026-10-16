@@ -1,4 +1,10 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "outputDirectory": "apps/admin-web/dist",

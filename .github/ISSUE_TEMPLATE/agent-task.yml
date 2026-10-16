@@ -1,0 +1,52 @@
+name: Tarea para agente
+description: Acordar propietario, alcance y contratos antes de trabajar en paralelo.
+title: "[Agente] "
+body:
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Agente responsable
+      options:
+        - Por asignar por el usuario
+        - Codex
+        - Claude Code
+        - Humano
+    validations:
+      required: true
+  - type: input
+    id: plan
+    attributes:
+      label: OP ID o prioridad autorizada
+      description: No reemplazar el plan vigente ni inventar un OP completado.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Alcance permitido y exclusiones
+      description: Resultado esperado, zonas/archivos permitidos y lo que NO cambia.
+    validations:
+      required: true
+  - type: textarea
+    id: coordination
+    attributes:
+      label: Coordinacion y contrato
+      description: Hotspots, tareas/PRs dependientes, propietario de archivos comunes, API/DTO/migraciones. Indicar ninguno si no aplica.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Criterios y pruebas
+      description: Comportamiento observable, invariantes y QA en fixtures aislados. Nunca pruebas sobre datos reales.
+    validations:
+      required: true
+  - type: checkboxes
+    id: delivery
+    attributes:
+      label: Reglas de entrega
+      options:
+        - label: Rama y worktree propios, commit/push/PR; merge y release solo autorizados por el usuario.
+          required: true
+        - label: Sin secretos ni datos reales de compradores en codigo, issue, capturas o logs.
+          required: true
