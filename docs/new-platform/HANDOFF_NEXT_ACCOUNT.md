@@ -146,9 +146,32 @@ central, duplicados fuera de pagina, lecturas retenidas/manual, alta/deshacer,
 errores y reintentos, teclado/reduced-motion, imagenes y cinco anchos.
 .work/mobile-* ignorados; sin secretos/migraciones/dependencias ni writes
 productivos. Operacion masiva sigue completa; no se promete timeout ilimitado.
-Sigue OP-1.4c.2: candidatos de Ingreso/Ordenes/Compras/Claims/Planificador y
-movimientos exactos por item donde corresponda. Conservar propuestas/rankings/
-exportaciones/cierres completos. Luego OP-1.5 y etapas 2-5;
+OP-1.4c.1 confirmado online en cfea206. OP-1.4c.2a entrega buscador de Ingreso:
+GET /inventory/intake-search, admin/stock_owner propio. Ingreso ya no pide
+/stock al entrar/refrescar/guardar. Metadata local prefiltrada SQL por tokens
+y negocio/propietario, mismo scoreStockSearch/idiomas; ranking antes de elegir
+IDs, getInventoryItemsForActor completa max. 60 con mapper/precios existentes.
+Queries amplias aun leen muchas coincidencias de metadata, no LIMIT SQL total.
+Catalogo conserva cache servidor 60 s; local nunca entra en esa cache. Se
+elimina Map combinada cliente de 5 minutos sin sesion. Reglas/DTO compartidos
+en domain/catalog-picker.ts, hook use-intake-search con transporte anterior,
+cancelacion/revision y descarte de filtros viejos. Cuenta cambia remonta
+Ingreso y limpia formulario/recibo. 30 resultados combinados; fallo catalogo
+devuelve 60 locales con aviso, fallo local devuelve catalogo con aviso;
+fallo total visible/reintento. Legacy /catalog-cards mantiene su contrato.
+POST /inventory/intake intacto: conserva identidad/transaccion/cantidades/
+reservas/precios y todavia lee stock completo dentro de la escritura; no
+afirmar que se optimizo esa carga ni que hay nueva atomicidad. /stock de
+Ordenes/Compras/Claims/etc. no cambia. Paridad 68 queries/idiomas, 120 DTO y
+160 combinaciones contra cfea206; 286 tests completos, tipos/lint/build/dbverify.
+Chrome/API/PGlite local: cero GET stock, 30 resultados, idiomas, respuesta
+retenida/error/reintento/aviso parcial, guardar/seguir, doble clic una escritura,
+precio fresco, propietario y carpeta conservada sin stock, teclado/reduced-motion
+e imagenes en 320/390/768/1440/1788. .work/intake-* ignorado, demo puerto 5296.
+Sin migraciones/dependencias/secretos ni QA comercial productivo.
+Sigue OP-1.4c.2b: primero Ordenes, luego Compras/Claims/Planificador y
+movimientos exactos por item. Conservar propuestas/rankings/exportaciones/
+cierres completos. Luego OP-1.5 y etapas 2-5;
 NO marcar OP-1.4 ni el plan completo. Mapa baseline en OPTIMIZATION_PLAN.md.
 No hacer QA autentificado en produccion: GET /stock, /sales, catalogo y las
 nuevas /inventory/view o /inventory/items pueden expirar pedidos reales.

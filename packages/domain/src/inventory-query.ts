@@ -240,7 +240,7 @@ export function primaryCardNumber(value: string) {
   return normalizeInventoryText(raw).replace(/\s+/g, "").replace(/^0+([0-9])/, "$1");
 }
 
-export function scoreStockSearch(item: InventoryQueryItem, query: ReturnType<typeof parseUiSearchQuery>) {
+export function scoreStockSearch(item: Pick<InventoryQueryItem, "sku" | "location" | "tags" | "product" | "variant">, query: ReturnType<typeof parseUiSearchQuery>) {
   if (!query.tokens.length) return 1;
   const name = normalizeInventoryText(item.product.name);
   const nameWords = name.split(" ");

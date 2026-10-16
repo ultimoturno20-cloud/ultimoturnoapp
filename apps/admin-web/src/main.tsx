@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildDuplicateIdentityKeys, summarizeStockQuality, inventoryLanguageGroup, inventoryTags, parseUiSearchQuery, uiSearchTokenVariants, normalizedTextIncludesToken, normalizedWordsIncludeToken, primaryCardNumber, scoreStockSearch, normalizeInventoryText as normalize, inventoryPriceValue, type InventoryMetadata } from "@ultimoturno/domain";
 import { useInventoryPage } from "./use-inventory-page.js";
+import { useIntakeSearch } from "./use-intake-search.js";
+import { cleanCatalogPickerName, cleanCatalogPickerExpansion, catalogSourceLabel, type CatalogPickerEntry } from "@ultimoturno/domain";
 import { mobileCaptureKey, type MobileInventoryEntry, type MobileIntakeStatus } from "@ultimoturno/domain";
 import { useMobileIntakePage } from "./use-mobile-intake-page.js";
 import { MobileIntakePagination, type MobileIntakePaging } from "./mobile-intake-pagination.js";
@@ -657,31 +659,7 @@ type ClaimOrderPreview = {
   };
 };
 
-type PriceChartingCacheEntry = {
-  cardType?: CardType;
-  catalogId?: string;
-  priceChartingId: string;
-  canonicalUrl: string;
-  sourceUrl: string;
-  priceChartingUrl?: string;
-  tcgplayerUrl?: string;
-  tcgplayerProductId?: string;
-  productName: string;
-  normalizedName?: string;
-  expansionName: string;
-  normalizedExpansion?: string;
-  cardNumber: string;
-  languageGroup: LanguageGroupFilter;
-  language?: string;
-  finish?: string;
-  loosePriceUsd: number | null;
-  priceChartingPriceUsd?: number | null;
-  tcgplayerPriceUsd?: number | null;
-  tcgplayerSubtype?: string;
-  imageUrl: string;
-  imageFallbackUrl?: string;
-  importedAt: string;
-};
+type PriceChartingCacheEntry = CatalogPickerEntry;
 
 type ClaimCsvImportRow = {
   rowNumber: number;
@@ -1001,8 +979,6 @@ const mobileBatchStorageKey = "ultimoturno_mobile_default_batch";
 const mobileConditionStorageKey = "ultimoturno_mobile_default_condition";
 const fallbackBlueRateSell = 1540;
 const minimumSalePriceArs = 800;
-const catalogPickerSearchCache = new Map<string, { expiresAt: number; entries: PriceChartingCacheEntry[]; totalEntries: number }>();
-const catalogPickerSearchCacheTtlMs = 5 * 60 * 1000;
 const adminApi = createAdminApi({ url: buildApiRequestUrl, session: () => readLocalStorage(adminSessionTokenKey) });
 const exampleSnapshotCsv = `sku,name,expansion,number,language,condition,finish,gradingCompany,grade,gradingCert,location,quantityOnHand,quantityReserved,priceArs,priceUsd
 UT-CSV-HORSEA-AQ-EN-NM,Horsea,Aquapolis,85,EN,NM,normal,,,,Caja agua C,2,0,4500,3.6
@@ -1046,6 +1022,7 @@ function App() {
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [financeResellers, setFinanceResellers] = useState<ResellerDashboard[]>([]);
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
+  const [intakeSearchRevision, setIntakeSearchRevision] = useState(0);
   const [claims, setClaims] = useState<ClaimsWorkspace>(() => emptyClaimsWorkspace());
   const [claimPlans, setClaimPlans] = useState<ClaimPlansResponse>({ plans: [] });
   const [priceChartingCache, setPriceChartingCache] = useState<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>({ entries: [], status: emptyPriceChartingStatus() });
@@ -1178,6 +1155,7 @@ function App() {
         setCart([]); setSelectedId(""); setEditingId(""); setProductModalOpen(false);
         completeStockLoaded.current = false;
         setStockState({ summary: emptySummary(), items: [] });
+        setForm(blankForm()); setProductReceipt("");
       }
       const preferences = readInventoryPreferences(inventoryPreferenceStorage(), preferenceScope);
       applyInventoryFilters(preferences.current.filters);
@@ -1251,8 +1229,7 @@ function App() {
       } else if (targetView === "inventory") {
         await inventoryPage.refresh(true, force);
       } else if (targetView === "stock-intake") {
-        const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
-        updates.push(() => setStock(stockData));
+        updates.push(() => setIntakeSearchRevision(value => value + 1));
       } else if (targetView === "resellers") {
         const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
         updates.push(() => setStock(stockData));
@@ -2925,6 +2902,8 @@ function App() {
 
       {view === "stock-intake" ? (
         <StockIntakeView
+          key={inventoryPreferenceScope}
+          searchRevision={intakeSearchRevision}
           form={form}
           onChange={setForm}
           receipt={productReceipt}
@@ -2937,7 +2916,6 @@ function App() {
           blueRate={blueRate}
           saving={productSaving}
           priceChartingCache={priceChartingCache}
-          allItems={stock.items}
           ownerOptions={managedUsers.filter((user) => user.active && user.roles.includes("stock_owner"))}
           canChooseOwner={userRoles.includes("admin")}
           onSearchPriceCharting={(search) => void searchPriceChartingCache(search)}
@@ -3090,7 +3068,6 @@ function App() {
           onForceImage={() => void forceProductImage()}
           onForceManualImage={forceProductImageManual}
           priceChartingCache={priceChartingCache}
-          allItems={stock.items}
           ownerOptions={managedUsers.filter((user) => user.active && user.roles.includes("stock_owner"))}
           canChooseOwner={userRoles.includes("admin")}
           onSearchPriceCharting={(search) => void searchPriceChartingCache(search)}
@@ -4350,7 +4327,7 @@ function CartPriceControl({ value, onChange }: { value: number; onChange: (value
   );
 }
 
-function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
+function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blueRate, saving, imageForcing, onForceImage, onForceManualImage, priceChartingCache, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
   receipt: string;
   form: InventoryFormState;
   editing: boolean;
@@ -4363,7 +4340,6 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
   onForceImage: () => void;
   onForceManualImage: () => void;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
-  allItems: StockRow[];
   ownerOptions: ManagedUser[];
   canChooseOwner: boolean;
   onSearchPriceCharting: (search: string) => void;
@@ -4388,13 +4364,13 @@ function ProductModal({ receipt, form, editing, onChange, onSubmit, onClose, blu
           <button className="modal-close" aria-label="Cerrar formulario" title="Cerrar" onClick={onClose}><Icon name="close" /></button>
         </header>
         {receipt ? <p className="intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
-        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Agregar stock y seguir"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} priceChartingCache={priceChartingCache} allItems={allItems} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />
+        <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel={editing ? "Guardar cambios" : "Agregar stock y seguir"} blueRate={blueRate} saving={saving} editing={editing} imageForcing={imageForcing} onForceImage={onForceImage} onForceManualImage={onForceManualImage} priceChartingCache={priceChartingCache} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />
       </section>
     </div>
   );
 }
 
-function StockIntakeView({ receipt, recentFolder, onFolderSaved, onCreateNext, form, onChange, onSubmit, onClose, closeLabel, blueRate, saving, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
+function StockIntakeView({ receipt, recentFolder, onFolderSaved, onCreateNext, form, onChange, onSubmit, onClose, closeLabel, blueRate, saving, priceChartingCache, searchRevision, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
   receipt: string;
   recentFolder?: StockRow;
   onFolderSaved: (item: StockRow) => void;
@@ -4407,7 +4383,7 @@ function StockIntakeView({ receipt, recentFolder, onFolderSaved, onCreateNext, f
   blueRate: BlueExchangeRate;
   saving: boolean;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
-  allItems: StockRow[];
+  searchRevision: number;
   ownerOptions: ManagedUser[];
   canChooseOwner: boolean;
   onSearchPriceCharting: (search: string) => void;
@@ -4426,12 +4402,12 @@ function StockIntakeView({ receipt, recentFolder, onFolderSaved, onCreateNext, f
         <button className="secondary-action stock-intake-back" type="button" onClick={onClose} aria-label={closeLabel || "Volver al inventario"} title={closeLabel || "Volver al inventario"}><Icon name="close" /><span>{closeLabel || "Volver al inventario"}</span></button>
       </header>
       {receipt ? <p className="intake-feedback stock-intake-feedback" role="status">{receipt} Podes buscar la siguiente carta.</p> : null}
-      {recentFolder ? <div className="folder-intake-workspace"><button type="button" className="secondary-action" onClick={onCreateNext}><Icon name="plus" />Agregar stock</button><InventoryFolderContents item={recentFolder} blueRate={blueRate} onSaved={onFolderSaved} /></div> : <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} allItems={allItems} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />}
+      {recentFolder ? <div className="folder-intake-workspace"><button type="button" className="secondary-action" onClick={onCreateNext}><Icon name="plus" />Agregar stock</button><InventoryFolderContents item={recentFolder} blueRate={blueRate} onSaved={onFolderSaved} /></div> : <InventoryForm form={form} onChange={onChange} onSubmit={onSubmit} onCancel={onClose} submitLabel="Agregar stock y seguir" blueRate={blueRate} saving={saving} editing={false} fullPage searchRevision={searchRevision} imageForcing="" onForceImage={() => undefined} onForceManualImage={() => undefined} priceChartingCache={priceChartingCache} ownerOptions={ownerOptions} canChooseOwner={canChooseOwner} onSearchPriceCharting={onSearchPriceCharting} />}
     </section>
   );
 }
 
-function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, fullPage = false, imageForcing, onForceImage, onForceManualImage, priceChartingCache, allItems, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
+function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRate, saving, editing, fullPage = false, searchRevision = 0, imageForcing, onForceImage, onForceManualImage, priceChartingCache, ownerOptions, canChooseOwner, onSearchPriceCharting }: {
   form: InventoryFormState;
   onChange: (form: InventoryFormState) => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -4445,76 +4421,19 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
   onForceImage: () => void;
   onForceManualImage: () => void;
   priceChartingCache: { entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus };
-  allItems: StockRow[];
+  searchRevision?: number;
   ownerOptions: ManagedUser[];
   canChooseOwner: boolean;
   onSearchPriceCharting: (search: string) => void;
 }) {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [pickerLanguageGroup, setPickerLanguageGroup] = useState<LanguageGroupFilter>("all");
-  const [pickerEntries, setPickerEntries] = useState<PriceChartingCacheEntry[]>([]);
-  const [pickerCatalogTotal, setPickerCatalogTotal] = useState(priceChartingCache.status.totalEntries);
-  const [pickerSearching, setPickerSearching] = useState(false);
-  const [pickerError, setPickerError] = useState("");
   const [pickerCurrency, setPickerCurrency] = useState<"USD" | "ARS">("USD");
-  const pickerSequence = useRef(0);
-  const pickerAbortController = useRef<AbortController | null>(null);
-  const allItemsRef = useRef(allItems);
-  useEffect(() => { allItemsRef.current = allItems; }, [allItems]);
-  async function searchPicker(search: string) {
-    const normalizedSearch = search.trim().toLocaleLowerCase("es");
-    if (normalizedSearch.length < 2) {
-      pickerAbortController.current?.abort();
-      setPickerEntries([]);
-      setPickerSearching(false);
-      setPickerError(normalizedSearch ? "Escribi al menos 2 caracteres." : "");
-      return;
-    }
-    const sequence = ++pickerSequence.current;
-    const cacheKey = `${pickerLanguageGroup}\n${normalizedSearch}`;
-    const cached = catalogPickerSearchCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      setPickerCatalogTotal(cached.totalEntries);
-      setPickerEntries(cached.entries);
-      setPickerSearching(false);
-      setPickerError("");
-      return;
-    }
-    pickerAbortController.current?.abort();
-    const controller = new AbortController();
-    pickerAbortController.current = controller;
-    setPickerSearching(true);
-    setPickerError("");
-    try {
-      const result = await api<{ entries: PriceChartingCacheEntry[]; status?: PriceChartingCacheStatus }>(`/catalog-cards?query=${encodeURIComponent(search)}&languageGroup=${encodeURIComponent(pickerLanguageGroup)}&limit=30&includeStatus=false`, { signal: controller.signal });
-      const fallbackEntries = searchInventoryCatalogEntries(allItemsRef.current, search, pickerLanguageGroup, 30);
-      if (sequence === pickerSequence.current) {
-        const entries = mergeCatalogPickerEntries(result.entries, fallbackEntries, 30);
-        const totalEntries = result.status?.totalEntries ?? priceChartingCache.status.totalEntries;
-        if (catalogPickerSearchCache.size >= 100) catalogPickerSearchCache.delete(catalogPickerSearchCache.keys().next().value || "");
-        catalogPickerSearchCache.set(cacheKey, { expiresAt: Date.now() + catalogPickerSearchCacheTtlMs, entries, totalEntries });
-        setPickerCatalogTotal(totalEntries);
-        setPickerEntries(entries);
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      const fallbackEntries = searchInventoryCatalogEntries(allItemsRef.current, search, pickerLanguageGroup, 60);
-      if (sequence === pickerSequence.current) {
-        setPickerEntries(fallbackEntries);
-        setPickerError(fallbackEntries.length ? "" : errorMessage(error));
-      }
-    } finally { if (sequence === pickerSequence.current) setPickerSearching(false); }
-  }
-  useEffect(() => {
-    ++pickerSequence.current;
-    pickerAbortController.current?.abort();
-    if (catalogSearch.trim().length < 2) { setPickerEntries([]); setPickerSearching(false); setPickerError(catalogSearch.trim() ? "Escribi al menos 2 caracteres." : ""); return; }
-    setPickerEntries(searchInventoryCatalogEntries(allItemsRef.current, catalogSearch, pickerLanguageGroup, 30));
-    setPickerSearching(true);
-    const timer = window.setTimeout(() => void searchPicker(catalogSearch), 100);
-    return () => { window.clearTimeout(timer); pickerAbortController.current?.abort(); ++pickerSequence.current; };
-  }, [catalogSearch, pickerLanguageGroup]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(!editing && !form.name);
+  const { entries: pickerEntries, busy: pickerSearching, error: pickerError, warning: pickerWarning, search: searchPicker } = useIntakeSearch({
+    query: catalogSearch, languageGroup: pickerLanguageGroup, active: !editing && catalogPickerOpen,
+    revision: `${searchRevision}:${adminApi.revision()}`, request: api, readAndApply: adminApi.readAndApply
+  });
   const [showDetails, setShowDetails] = useState(editing || fullPage);
   const [coolstuffQuote, setCoolstuffQuote] = useState<CoolstuffPriceQuote | null>(null);
   const [coolstuffLoading, setCoolstuffLoading] = useState(false);
@@ -4670,14 +4589,14 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
 
         <div className="inventory-edit-sections">
           {choosingCatalogCard ? <section className="edit-section catalog-picker">
-            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries) ? `${Math.max(pickerCatalogTotal, priceChartingCache.status.totalEntries).toLocaleString("es-AR")} cartas` : "Catalogo completo"}</strong></div>
+            <div className="edit-section-heading"><div><h3>Buscar carta</h3><span>Elegi una carta de la base para agregar existencias al inventario.</span></div><strong>{priceChartingCache.status.totalEntries ? `${priceChartingCache.status.totalEntries.toLocaleString("es-AR")} cartas` : "Catalogo completo"}</strong></div>
             <div className="catalog-picker-tools">
               <LanguageGroupSelector value={pickerLanguageGroup} onChange={setPickerLanguageGroup} />
               <CurrencyToggle value={pickerCurrency} onChange={setPickerCurrency} />
             </div>
             <div className="catalog-picker-search">
-              <input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(catalogSearch); } }} placeholder="Nombre, expansion, numero o ID" autoComplete="off" enterKeyHint="search" autoFocus />
-              <button className="primary-action" type="button" onClick={() => void searchPicker(catalogSearch)} aria-label="Buscar cartas" title="Buscar cartas"><Icon name="search" /><span>Buscar</span></button>
+              <input aria-label="Buscar carta para ingresar stock" maxLength={160} value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchPicker(); } }} placeholder="Nombre, expansion, numero o ID" autoComplete="off" enterKeyHint="search" autoFocus />
+              <button className="primary-action" type="button" disabled={pickerSearching || catalogSearch.trim().length < 2} onClick={() => void searchPicker()} aria-label="Buscar cartas" title="Buscar cartas"><Icon name="search" /><span>Buscar</span></button>
             </div>
             <div className="catalog-picker-manual-actions">
               <button type="button" className="secondary-action" onClick={() => startManualItem({ name: "Item manual", expansion: "Producto", quantityOnHand: 1 })}><Icon name="plus" />Crear item manual</button>
@@ -4717,7 +4636,8 @@ function InventoryForm({ form, onChange, onSubmit, onCancel, submitLabel, blueRa
                 </div>
               </button>)}
             </div> : <p className="muted">{pickerSearching ? "Buscando cartas..." : pickerError || (catalogSearch.trim() ? "No se encontraron cartas. Proba con nombre, expansion o numero." : "Escribi para buscar una carta.")}</p>}
-            {pickerSearching && pickerEntries.length ? <span className="catalog-picker-syncing">Actualizando resultados...</span> : null}
+            {pickerWarning ? <p className="quality-warning" role="status">{pickerWarning}</p> : null}
+            {pickerError && catalogSearch.trim().length >= 2 ? <div role="alert"><button className="secondary-action" type="button" onClick={() => void searchPicker()}><Icon name="refresh" />Reintentar busqueda</button></div> : null}
           </section> : null}
           {!editing && !catalogPickerOpen ? <section className="selected-catalog-card">
             <div><span className="eyebrow">{form.itemKind === "folder" ? "Carpeta" : "Carta elegida"}</span><strong>{form.name}</strong><span>{form.expansion}{form.number ? ` #${form.number}` : ""}</span></div>
@@ -9873,115 +9793,6 @@ function toggleInventoryTag(tagsText: string, tag: string): string {
 }
 
 
-function searchInventoryCatalogEntries(items: StockRow[], search: string, languageGroup: LanguageGroupFilter, limit: number): PriceChartingCacheEntry[] {
-  const query = parseUiSearchQuery(search);
-  const seen = new Set<string>();
-  return items
-    .filter((item) => languageGroup === "all" || inventoryLanguageGroup(item.variant.language) === languageGroup)
-    .map((item) => ({ item, score: scoreStockSearch(item, query) }))
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score || left.item.product.name.localeCompare(right.item.product.name, "es", { numeric: true }))
-    .map(({ item }) => stockRowToCatalogEntry(item))
-    .filter((entry) => {
-      const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, limit);
-}
-
-function stockRowToCatalogEntry(item: StockRow): PriceChartingCacheEntry {
-  const priceChartingIdentifier = item.product.identifiers.find((identifier) => identifier.source === "pricecharting");
-  const priceChartingReference = item.priceReferences?.priceCharting;
-  const priceChartingId = priceChartingReference?.priceChartingId || priceChartingIdentifier?.externalId || item.sku;
-  return {
-    cardType: item.cardType,
-    priceChartingId,
-    canonicalUrl: priceChartingReference?.url || priceChartingIdentifier?.url || "",
-    sourceUrl: "",
-    productName: item.product.name,
-    expansionName: item.product.expansion,
-    cardNumber: item.product.number || "",
-    languageGroup: inventoryLanguageGroup(item.variant.language),
-    language: item.variant.language,
-    finish: item.variant.finish || "normal",
-    loosePriceUsd: priceChartingReference?.usd ?? item.priceUsd,
-    tcgplayerPriceUsd: item.priceReferences?.tcgplayer.marketPriceUsd ?? item.priceReferences?.tcgplayer.usd ?? null,
-    tcgplayerSubtype: item.priceReferences?.tcgplayer.subTypeName || "",
-    imageUrl: item.product.imageUrl || "",
-    importedAt: ""
-  };
-}
-
-function mergeCatalogPickerEntries(primary: PriceChartingCacheEntry[], fallback: PriceChartingCacheEntry[], limit: number): PriceChartingCacheEntry[] {
-  const seen = new Set<string>();
-  const seenCatalogIdentity = new Set<string>();
-  const seenLooseIdentity = new Set<string>();
-  const merged: PriceChartingCacheEntry[] = [];
-  const sortedPrimary = [...primary].sort((left, right) => {
-    const leftHasPrice = left.loosePriceUsd !== null && left.loosePriceUsd !== undefined;
-    const rightHasPrice = right.loosePriceUsd !== null && right.loosePriceUsd !== undefined;
-    if (leftHasPrice !== rightHasPrice) return leftHasPrice ? -1 : 1;
-    const leftHasImage = Boolean(left.imageUrl);
-    const rightHasImage = Boolean(right.imageUrl);
-    if (leftHasImage !== rightHasImage) return leftHasImage ? -1 : 1;
-    return left.productName.localeCompare(right.productName, "es", { numeric: true });
-  });
-  for (const entry of [...sortedPrimary, ...fallback]) {
-    const key = entry.priceChartingId || `${normalize(entry.productName)}|${normalize(entry.expansionName)}|${normalize(entry.cardNumber)}|${normalize(entry.language || "")}`;
-    const identity = catalogPickerIdentity(entry);
-    const looseIdentity = catalogPickerLooseIdentity(entry);
-    const isReferenceOnly = isTcgCatalogEntry(entry) && (entry.loosePriceUsd === null || entry.loosePriceUsd === undefined);
-    if (seen.has(key)) continue;
-    if (isReferenceOnly && seenCatalogIdentity.has(identity)) continue;
-    if (isReferenceOnly && seenLooseIdentity.has(looseIdentity)) continue;
-    seen.add(key);
-    seenCatalogIdentity.add(identity);
-    seenLooseIdentity.add(looseIdentity);
-    merged.push(entry);
-    if (merged.length >= limit) break;
-  }
-  return merged;
-}
-
-function isTcgCatalogEntry(entry: PriceChartingCacheEntry) {
-  return entry.priceChartingId.startsWith("tcgcsv-") || entry.canonicalUrl.includes("tcgplayer.com") || Boolean(entry.tcgplayerUrl && !entry.priceChartingUrl);
-}
-
-function catalogSourceLabel(entry: PriceChartingCacheEntry) {
-  if (isTcgCatalogEntry(entry)) return "TCGPlayer";
-  return "PriceCharting";
-}
-
-function cleanCatalogPickerName(entry: PriceChartingCacheEntry) {
-  const name = entry.productName.replace(/\s+-\s+\d+\s*\/\s*\d+\s*$/i, "").trim();
-  return name || entry.productName;
-}
-
-function cleanCatalogPickerExpansion(entry: PriceChartingCacheEntry) {
-  const expansion = entry.expansionName.replace(/^[A-Z]{1,5}\d*:\s*/i, "").trim();
-  return expansion || entry.expansionName;
-}
-
-function catalogPickerIdentity(entry: PriceChartingCacheEntry) {
-  return [
-    normalize(cleanCatalogPickerName(entry)),
-    normalize(entry.normalizedExpansion || cleanCatalogPickerExpansion(entry)),
-    primaryCardNumber(entry.cardNumber || ""),
-    normalize(entry.language || entry.languageGroup || ""),
-    normalize(entry.finish || "normal")
-  ].join("|");
-}
-
-function catalogPickerLooseIdentity(entry: PriceChartingCacheEntry) {
-  return [
-    normalize(cleanCatalogPickerName(entry)),
-    primaryCardNumber(entry.cardNumber || ""),
-    normalize(entry.language || entry.languageGroup || ""),
-    normalize(entry.finish || "normal")
-  ].join("|");
-}
 
 function CurrencyToggle({ value, onChange }: { value: "USD" | "ARS"; onChange: (value: "USD" | "ARS") => void }) {
   return (

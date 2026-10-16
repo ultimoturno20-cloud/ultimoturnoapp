@@ -9,6 +9,7 @@ export { normalizeHistoryQuery, historyRequestPath } from "./operational-history
 export type { HistoryKind, HistoryCursor, HistoryQuery, HistoryEntry, HistoryPage } from "./operational-history.js";
 export * from "./inventory-query.js";
 export * from "./mobile-intake.js";
+export * from "./catalog-picker.js";
 
 export type Business = {
   id: string;

@@ -32,8 +32,18 @@ cargar. [] no carga todo, body invalido se rechaza. QA: 278 tests completos,
 tipos/lint/build/db:verify y Chrome/API/PGlite temporal con cinco anchos,
 filtros/lecturas retenidas/manual, errores y reintentos, alta/deshacer, preview
 y carga de 120 capturas desde un filtro que muestra solo 10. Sin QA productivo.
-Seguir con OP-1.4c.2: candidatos de Ingreso/Ordenes/Compras/Claims/Planificador
-y movimientos exactos por item donde corresponda; luego OP-1.5 (metricas).
+OP-1.4c.1 confirmado online en cfea206. OP-1.4c.2a entregado: Ingreso deja
+de descargar /stock y usa /inventory/intake-search. SQL filtra metadata y
+completa hasta 60 IDs elegidos; combinacion/ranking/idiomas conservados,
+30 resultados normales, respaldo de 60 locales y avisos ante fallos parciales.
+Sin cache mezclada del navegador ni candidatos de otro propietario; conserva
+cache catalogo servidor 60 s, precio local fresco y POST de alta existente.
+La lectura de metadata puede ser amplia y POST aun resuelve identidad con
+stock completo; no afirmar LIMIT SQL global ni nueva optimizacion de writes.
+QA 286 tests, tipos/lint/build/db:verify y Chrome/API temporal aprobados,
+incluidos guardar/seguir, doble clic, propietario, carpeta y cinco anchos.
+Seguir con OP-1.4c.2b: primero picker de Ordenes; despues Compras, Claims,
+Planificador y movimientos exactos por item. Luego OP-1.5 (metricas).
 Mapear filtros, agrupaciones, permisos y acciones de cada consumidor primero.
 La pre-base movil ya esta paginada; su busqueda de candidatos es otro alcance.
 El mapa previo de consumidores y requisitos esta en OPTIMIZATION_PLAN.md.

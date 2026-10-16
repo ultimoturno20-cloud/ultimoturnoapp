@@ -42,6 +42,22 @@ primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
+- OP-1.4c.2a, 16/10, base cfea206: buscador de Ingreso ahora consulta
+  /inventory/intake-search y no descarga /stock al entrar/refrescar/guardar.
+  Catalogo y respaldo local se combinan con reglas previas compartidas;
+  resultados 30 normales/60 locales si falla catalogo, avisos parciales y
+  reintento. SQL filtra metadata y luego carga solo IDs elegidos (max. 60),
+  con ranking global sobre coincidencias y permisos por negocio/propietario.
+  Consultas amplias aun leen multiples filas de metadata; no LIMIT SQL global.
+  Se retira cache mezclada del navegador de 5 minutos, conservando cache
+  catalogo servidor 60 s. Local fresco, cancelacion/revision y cuenta aislada.
+  POST de alta conserva transaccion/precios/cantidades/reservas y su lectura
+  completa interna para resolver identidad; no se modifico esa escritura.
+  Paridad: 68 consultas/idiomas DB, 120 DTO y 160 combinaciones contra cfea206.
+  QA 286 tests completos y Chrome/API/PGlite temporal, cinco anchos,
+  errores/reintentos, lecturas retenidas, guardar/seguir, doble clic, propietario
+  y carpeta sin /stock. Tipos/lint/build/db:verify OK, sin datos reales tocados.
+  Sigue OP-1.4c.2b, empezando por Ordenes; luego OP-1.5 y etapas 2-5.
 - OP-1.4c.1, 16/10, base ec14a69: Carga movil reemplaza descarga de hasta
   20000 capturas por /mobile-intake/view, paginas SQL 25/50/100, filtros y
   contadores globales actuales (Hoy en Argentina). Duplicados fuera de pagina

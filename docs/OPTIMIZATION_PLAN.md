@@ -47,6 +47,10 @@ presentan como latencia de produccion ni como promesas sin medicion.
 - [ ] OP-1.4c.2: busqueda de candidatos en Ingreso, Ordenes, Compras, Claims
   y Planificador; movimientos exactos por item donde corresponda. Mapear cada
   consumidor antes de sustituir su lectura completa. No recortar propuestas.
+- [x] OP-1.4c.2a: buscador de Ingreso sin GET /stock completo, respaldo local
+  acotado en servidor, reglas compartidas y resultados aislados por cuenta.
+- [ ] OP-1.4c.2b: adaptar pickers de Ordenes, Compras, Claims y Planificador;
+  movimientos exactos por item. Siguiente entrega recomendada: Ordenes.
 - [ ] OP-1.5: registrar consultas, filas, bytes y tiempos antes/despues en
   fixtures de inventario y claim grandes; agregar presupuestos de regresion.
 
@@ -301,6 +305,54 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   migraciones, dependencias, secretos ni escrituras operativas productivas.
   Commit/push y verificacion por SHA en public-status segun protocolo.
   Sigue OP-1.4c.2, luego OP-1.5. OP-1.4 y etapas 1-5 NO estan completas.
+
+- 2026-10-16, OP-1.4c.2a, base cfea206: /admin/inventario/cargar-stock deja
+  de pedir /stock al entrar/refrescar/guardar. El selector pide solo
+  /inventory/intake-search?query=...&languageGroup=... tras 2 caracteres,
+  debounce 100 ms. Devuelve hasta 30 candidatos combinados como antes; si
+  falla catalogo, hasta 60 locales y advertencia visible. Fallo local conserva
+  solo catalogo con advertencia; ambos fallidos dan error y reintento.
+  Mapa baseline: InventoryForm mezclaba /catalog-cards (30) con busqueda sobre
+  allItems de /stock, y guardaba el combinado 5 minutos en Map global sin
+  sesion. Se retira esa Map y la dependencia allItems de Ingreso/formulario.
+  El catalogo conserva su cache de servidor de 60 segundos y contrato legacy;
+  el inventario local se lee fresco, no se mezcla en esa cache compartida.
+  SQL preselecciona metadata por negocio/propietario y tokens normalizados;
+  ranking/plurales/numeros/idioma usan los helpers existentes de domain.
+  Se rankean TODAS las coincidencias de metadata antes de elegir IDs, sin
+  cortar arbitrariamente a los primeros IDs SQL. Solo esos IDs (maximo 60)
+  cargan el mapper completo OP-1.1 con precios/imagenes/tipos de carta.
+  Consultas amplias todavia pueden devolver muchas filas de metadata: NO es
+  un LIMIT SQL global de candidatos ni una reduccion garantizada de latencia.
+  No se descargan esas filas al navegador ni se valuan carpetas ajenas.
+  DTO y reglas de combinacion/identidad/presentacion compartidos en
+  domain/catalog-picker.ts. Paridad con las funciones capturadas de cfea206:
+  120 DTO y 160 combinaciones. DB compara 68 consultas/idiomas contra ranking
+  del stock completo, incluidos fuera de stock/inactivos, acentos, plurales,
+  numeros parciales, SKU, condicion, grading, ubicacion y tags.
+  Hook use-intake-search usa transporte administrativo existente, AbortSignal,
+  revision y clave de controles; no aplica respuestas de consultas previas.
+  Cambio de cuenta limpia formulario/recibo y remonta Ingreso; nunca usa
+  candidatos de otro propietario. Manual/escrituras renuevan busqueda sin
+  convertir la pagina o el item guardado en el stock global completo.
+  Altas mantienen POST /inventory/intake, transaccion, identidad, cantidades,
+  reservas, propietario y politicas de precio. Ese POST aun lee stock completo
+  internamente para resolver identidad: NO se optimizo esa escritura ni se
+  promete otra atomicidad. Otros consumidores /stock quedan intactos.
+  Fixture 1001 items: DTO anterior completo de 1306803 bytes; busqueda local
+  selectiva devuelve 1906 bytes SQL (metadata/item/clasificacion, 1 fila cada
+  una) y 373 bytes de DTO de candidato. Son alcances distintos de fixture,
+  no metricas de latencia productiva ni presupuesto para toda consulta amplia.
+  QA: 286 tests completos, tipos/lint/build/db:verify OK. Chrome/API/PGlite
+  temporal: cero GET /stock al entrar y despues de guardar, limite 30, idiomas,
+  respuesta retenida, vacio/error/reintento/advertencia parcial, guardar y
+  seguir, doble clic con una escritura, precios locales frescos, teclado,
+  reduced-motion, imagenes y 320/390/768/1440/1788. Propietario solo ve sus
+  candidatos locales y conserva contenido de carpeta recien creada sin /stock.
+  Temporales .work/intake-* ignorados, demo http://127.0.0.1:5296/demo.
+  Sin migraciones, dependencias, secretos ni QA operativo sobre produccion.
+  Publicar y verificar SHA/status/assets/rechazo privado segun protocolo.
+  Sigue OP-1.4c.2b (primero Ordenes), luego OP-1.5 y etapas 2-5; padres abiertos.
 
 ## Mapa previo a OP-1.4b
 

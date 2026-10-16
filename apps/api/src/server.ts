@@ -93,6 +93,7 @@ import {
   listActiveClaimMissingPriceChartingImages,
   listPriceChartingCache,
   listUnifiedCatalogCards,
+  searchInventoryIntakeCandidates,
   listSales,
   listSalesForActor,
   listOperationalHistory,
@@ -171,10 +172,21 @@ import { parsePriceChartingCsv } from "@ultimoturno/importers";
 import { pilotStockQuantityRestoreRows, type PilotStockQuantityRestoreRow } from "./pilot-stock-quantity-restore.js";
 import { createStockReadCache, readSharedStockSnapshot } from "./stock-read-cache.js";
 import { inventoryView } from "./inventory-view.js";
+import { normalizeIntakeSearchQuery } from "@ultimoturno/domain";
+import { inventoryIntakeSearch } from "./inventory-intake-search.js";
 
 type CatalogSearchResult = Awaited<ReturnType<typeof listUnifiedCatalogCards>>;
 const catalogSearchCache = new Map<string, { expiresAt: number; result: CatalogSearchResult }>();
 const catalogSearchCacheTtlMs = 60_000;
+async function readCatalogSearch(db: Awaited<typeof dbPromise>, query: string, limit: number, languageGroup: string, includeStatus: boolean) {
+  const key = `${query.trim().toLocaleLowerCase("es")}\n${languageGroup}\n${limit}\n${includeStatus}`;
+  const cached = catalogSearchCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  const result = await listUnifiedCatalogCards(db, query, limit, languageGroup, includeStatus);
+  if (catalogSearchCache.size >= 400) catalogSearchCache.delete(catalogSearchCache.keys().next().value || "");
+  catalogSearchCache.set(key, { expiresAt: Date.now() + catalogSearchCacheTtlMs, result });
+  return result;
+}
 type StockReadResult = Awaited<ReturnType<typeof listStockForBusiness>>;
 const stockReadCache = createStockReadCache<StockReadResult>();
 
@@ -3185,6 +3197,7 @@ function requestHasCronAccess(request: IncomingMessage) {
 }
 
 function stockOwnerRouteAllowed(pathname: string, method = "GET") {
+  if (method === "GET" && pathname === "/inventory/intake-search") return true;
   if (/^\/inventory\/[^/]+\/contents(?:\/[^/]+)?$/.test(pathname) && ["GET", "POST", "PUT", "DELETE"].includes(method)) return true;
   if (method === "GET" && ["/auth/me", "/health", "/exchange-rate/blue", "/stock", "/inventory/view", "/inventory/items", "/catalog-cards", "/pricecharting-cache", "/coolstuff-prices/lookup", "/resellers"].includes(pathname)) return true;
   if (method === "POST" && pathname === "/inventory/intake") return true;
@@ -4361,6 +4374,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/inventory/intake-search" && request.method === "GET") {
+      const query = normalizeIntakeSearchQuery(Object.fromEntries(url.searchParams));
+      if (!user.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+      sendJson(response, 200, await inventoryIntakeSearch(
+        () => readCatalogSearch(db, query.query, 30, query.languageGroup, false),
+        () => searchInventoryIntakeCandidates(db, user, query, 60)
+      ));
+      return;
+    }
+
     if (url.pathname === "/inventory/view" && request.method === "GET") {
       if (!user.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
       const rate = await getBlueExchangeRate();
@@ -5009,16 +5032,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const limit = Number(url.searchParams.get("limit") || 50);
       const languageGroup = url.searchParams.get("languageGroup") || "all";
       const includeStatus = url.searchParams.get("includeStatus") !== "false";
-      const cacheKey = `${query.trim().toLocaleLowerCase("es")}\n${languageGroup}\n${limit}\n${includeStatus}`;
-      const cached = catalogSearchCache.get(cacheKey);
-      if (cached && cached.expiresAt > Date.now()) {
-        sendJson(response, 200, cached.result);
-        return;
-      }
-      const result = await listUnifiedCatalogCards(db, query, limit, languageGroup, includeStatus);
-      if (catalogSearchCache.size >= 400) catalogSearchCache.delete(catalogSearchCache.keys().next().value || "");
-      catalogSearchCache.set(cacheKey, { expiresAt: Date.now() + catalogSearchCacheTtlMs, result });
-      sendJson(response, 200, result);
+      sendJson(response, 200, await readCatalogSearch(db, query, limit, languageGroup, includeStatus));
       return;
     }
 

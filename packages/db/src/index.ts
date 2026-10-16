@@ -13,6 +13,7 @@ export type { ResellerBatchInput, ResellerResolutionBatchInput, ResellerBatchRes
 export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
 export { listOperationalHistory } from "./operational-history.js";
+export { searchInventoryIntakeCandidates } from "./inventory-intake-search.js";
 import { guardStoreOrder } from "./store-checkout.js";
 import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
 import { normalizeMobileIntakeQuery, type MobileIntakePage, type MobileInventoryEntry } from "@ultimoturno/domain";
