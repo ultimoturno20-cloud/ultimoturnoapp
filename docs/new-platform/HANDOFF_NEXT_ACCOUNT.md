@@ -126,9 +126,29 @@ Pruebas nuevas: inventory-query.test.ts, inventory-view.test.ts,
 inventory-http.test.ts y extensiones inventory-reads/admin-api.test.ts.
 Temporales .work/inventory-* ignorados, demo http://127.0.0.1:5291/demo; sin
 migraciones, dependencias, secretos ni requests productivos de QA.
-Sigue OP-1.4c: ingreso movil (20000), pickers de ordenes/compras/claim y
-planificador, mas movimientos exactos por item donde corresponda. Conservar
-propuestas/rankings/exportaciones/cierres completos. Luego OP-1.5 y etapas 2-5;
+OP-1.4b confirmado online en ec14a69. OP-1.4c.1 se entrega el 16/10: pre-base
+movil paginada por SQL en /mobile-intake/view, 25/50/100, estado/texto literal,
+cursor con precision y asOf. Contadores globales actuales, Hoy en Argentina.
+Duplicados globales por stock/PC/identidad manual en pending-match; domain
+comparte DTO e identidad. GET /mobile-intake/pending solo al pedir Preview
+completo; POST apply sin ids carga TODOS los pendientes elegibles, [] ninguno,
+ids acota SQL y body invalido se rechaza. Excluye applied_at, sin corte 20000;
+recibos/transaccion y precio central se conservan. Revoca snapshot SQL dentro
+de carga y memoria al confirmar. Sin cache nueva ni cambio de /stock legacy.
+Manual reinicia pagina, primera pagina renueva asOf, filtros viejos se abortan;
+roles/negocio/sesion aislados. Reglas generales excluyen mobile-mode para que
+no ensanche la pantalla. Fallos de lista/estado/deshacer visibles y recuperables.
+Fixture 1000: 527306 -> 12670 bytes, pagina filtrada de 25 con metadata; no
+latencia productiva ni eliminacion del escaneo SQL. >20000 pendientes probado.
+QA 278 tests completos, tipos/lint/build/db:verify; Chrome/API/PGlite temporal
+130 capturas, preview y carga de 120/240 unidades desde filtro de 10, precio
+central, duplicados fuera de pagina, lecturas retenidas/manual, alta/deshacer,
+errores y reintentos, teclado/reduced-motion, imagenes y cinco anchos.
+.work/mobile-* ignorados; sin secretos/migraciones/dependencias ni writes
+productivos. Operacion masiva sigue completa; no se promete timeout ilimitado.
+Sigue OP-1.4c.2: candidatos de Ingreso/Ordenes/Compras/Claims/Planificador y
+movimientos exactos por item donde corresponda. Conservar propuestas/rankings/
+exportaciones/cierres completos. Luego OP-1.5 y etapas 2-5;
 NO marcar OP-1.4 ni el plan completo. Mapa baseline en OPTIMIZATION_PLAN.md.
 No hacer QA autentificado en produccion: GET /stock, /sales, catalogo y las
 nuevas /inventory/view o /inventory/items pueden expirar pedidos reales.

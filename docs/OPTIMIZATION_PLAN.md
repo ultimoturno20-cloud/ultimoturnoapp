@@ -1,6 +1,6 @@
 # Plan de optimizacion de UltimoTurno
 
-Actualizado: 2026-10-14
+Actualizado: 2026-10-16
 
 ## Objetivo y alcance
 
@@ -42,6 +42,11 @@ presentan como latencia de produccion ni como promesas sin medicion.
 - [ ] OP-1.4c: adaptar las otras lecturas grandes despues de mapear consumidores:
   ingreso movil, pickers de ordenes/compras/claim y planificador. Rankings,
   propuestas, exportaciones y cierres conservan su alcance completo.
+- [x] OP-1.4c.1: pre-base de carga movil con paginas SQL, totales globales,
+  duplicados fuera de pagina y preview/carga de TODOS los pendientes elegibles.
+- [ ] OP-1.4c.2: busqueda de candidatos en Ingreso, Ordenes, Compras, Claims
+  y Planificador; movimientos exactos por item donde corresponda. Mapear cada
+  consumidor antes de sustituir su lectura completa. No recortar propuestas.
 - [ ] OP-1.5: registrar consultas, filas, bytes y tiempos antes/despues en
   fixtures de inventario y claim grandes; agregar presupuestos de regresion.
 
@@ -252,6 +257,50 @@ Temporales de QA en .work ignorado, preferentemente TEMP/TMP en D:.
   Temporales .work/inventory-* ignorados, demo http://127.0.0.1:5291/demo.
   Verificar SHA publicado en public-status despues de commit/push.
   Sigue OP-1.4c, luego OP-1.5. OP-1.4 y las cinco etapas NO estan completas.
+
+- 2026-10-16, OP-1.4c.1 (parte de OP-1.4c), base ec14a69: Carga movil usa
+  /mobile-intake/view con 25/50/100 capturas, filtros de estado y texto literal
+  por carta/SKU/ayudante/lote/nota en SQL. Cursor (created_at,id) conserva
+  microsegundos; asOf evita desplazar paginas por altas posteriores. No es
+  snapshot MVCC: cambios de estado concurrentes pueden cambiar coincidencias.
+  Manual y guardados reinician recorrido; recarga de primera pagina renueva
+  asOf. Filtros, salida de vista y cambio de usuario descartan lecturas viejas.
+  Total del negocio y contadores Pendientes/Hoy/Cargadas son globales actuales,
+  independientes del filtro/cursor. Hoy usa America/Argentina/Buenos_Aires.
+  Duplicados se agregan en /mobile-intake/pending-match por identidad completa
+  de captura, no solo por filas visibles. Mantiene prioridad stock/PC/manual,
+  normalizacion de acentos/apostrofes y cantidades. No hay cache nueva.
+  /mobile-intake/entries legacy mantiene su contrato y limite; el panel deja
+  de descargar hasta 20000 entradas para renderizar solamente las primeras 80.
+  /mobile-intake/pending es lectura completa explicita solo al pedir Preview.
+  Cargar pendientes envia alcance completo al servidor, incluso con filtro;
+  una carga individual consulta solo IDs solicitados. Ambos excluyen applied_at
+  y no recortan a 20000 ni a la pagina. [] significa ninguna captura; body o
+  seleccion invalidos se rechazan, no se convierten en una carga total.
+  Conserva transaccion, agrupacion, cantidades y precio central existente;
+  no reenvia escrituras. Invalida snapshot SQL dentro de la transaccion y cache
+  de memoria tras confirmar carga; reintentos no duplican unidades aplicadas.
+  DTO de captura compartido por domain/DB/panel. Admin y negocio acotan todos
+  los endpoints nuevos, incluido preview y conteos. /stock global no cambia.
+  Corrige la regla general que anulaba modo movil; columnas/controles caben
+  a 320 px, sin agregar otra capa de overrides globales. Cantidad accesible,
+  vacio/error/carga y reintentos de lista, estado y deshacer visibles.
+  Fixture 1000 capturas: respuesta legacy 527306 -> 12670 bytes para pagina
+  filtrada de 25 y metadatos; SQL devuelve JSON de hasta limit+1 capturas y
+  agregados. No es latencia productiva ni elimina el escaneo de agregados.
+  Fixture 20001 demuestra alcance completo de pendientes. Las operaciones
+  completas siguen siendo deliberadamente completas; no se promete carga
+  masiva ilimitada dentro del timeout serverless ni se agrega trabajo en cola.
+  QA: 278 tests completos; pruebas DB/domain/HTTP de permisos, negocio ajeno,
+  precision, fechas, filtros, payload, >20000, body invalido, [] y reintentos.
+  Chrome/API/PGlite temporal: 130 capturas, preview y carga de 120 pendientes
+  desde filtro Cargadas (10), 240 unidades, precio central conservado; duplicados
+  fuera de pagina, respuestas retenidas/filtros/manual, alta/deshacer, errores
+  y reintentos, teclado, reduced-motion, imagenes y 320/390/768/1440/1788.
+  Tipos/lint/build/db:verify OK; temporales .work/mobile-* ignorados. Sin
+  migraciones, dependencias, secretos ni escrituras operativas productivas.
+  Commit/push y verificacion por SHA en public-status segun protocolo.
+  Sigue OP-1.4c.2, luego OP-1.5. OP-1.4 y etapas 1-5 NO estan completas.
 
 ## Mapa previo a OP-1.4b
 

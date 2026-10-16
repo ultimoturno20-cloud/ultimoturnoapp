@@ -12036,6 +12036,7 @@ h2 {
 @media (max-width: 760px) {
   .mobile-mode {
     gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .mobile-mode .nav,
@@ -12049,10 +12050,11 @@ h2 {
     z-index: 40;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     min-height: 56px;
-    margin: -10px -10px 0;
+    margin: 0;
     border-bottom: 1px solid var(--border);
     border-radius: 0;
     padding: 8px 10px;
@@ -12079,6 +12081,9 @@ h2 {
   }
 
   .mobile-mode .header-actions {
+    width: auto;
+    min-width: 0;
+    flex-wrap: wrap;
     align-items: center;
     flex-direction: row;
     margin-left: 0;
@@ -14957,38 +14962,38 @@ textarea {
 
 /* Phone-first layout for the remaining operational workspaces. */
 @media (max-width: 700px) {
-  .shell:not(.stock-intake-mode) {
+  .shell:not(.stock-intake-mode, .mobile-mode) {
     gap: 7px;
     padding: 7px 7px calc(14px + env(safe-area-inset-bottom));
   }
 
-  .shell:not(.stock-intake-mode) .app-header {
+  .shell:not(.stock-intake-mode, .mobile-mode) .app-header {
     min-height: 46px;
     padding: 2px 2px 6px;
   }
 
-  .shell:not(.stock-intake-mode) .brand-mark {
+  .shell:not(.stock-intake-mode, .mobile-mode) .brand-mark {
     width: 38px;
     height: 38px;
   }
 
-  .shell:not(.stock-intake-mode) .brand-lockup h1 {
+  .shell:not(.stock-intake-mode, .mobile-mode) .brand-lockup h1 {
     font-size: 20px;
     line-height: 1;
   }
 
-  .shell:not(.stock-intake-mode) .brand-lockup p {
+  .shell:not(.stock-intake-mode, .mobile-mode) .brand-lockup p {
     display: none;
   }
 
-  .shell:not(.stock-intake-mode) .header-actions {
+  .shell:not(.stock-intake-mode, .mobile-mode) .header-actions {
     gap: 5px;
     overflow-x: auto;
     scrollbar-width: none;
   }
 
-  .shell:not(.stock-intake-mode) .header-actions::-webkit-scrollbar,
-  .shell:not(.stock-intake-mode) .nav::-webkit-scrollbar,
+  .shell:not(.stock-intake-mode, .mobile-mode) .header-actions::-webkit-scrollbar,
+  .shell:not(.stock-intake-mode, .mobile-mode) .nav::-webkit-scrollbar,
   .dashboard-view > .metrics::-webkit-scrollbar,
   .cash-metrics::-webkit-scrollbar,
   .money-overview::-webkit-scrollbar,
@@ -14996,11 +15001,11 @@ textarea {
     display: none;
   }
 
-  .shell:not(.stock-intake-mode) .header-actions > * {
+  .shell:not(.stock-intake-mode, .mobile-mode) .header-actions > * {
     flex: 0 0 auto;
   }
 
-  .shell:not(.stock-intake-mode) .nav {
+  .shell:not(.stock-intake-mode, .mobile-mode) .nav {
     position: sticky;
     top: 0;
     z-index: 42;
@@ -15015,21 +15020,21 @@ textarea {
     scrollbar-width: none;
   }
 
-  .shell:not(.stock-intake-mode) .nav > a,
-  .shell:not(.stock-intake-mode) .more-nav {
+  .shell:not(.stock-intake-mode, .mobile-mode) .nav > a,
+  .shell:not(.stock-intake-mode, .mobile-mode) .more-nav {
     flex: 0 0 auto;
     width: auto;
     min-width: 104px;
   }
 
-  .shell:not(.stock-intake-mode) .nav > a,
-  .shell:not(.stock-intake-mode) .more-nav > summary {
+  .shell:not(.stock-intake-mode, .mobile-mode) .nav > a,
+  .shell:not(.stock-intake-mode, .mobile-mode) .more-nav > summary {
     min-height: 40px;
     padding: 7px 12px;
     white-space: nowrap;
   }
 
-  .shell:not(.stock-intake-mode) .more-nav[open] {
+  .shell:not(.stock-intake-mode, .mobile-mode) .more-nav[open] {
     position: fixed;
     inset: auto 7px 7px;
     z-index: 90;
@@ -15044,17 +15049,17 @@ textarea {
     box-shadow: 0 18px 50px #000b;
   }
 
-  .shell:not(.stock-intake-mode) .more-nav[open] summary {
+  .shell:not(.stock-intake-mode, .mobile-mode) .more-nav[open] summary {
     width: 100%;
   }
 
-  .shell:not(.stock-intake-mode) .more-nav > div {
+  .shell:not(.stock-intake-mode, .mobile-mode) .more-nav > div {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     border: 0;
     padding: 0;
   }
 
-  .shell:not(.stock-intake-mode) .operations-dock {
+  .shell:not(.stock-intake-mode, .mobile-mode) .operations-dock {
     display: flex;
     gap: 6px;
     margin-inline: -7px;
@@ -15063,7 +15068,7 @@ textarea {
     scrollbar-width: none;
   }
 
-  .shell:not(.stock-intake-mode) .operation-action {
+  .shell:not(.stock-intake-mode, .mobile-mode) .operation-action {
     flex: 0 0 170px;
     min-height: 58px;
   }

@@ -1,6 +1,6 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-14
+Actualizado: 2026-10-16
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
@@ -42,6 +42,24 @@ primera version no reemplazan lo implementado por un commit posterior.
 
 ## Resumen vigente
 
+- OP-1.4c.1, 16/10, base ec14a69: Carga movil reemplaza descarga de hasta
+  20000 capturas por /mobile-intake/view, paginas SQL 25/50/100, filtros y
+  contadores globales actuales (Hoy en Argentina). Duplicados fuera de pagina
+  por identidad; Preview y Cargar pendientes conservan TODO el alcance elegible,
+  sin truncar a 20000. Carga individual lee solo sus IDs, [] no carga todo y
+  body invalido se rechaza. Conserva transaccion/recibos/precio central y
+  revoca snapshot de stock dentro de la carga antes de invalidar memoria.
+  Admin/negocio en endpoints nuevos; legacy y /stock global intactos.
+  Corrige reglas que ensanchaban el modo movil; filtros viejos se descartan,
+  manual reinicia pagina y errores/reintentos son visibles, incluido deshacer.
+  Fixture 1000: payload 527306 -> 12670 bytes para pagina de 25 con metadata;
+  no mide latencia productiva ni elimina escaneo SQL de agregados. QA 278
+  tests completos, tipos/lint/build/db:verify y Chrome/API/PGlite temporal,
+  cinco anchos, preview/carga de 120 pendientes fuera del filtro, 240 unidades,
+  precios/reintentos/frescura/teclado y respuestas retenidas comprobados.
+  Sin cambios de datos reales, migraciones, dependencias ni secretos.
+  Sigue OP-1.4c.2 (Ingreso/pickers/movimientos por item), OP-1.5 y etapas 2-5.
+  Plan completo y limites en docs/OPTIMIZATION_PLAN.md; no marcarlo terminado.
 - Plan integral de optimizacion autorizado el 14/10, con cinco etapas y
   checklist OP en docs/OPTIMIZATION_PLAN.md. Continuar por IDs, no declarar
   terminado el plan por resolver un item. Primera entrega OP-1.1: getter

@@ -1,6 +1,6 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-14
+Actualizado: 2026-10-16
 
 > Usar primero el orden de continuidad y el prompt de este documento.
 > Los detalles por sector conservan verificaciones pendientes, no autorizan
@@ -24,7 +24,18 @@ y 20 regresiones finales, API/Chrome temporal, tipos/lint/build/db:verify OK.
 Comparacion 1000 DTO: 1051899 -> 26058 bytes de respuesta para pagina 24 con
 metadata; lectura fria SQL aun construye snapshot completo, no un LIMIT SQL
 ni latencia productiva. Paridad de filtros/precios con ddf5f20 en 1217 casos.
-Seguir con OP-1.4c (otros consumidores grandes), luego OP-1.5 (metricas).
+OP-1.4b confirmado online en ec14a69. OP-1.4c.1 entregado el 16/10:
+Carga movil con paginas SQL 25/50/100 y contadores globales, duplicados fuera
+de pagina, Preview/carga completa de pendientes elegibles sin truncar a 20000.
+Conserva precio central, transaccion y recibos; invalida snapshot/memoria tras
+cargar. [] no carga todo, body invalido se rechaza. QA: 278 tests completos,
+tipos/lint/build/db:verify y Chrome/API/PGlite temporal con cinco anchos,
+filtros/lecturas retenidas/manual, errores y reintentos, alta/deshacer, preview
+y carga de 120 capturas desde un filtro que muestra solo 10. Sin QA productivo.
+Seguir con OP-1.4c.2: candidatos de Ingreso/Ordenes/Compras/Claims/Planificador
+y movimientos exactos por item donde corresponda; luego OP-1.5 (metricas).
+Mapear filtros, agrupaciones, permisos y acciones de cada consumidor primero.
+La pre-base movil ya esta paginada; su busqueda de candidatos es otro alcance.
 El mapa previo de consumidores y requisitos esta en OPTIMIZATION_PLAN.md.
 No limitar /stock global ni exportar/seleccionar solo las filas de una pagina.
 Verificar siempre SHA del ultimo commit en public-status.

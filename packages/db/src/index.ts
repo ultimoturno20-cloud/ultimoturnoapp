@@ -15,6 +15,8 @@ export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrder
 export { listOperationalHistory } from "./operational-history.js";
 import { guardStoreOrder } from "./store-checkout.js";
 import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
+import { normalizeMobileIntakeQuery, type MobileIntakePage, type MobileInventoryEntry } from "@ultimoturno/domain";
+export type { MobileInventoryEntry } from "@ultimoturno/domain";
 
 const minimumSalePriceArs = 800;
 
@@ -190,36 +192,6 @@ export type DbImportReviewRow = {
   rawPayload: Record<string, unknown>;
   reviewReason: string;
   matchedInventoryItemId?: string;
-};
-
-export type MobileInventoryEntry = {
-  id: string;
-  businessId: string;
-  status: "pending" | "reviewed" | "rejected";
-  helperName: string;
-  source: string;
-  matchType: "inventory" | "card_index" | "manual";
-  inventoryItemId?: string;
-  priceChartingId: string;
-  sku: string;
-  name: string;
-  expansion: string;
-  number: string;
-  language: string;
-  condition: string;
-  finish: string;
-  gradingCompany: string;
-  grade: string;
-  location: string;
-  intakeBatch: string;
-  quantityOnHand: number;
-  priceArs: number;
-  priceUsd: number | null;
-  imageUrl: string;
-  notes: string;
-  createdAt: string;
-  reviewedAt?: string;
-  reviewedByName?: string;
 };
 
 export type MobileInventoryInput = {
@@ -4955,6 +4927,79 @@ export async function listImportRows(db: PGlite): Promise<{ rows: DbImportReview
       matchedInventoryItemId: row.matched_inventory_item_id ? String(row.matched_inventory_item_id) : undefined
     }))
   };
+}
+
+export async function listMobileIntakePage(db: PGlite, actor: AuthenticatedUser, input: Record<string, unknown> = {}): Promise<MobileIntakePage> {
+  requireMobileIntakeAdmin(actor);
+  const query = normalizeMobileIntakeQuery(input);
+  const result = await db.query<{
+    as_of: string; total: number; matched_total: number; pending: number; reviewed: number; today: number;
+    entries: Array<Record<string, unknown>>;
+  }>(`
+    with boundary as (select coalesce(nullif($2::text, '')::timestamptz, statement_timestamp()) as as_of),
+    scoped as (select * from mobile_inventory_entries where business_id=$1),
+    filtered as (
+      select mie.* from scoped mie cross join boundary b
+      where mie.created_at<=b.as_of and ($3::text='all' or mie.status=$3)
+        and ($4::text='' or position(lower($4) in lower(concat_ws(' ', mie.name, mie.expansion, mie.card_number, mie.sku, mie.helper_name, mie.intake_batch, mie.notes)))>0)
+    ), page as (
+      select * from filtered
+      where ($5::text='' or (created_at,id)<(nullif($5, '')::timestamptz,$6::uuid))
+      order by created_at desc,id desc limit $7
+    )
+    select b.as_of::text,
+      (select count(*)::integer from scoped) as total,
+      (select count(*)::integer from filtered) as matched_total,
+      (select count(*)::integer from scoped where status='pending' and applied_at is null) as pending,
+      (select count(*)::integer from scoped where status='reviewed') as reviewed,
+      (select count(*)::integer from scoped where created_at >= (date_trunc('day', statement_timestamp() at time zone 'America/Argentina/Buenos_Aires') at time zone 'America/Argentina/Buenos_Aires')) as today,
+      coalesce((select jsonb_agg(to_jsonb(page) || jsonb_build_object('created_at',page.created_at::text,'reviewed_by_name',u.display_name) order by page.created_at desc,page.id desc)
+        from page left join app_users u on u.id=page.reviewed_by and u.business_id=page.business_id), '[]'::jsonb) as entries
+    from boundary b
+  `, [actor.businessId, query.asOf, query.status, query.query, query.cursor?.at || "", query.cursor?.id || null, query.limit + 1]);
+  const row = result.rows[0];
+  const entries = row.entries.slice(0, query.limit).map(toMobileInventoryEntry);
+  const last = entries[entries.length - 1];
+  return {
+    entries, total: Number(row.total), matchedTotal: Number(row.matched_total),
+    summary: { pending: Number(row.pending), reviewed: Number(row.reviewed), today: Number(row.today) },
+    limit: query.limit, asOf: row.as_of,
+    nextCursor: row.entries.length > query.limit && last ? JSON.stringify({ at: last.createdAt, id: last.id }) : null
+  };
+}
+
+function requireMobileIntakeAdmin(actor: AuthenticatedUser) {
+  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+}
+
+export async function getMobilePendingMatch(db: PGlite, actor: AuthenticatedUser, key: string): Promise<{ count: number; units: number }> {
+  requireMobileIntakeAdmin(actor);
+  if (!key || key.length > 1000) throw Object.assign(new Error("Identidad de captura invalida."), { statusCode: 400 });
+  // Same identity priority and normalization as mobileCaptureKey; no page-local duplicate counts.
+  const result = await db.query<{ count: number; units: number }>(`
+    select count(*)::integer as count, coalesce(sum(quantity_on_hand),0)::integer as units
+    from mobile_inventory_entries
+    where business_id=$1 and status='pending' and applied_at is null and
+      (case when inventory_item_id is not null then 'stock:' || inventory_item_id::text
+        when coalesce(pricecharting_id,'')<>'' then 'pc:' || pricecharting_id
+        else trim(regexp_replace(replace(replace(lower(regexp_replace(normalize(concat_ws(' ',name,expansion,card_number),NFD), U&'[\\0300-\\036f]', '', 'g')),chr(39),''),chr(8217),''),'[^a-z0-9]+',' ','g')) end)=$2
+  `, [actor.businessId, key]);
+  return { count: Number(result.rows[0].count), units: Number(result.rows[0].units) };
+}
+
+export async function listPendingMobileInventoryEntries(db: PGlite, actor: AuthenticatedUser, ids?: string[]): Promise<{ entries: MobileInventoryEntry[] }> {
+  requireMobileIntakeAdmin(actor);
+  if (ids?.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+    throw Object.assign(new Error("Seleccion de capturas invalida."), { statusCode: 400 });
+  }
+  const result = await db.query<Record<string, unknown>>(`
+    select mie.*,u.display_name as reviewed_by_name from mobile_inventory_entries mie
+    left join app_users u on u.id=mie.reviewed_by and u.business_id=mie.business_id
+    where mie.business_id=$1 and mie.status='pending' and mie.applied_at is null
+      and ($2::uuid[] is null or mie.id=any($2::uuid[]))
+    order by mie.created_at desc,mie.id desc
+  `, [actor.businessId, ids ?? null]);
+  return { entries: result.rows.map(toMobileInventoryEntry) };
 }
 
 export async function listMobileInventoryEntries(db: PGlite, businessId = demoBusinessId, status = "pending", limit = 500): Promise<{ entries: MobileInventoryEntry[] }> {

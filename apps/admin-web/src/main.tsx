@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildDuplicateIdentityKeys, summarizeStockQuality, inventoryLanguageGroup, inventoryTags, parseUiSearchQuery, uiSearchTokenVariants, normalizedTextIncludesToken, normalizedWordsIncludeToken, primaryCardNumber, scoreStockSearch, normalizeInventoryText as normalize, inventoryPriceValue, type InventoryMetadata } from "@ultimoturno/domain";
 import { useInventoryPage } from "./use-inventory-page.js";
+import { mobileCaptureKey, type MobileInventoryEntry, type MobileIntakeStatus } from "@ultimoturno/domain";
+import { useMobileIntakePage } from "./use-mobile-intake-page.js";
+import { MobileIntakePagination, type MobileIntakePaging } from "./mobile-intake-pagination.js";
 import { InventoryPagination } from "./inventory-pagination.js";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
@@ -305,36 +308,6 @@ type MobileInventoryCandidate = {
   imageUrl: string;
   helper: string;
   score: number;
-};
-
-type MobileInventoryEntry = {
-  id: string;
-  businessId: string;
-  status: "pending" | "reviewed" | "rejected";
-  helperName: string;
-  source: string;
-  matchType: "inventory" | "card_index" | "manual";
-  inventoryItemId?: string;
-  priceChartingId: string;
-  sku: string;
-  name: string;
-  expansion: string;
-  number: string;
-  language: string;
-  condition: string;
-  finish: string;
-  gradingCompany: string;
-  grade: string;
-  location: string;
-  intakeBatch: string;
-  quantityOnHand: number;
-  priceArs: number;
-  priceUsd: number | null;
-  imageUrl: string;
-  notes: string;
-  createdAt: string;
-  reviewedAt?: string;
-  reviewedByName?: string;
 };
 
 type MobileInventoryApplyResult = {
@@ -1073,7 +1046,6 @@ function App() {
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [financeResellers, setFinanceResellers] = useState<ResellerDashboard[]>([]);
   const [importRuns, setImportRuns] = useState<ImportRunRow[]>([]);
-  const [mobileEntries, setMobileEntries] = useState<MobileInventoryEntry[]>([]);
   const [claims, setClaims] = useState<ClaimsWorkspace>(() => emptyClaimsWorkspace());
   const [claimPlans, setClaimPlans] = useState<ClaimPlansResponse>({ plans: [] });
   const [priceChartingCache, setPriceChartingCache] = useState<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>({ entries: [], status: emptyPriceChartingStatus() });
@@ -1176,6 +1148,10 @@ function App() {
   const [imageQuality, setImageQuality] = useState<ImageDatabaseQuality>(() => emptyImageDatabaseQuality());
   const [catalogLanguageGroup, setCatalogLanguageGroup] = useState<LanguageGroupFilter>("all");
   const restrictedStockOwner = userRoles.includes("stock_owner") && !userRoles.includes("admin");
+  const mobilePage = useMobileIntakePage({
+    active: view === "mobile-intake" && initialLoadComplete && !accessRequired,
+    scope: inventoryPreferenceScope, request: api, readAndApply: adminApi.readAndApply, revision: adminApi.revision
+  });
   const inventoryPage = useInventoryPage<StockRow>({
     active: view === "inventory" && initialLoadComplete && !accessRequired,
     scope: inventoryPreferenceScope,
@@ -1307,8 +1283,7 @@ function App() {
         const data = await api<{ imports: ImportRunRow[] }>("/imports");
         updates.push(() => setImportRuns(data.imports));
       } else if (targetView === "mobile-intake") {
-        const data = await api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/entries?status=all&limit=20000");
-        updates.push(() => setMobileEntries(data.entries));
+        await mobilePage.refresh(force);
       } else if (targetView === "catalog") {
         const [priceData, imageData, qualityData, indexData, indexListData] = await Promise.all([
           api<{ entries: PriceChartingCacheEntry[]; status: PriceChartingCacheStatus }>("/pricecharting-cache?limit=30"),
@@ -2617,25 +2592,23 @@ function App() {
       method: "POST",
       body: input
     });
-    setMobileEntries((current) => [result.entry, ...current]);
+    await mobilePage.refresh(true).catch(showError);
     showMessage(`Pre-base: ${result.entry.name} guardada por ${result.entry.helperName || "ayudante"}.`);
     return result.entry;
   }
 
   async function setMobileInventoryEntryStatus(id: string, status: MobileInventoryEntry["status"]) {
-    const result = await api<{ entry: MobileInventoryEntry }>(`/mobile-intake/entries/${id}/status`, {
+    await api<{ entry: MobileInventoryEntry }>(`/mobile-intake/entries/${id}/status`, {
       method: "PUT",
       body: { status }
     });
-    setMobileEntries((current) => current.map((entry) => entry.id === id ? result.entry : entry));
+    await mobilePage.refresh(true).catch(showError);
     showMessage(status === "pending" ? "Entrada devuelta a pendientes." : status === "reviewed" ? "Entrada marcada como revisada." : "Entrada rechazada.");
   }
 
   async function applyMobileInventoryEntries(ids?: string[]) {
     if (mobileRequest.current) return;
-    const idSet = new Set(ids || []);
-    const selectedPending = mobileEntries.filter((entry) => entry.status === "pending" && (!idSet.size || idSet.has(entry.id)));
-    if (!selectedPending.length) {
+    if (ids ? !ids.length : !mobilePage.page?.summary.pending) {
       showError(new Error("No hay capturas pendientes para cargar."));
       return;
     }
@@ -2645,19 +2618,16 @@ function App() {
     try {
       const response = await api<{ result: MobileInventoryApplyResult }>("/mobile-intake/apply", {
         method: "POST",
-        body: { ids: selectedPending.map((entry) => entry.id) }
+        body: ids ? { ids } : {}
       });
       const { result } = response;
-      const failedIds = new Set(result.errors.map((entry) => entry.id));
-      const completedIds = new Set(selectedPending.filter((entry) => !failedIds.has(entry.id)).map((entry) => entry.id));
-      setMobileEntries((current) => current.map((entry) => completedIds.has(entry.id) ? { ...entry, status: "reviewed" } : entry));
       setMobileFeedback(result.appliedEntries ? `Cargado: ${result.unitsApplied} unidad(es), ${result.appliedEntries} captura(s).` : "Las capturas seleccionadas ya no estan pendientes. Se actualizo la lista.");
       if (result.errors.length) {
         showError(new Error(`Se cargaron ${result.appliedEntries} captura(s), pero ${result.errors.length} quedaron pendientes por error.`));
       } else {
         showMessage(`Inventario cargado: ${result.unitsApplied} unidad(es) en ${result.appliedGroups} carta(s).`);
       }
-      await refresh().catch(() => undefined);
+      await mobilePage.refresh(true).catch(showError);
     } catch (nextError) {
       setMobileFeedback(errorMessage(nextError));
       showError(nextError);
@@ -2667,12 +2637,13 @@ function App() {
   async function deleteMobileInventoryEntry(id: string) {
     const result = await api<{ deleted: boolean }>(`/mobile-intake/entries/${id}`, { method: "DELETE" });
     if (!result.deleted) throw new Error("No se pudo borrar la entrada movil.");
-    setMobileEntries((current) => current.filter((entry) => entry.id !== id));
+    await mobilePage.refresh(true).catch(showError);
     showMessage("Ultima captura borrada de la pre-base.");
   }
 
   async function loadMobileStagingIntoImport() {
-    const pending = mobileEntries.filter((entry) => entry.status === "pending");
+    let pending: MobileInventoryEntry[] = [];
+    await adminApi.readAndApply(() => api<{ entries: MobileInventoryEntry[] }>("/mobile-intake/pending"), data => { pending = data.entries; });
     if (!pending.length) {
       showError(new Error("No hay capturas moviles pendientes para revisar."));
       return;
@@ -3043,18 +3014,20 @@ function App() {
       ) : null}
       {view === "mobile-intake" ? (
         <MobileIntakeView
+          key={inventoryPreferenceScope}
           applying={mobileApplying}
           feedback={mobileFeedback}
-          entries={mobileEntries}
+          paging={mobilePage}
+          pendingRevision={adminApi.revision()}
           blueRate={blueRate}
           onSearch={(search) => searchMobileInventory(search)}
           onSave={(input) => saveMobileInventoryEntry(input)}
-          onStatus={(id, status) => void setMobileInventoryEntryStatus(id, status)}
+          onStatus={(id, status) => void setMobileInventoryEntryStatus(id, status).catch(showError)}
           onApplyEntry={(id) => void applyMobileInventoryEntries([id])}
           onApplyPending={() => void applyMobileInventoryEntries()}
-          onDelete={(id) => void deleteMobileInventoryEntry(id)}
-          onRefresh={() => void refresh()}
-          onLoadToImport={() => void loadMobileStagingIntoImport()}
+          onDelete={(id) => deleteMobileInventoryEntry(id)}
+          onRefresh={() => void refreshViewData("mobile-intake", true).catch(showError)}
+          onLoadToImport={() => void loadMobileStagingIntoImport().catch(showError)}
           onExit={() => setView("dashboard")}
         />
       ) : null}
@@ -8342,14 +8315,15 @@ function PurchasesView(props: {
 function MobileIntakeView(props: {
   applying: boolean;
   feedback: string;
-  entries: MobileInventoryEntry[];
+  paging: MobileIntakePaging;
+  pendingRevision: number;
   blueRate: BlueExchangeRate;
   onSearch: (query: string) => Promise<{ candidates: MobileInventoryCandidate[] }>;
   onSave: (input: Partial<MobileInventoryEntry>) => Promise<MobileInventoryEntry>;
   onStatus: (id: string, status: MobileInventoryEntry["status"]) => void;
   onApplyEntry: (id: string) => void;
   onApplyPending: () => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   onRefresh: () => void;
   onLoadToImport: () => void;
   onExit: () => void;
@@ -8363,6 +8337,12 @@ function MobileIntakeView(props: {
   const [candidates, setCandidates] = useState<MobileInventoryCandidate[]>([]);
   const [selected, setSelected] = useState<MobileInventoryCandidate | null>(null);
   const [lastSaved, setLastSaved] = useState<MobileInventoryEntry | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState("");
+  const [captureSearch, setCaptureSearch] = useState("");
+  const [pendingMatch, setPendingMatch] = useState<{ key: string; count: number; units: number } | null>(null);
+  const [pendingMatchError, setPendingMatchError] = useState("");
+  const [matchRetry, setMatchRetry] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
   const [draft, setDraft] = useState<MobileIntakeDraft>({
     name: "",
@@ -8378,11 +8358,14 @@ function MobileIntakeView(props: {
     priceUsd: "0",
     notes: ""
   });
-  const pending = props.entries.filter((entry) => entry.status === "pending");
-  const reviewed = props.entries.filter((entry) => entry.status === "reviewed");
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEntries = props.entries.filter((entry) => new Date(entry.createdAt).getTime() >= todayStart.getTime()).length;
+  const { page, controls, busy, error, change } = props.paging;
+  const summary = page?.summary;
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (captureSearch.trim() !== controls.query) change({ query: captureSearch.trim() });
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [captureSearch, controls.query, change]);
   useEffect(() => {
     writeLocalStorage(mobileHelperStorageKey, helperName);
   }, [helperName]);
@@ -8440,22 +8423,18 @@ function MobileIntakeView(props: {
       return { ...current, quantityOnHand: String(next) };
     });
   }
-  const selectedCaptureKey = selected?.inventoryItemId
-    ? `stock:${selected.inventoryItemId}`
-    : selected?.priceChartingId
-      ? `pc:${selected.priceChartingId}`
-      : normalize([draft.name, draft.expansion, draft.number].join(" "));
-  const matchingPending = selected || manualOpen
-    ? pending.filter((entry) => {
-      const entryKey = entry.inventoryItemId
-        ? `stock:${entry.inventoryItemId}`
-        : entry.priceChartingId
-          ? `pc:${entry.priceChartingId}`
-          : normalize([entry.name, entry.expansion, entry.number].join(" "));
-      return entryKey && entryKey === selectedCaptureKey;
-    })
-    : [];
-  const matchingPendingUnits = matchingPending.reduce((sum, entry) => sum + entry.quantityOnHand, 0);
+  const selectedCaptureKey = selected || manualOpen ? mobileCaptureKey({ ...draft, inventoryItemId: selected?.inventoryItemId, priceChartingId: selected?.priceChartingId }) : "";
+  useEffect(() => {
+    setPendingMatch(null); setPendingMatchError("");
+    if (!selectedCaptureKey) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      void adminApi.readAndApply(() => api<{ count: number; units: number }>("/mobile-intake/pending-match?key=" + encodeURIComponent(selectedCaptureKey), { signal: controller.signal }), value => {
+        if (!controller.signal.aborted) setPendingMatch({ key: selectedCaptureKey, ...value });
+      }).catch(failure => { if (!controller.signal.aborted) setPendingMatchError(errorMessage(failure)); });
+    }, 200);
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [selectedCaptureKey, props.pendingRevision, page?.asOf, matchRetry]);
   async function saveDraft() {
     const cleanName = draft.name.trim();
     const safeQuantity = Math.max(1, Math.floor(Number(draft.quantityOnHand || 1)));
@@ -8524,9 +8503,9 @@ function MobileIntakeView(props: {
           <h2>Cargar stock</h2>
         </div>
         <div className="mobile-intake-stats">
-          <div><span>Pendientes</span><strong>{pending.length}</strong></div>
-          <div><span>Hoy</span><strong>{todayEntries}</strong></div>
-          <div><span>Cargadas</span><strong>{reviewed.length}</strong></div>
+          <div><span>Pendientes</span><strong>{summary?.pending ?? "..."}</strong></div>
+          <div><span>Hoy</span><strong>{summary?.today ?? "..."}</strong></div>
+          <div><span>Cargadas</span><strong>{summary?.reviewed ?? "..."}</strong></div>
         </div>
         <button className="secondary-action mobile-exit-action" onClick={props.onExit}><Icon name="home" />Panel</button>
       </section>
@@ -8557,10 +8536,10 @@ function MobileIntakeView(props: {
               <label>Nombre<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
               <label>Expansion<input value={draft.expansion} onChange={(event) => setDraft((current) => ({ ...current, expansion: event.target.value }))} /></label>
               <label>Numero<input value={draft.number} onChange={(event) => setDraft((current) => ({ ...current, number: event.target.value }))} /></label>
-              <label className="mobile-quantity-field">Cantidad<div className="mobile-stepper"><button type="button" onClick={() => changeQuantity(-1)}>-</button><input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.quantityOnHand} onChange={(event) => {
+              <label className="mobile-quantity-field">Cantidad<div className="mobile-stepper"><button type="button" title="Restar una unidad" aria-label="Restar una unidad de captura" onClick={() => changeQuantity(-1)}>-</button><input aria-label="Cantidad de captura" type="text" inputMode="numeric" pattern="[0-9]*" value={draft.quantityOnHand} onChange={(event) => {
                 const value = event.target.value.replace(/\D+/g, "");
                 setDraft((current) => ({ ...current, quantityOnHand: value }));
-              }} /><button type="button" onClick={() => changeQuantity(1)}><Icon name="plus" /></button></div></label>
+              }} /><button type="button" title="Sumar una unidad" aria-label="Sumar una unidad de captura" onClick={() => changeQuantity(1)}><Icon name="plus" /></button></div></label>
               <label>Lote<input value={draft.intakeBatch} onChange={(event) => setDraft((current) => ({ ...current, intakeBatch: event.target.value }))} placeholder="Viernes caja 1" /></label>
               <label>Condicion<input value={draft.condition} onChange={(event) => setDraft((current) => ({ ...current, condition: event.target.value.toUpperCase() }))} /></label>
               <label>Precio ARS<input type="text" inputMode="decimal" value={draft.priceArs} onChange={(event) => {
@@ -8568,7 +8547,8 @@ function MobileIntakeView(props: {
                 setDraft((current) => ({ ...current, priceArs: value }));
               }} /></label>
             </div>
-            {matchingPending.length ? <div className="mobile-dupe-note"><strong>Ya pendiente</strong><span>{matchingPendingUnits} unidad(es) en {matchingPending.length} captura(s)</span></div> : null}
+            {pendingMatch?.key === selectedCaptureKey && pendingMatch.count ? <div className="mobile-dupe-note"><strong>Ya pendiente</strong><span>{pendingMatch.units} unidad(es) en {pendingMatch.count} captura(s)</span></div> : null}
+            {pendingMatchError ? <div className="mobile-staging-error" role="alert"><span>{pendingMatchError}</span><button className="secondary-action" onClick={() => setMatchRetry(value => value + 1)}><Icon name="refresh" />Reintentar</button></div> : null}
             {searchError ? <p className="mobile-error">{searchError}</p> : null}
             <button className="primary-action mobile-save-action" disabled={saving} onClick={() => void saveDraft()}><Icon name="check" />{saving ? "Guardando..." : "Guardar en pre-base"}</button>
             <label>Notas<textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Idioma raro, holo, revisar estado, falta funda..." /></label>
@@ -8578,17 +8558,26 @@ function MobileIntakeView(props: {
 
       <section className="panel mobile-staging-panel">
         <div className="section-heading">
-          <div><h3>Pre-base capturada</h3><p>{pending.length} pendiente(s), listas para cargar al inventario.</p></div>
+          <div><h3>Pre-base capturada</h3><p>{summary ? `${summary.pending} pendiente(s), listas para cargar al inventario.` : ""}</p></div>
           <div className="hero-actions">
-            {lastSaved ? <button className="secondary-action" onClick={() => { props.onDelete(lastSaved.id); setLastSaved(null); }}><Icon name="close" />Deshacer ultimo</button> : null}
-            <button className="secondary-action" onClick={props.onRefresh}><Icon name="refresh" />Actualizar</button>
-            <button className="secondary-action" disabled={!pending.length} onClick={props.onLoadToImport}><Icon name="import" />Preview</button>
-            <button className="primary-action" disabled={props.applying || !pending.length} onClick={props.onApplyPending}><Icon name="check" />{props.applying ? "Cargando..." : "Cargar pendientes"}</button>
+            {lastSaved ? <button className="secondary-action" disabled={undoing || props.applying || busy} onClick={async () => { setUndoing(true); setUndoError(""); try { await props.onDelete(lastSaved.id); setLastSaved(null); } catch (failure) { setUndoError(errorMessage(failure)); } finally { setUndoing(false); } }}><Icon name="close" />Deshacer ultimo</button> : null}
+            <button className="secondary-action" disabled={busy || props.applying} onClick={props.onRefresh}><Icon name="refresh" />Actualizar</button>
+            <button className="secondary-action" disabled={busy || props.applying || !summary?.pending} onClick={props.onLoadToImport}><Icon name="import" />Preview</button>
+            <button className="primary-action" disabled={busy || props.applying || !summary?.pending} onClick={props.onApplyPending}><Icon name="check" />{props.applying ? "Cargando..." : `Cargar pendientes (${summary?.pending ?? 0})`}</button>
           </div>
         </div>
         {props.feedback ? <p className="intake-feedback" role="status">{props.feedback}</p> : null}
-        <div className="mobile-entry-list">
-          {props.entries.slice(0, 80).map((entry) => (
+        {undoError ? <p className="mobile-error" role="alert">{undoError}</p> : null}
+        <div className="mobile-staging-filters">
+          <label>Buscar capturas<input aria-label="Buscar capturas" maxLength={160} value={captureSearch} onChange={event => setCaptureSearch(event.target.value)} placeholder="Carta, ayudante o lote" /></label>
+          <label>Estado<select aria-label="Estado de capturas" value={controls.status} onChange={event => change({ status: event.target.value as MobileIntakeStatus })}><option value="all">Todas</option><option value="pending">Pendientes</option><option value="reviewed">Cargadas</option><option value="rejected">Rechazadas</option></select></label>
+          <label>Por pagina<select aria-label="Capturas por pagina" value={controls.limit} onChange={event => change({ limit: Number(event.target.value) })}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
+        </div>
+        <MobileIntakePagination paging={props.paging} />
+        {error ? <div className="mobile-staging-error" role="alert"><span>{error}</span><button className="secondary-action" disabled={busy} onClick={props.onRefresh}><Icon name="refresh" />Reintentar</button></div> : null}
+        {busy ? <p className="mobile-staging-loading" role="status">Cargando capturas...</p> : null}
+        <div className="mobile-entry-list" aria-busy={busy}>
+          {page?.entries.map((entry) => (
             <article className={`mobile-entry ${entry.status}`} key={entry.id}>
               <CardArt src={entry.imageUrl} alt={entry.name} label={entry.name} className="mobile-entry-image" fallbackClassName="mobile-entry-image image-placeholder" />
               <div>
@@ -8598,13 +8587,14 @@ function MobileIntakeView(props: {
               </div>
               <MoneyStack ars={entry.priceArs || null} usd={entry.priceUsd} blueRate={props.blueRate} compact />
               <div className="mobile-entry-actions">
-                <button className="secondary-action" disabled={props.applying || entry.status !== "pending"} onClick={() => props.onApplyEntry(entry.id)}><Icon name="check" />{entry.status === "reviewed" ? "Cargada" : "Cargar"}</button>
-                <button className="secondary-action" disabled={props.applying || entry.status !== "pending"} onClick={() => props.onStatus(entry.id, "rejected")}><Icon name="close" />Rechazar</button>
+                <button className="secondary-action" disabled={busy || props.applying || entry.status !== "pending"} onClick={() => props.onApplyEntry(entry.id)}><Icon name="check" />{entry.status === "reviewed" ? "Cargada" : "Cargar"}</button>
+                <button className="secondary-action" disabled={busy || props.applying || entry.status !== "pending"} onClick={() => props.onStatus(entry.id, "rejected")}><Icon name="close" />Rechazar</button>
               </div>
             </article>
           ))}
         </div>
-        {!props.entries.length ? <EmptyState title="Pre-base vacia" body="Cuando los ayudantes guarden cartas desde el celular, van a aparecer aca." /> : null}
+        {!busy && !error && page && !page.entries.length ? <EmptyState title={page.total ? "Sin resultados" : "Pre-base vacia"} body={page.total ? "" : "Cuando los ayudantes guarden cartas desde el celular, van a aparecer aca."} /> : null}
+        <MobileIntakePagination paging={props.paging} />
       </section>
     </section>
   );

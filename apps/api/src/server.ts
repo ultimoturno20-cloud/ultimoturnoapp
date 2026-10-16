@@ -87,6 +87,9 @@ import {
   listCardIndex,
   listCoolstuffPriceTargets,
   listMobileInventoryEntries,
+  listMobileIntakePage,
+  listPendingMobileInventoryEntries,
+  getMobilePendingMatch,
   listActiveClaimMissingPriceChartingImages,
   listPriceChartingCache,
   listUnifiedCatalogCards,
@@ -3609,16 +3612,12 @@ async function applyMobileInventoryEntries(db: Awaited<typeof dbPromise>, user: 
 }
 
 async function applyMobileInventoryEntriesInTransaction(db: Awaited<typeof dbPromise>, user: AuthenticatedUser, ids: unknown): Promise<MobileInventoryApplyResult> {
+  if (ids !== undefined && !Array.isArray(ids)) throw Object.assign(new Error("Seleccion de capturas invalida."), { statusCode: 400 });
   const requestedIds = Array.isArray(ids)
-    ? [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))]
-    : [];
-  const requestedIdSet = new Set(requestedIds);
-  const receipts = await db.query<{ id: string }>("select id from mobile_inventory_entries where business_id = $1 and applied_at is not null", [user.businessId]);
-  const appliedIds = new Set(receipts.rows.map((entry) => entry.id));
-  const pendingEntries = (await listMobileInventoryEntries(db, user.businessId, "pending", 20000)).entries.filter((entry) => !appliedIds.has(entry.id));
-  const entries = requestedIds.length
-    ? pendingEntries.filter((entry) => requestedIdSet.has(entry.id))
-    : pendingEntries;
+    ? [...new Set(ids.map((id) => String(id || "").trim()))]
+    : undefined;
+  const { entries } = await listPendingMobileInventoryEntries(db, user, requestedIds);
+  if (!entries.length) return { requestedEntries: 0, appliedEntries: 0, appliedGroups: 0, unitsApplied: 0, createdItems: 0, updatedItems: 0, skippedEntries: requestedIds?.length || 0, errors: [] };
   const stock = await listStockForBusiness(db, user.businessId);
   const stockById = new Map(stock.items.map((item) => [item.id, item]));
   const stockBySku = new Map<string, DbStockRow>();
@@ -3666,7 +3665,7 @@ async function applyMobileInventoryEntriesInTransaction(db: Awaited<typeof dbPro
     unitsApplied: 0,
     createdItems: 0,
     updatedItems: 0,
-    skippedEntries: requestedIds.length ? Math.max(0, requestedIds.length - entries.length) : 0,
+    skippedEntries: requestedIds ? Math.max(0, requestedIds.length - entries.length) : 0,
     errors: []
   };
 
@@ -3699,6 +3698,7 @@ async function applyMobileInventoryEntriesInTransaction(db: Awaited<typeof dbPro
     }
   }
 
+  if (result.appliedEntries) await db.query("update stock_read_snapshots set refreshed_at='1970-01-01'::timestamptz, refresh_started_at=null where business_id=$1", [user.businessId]);
   return result;
 }
 
@@ -4418,6 +4418,21 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    if (url.pathname === "/mobile-intake/view" && request.method === "GET") {
+      sendJson(response, 200, await listMobileIntakePage(db, user, Object.fromEntries(url.searchParams)));
+      return;
+    }
+
+    if (url.pathname === "/mobile-intake/pending" && request.method === "GET") {
+      sendJson(response, 200, await listPendingMobileInventoryEntries(db, user));
+      return;
+    }
+
+    if (url.pathname === "/mobile-intake/pending-match" && request.method === "GET") {
+      sendJson(response, 200, await getMobilePendingMatch(db, user, url.searchParams.get("key") || ""));
+      return;
+    }
+
     if (url.pathname === "/mobile-intake/entries" && request.method === "GET") {
       sendJson(response, 200, await listMobileInventoryEntries(
         db,
@@ -4435,8 +4450,14 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/mobile-intake/apply" && request.method === "POST") {
-      const body = await readJson<{ ids?: string[] }>(request).catch((): { ids?: string[] } => ({}));
-      sendJson(response, 200, { result: await applyMobileInventoryEntries(db, user, body.ids) });
+      const body = await readJson<{ ids?: string[] }>(request).catch(error => {
+        if (error instanceof SyntaxError) throw Object.assign(new Error("Seleccion de capturas invalida."), { statusCode: 400 });
+        throw error;
+      });
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw Object.assign(new Error("Seleccion de capturas invalida."), { statusCode: 400 });
+      const result = await applyMobileInventoryEntries(db, user, body.ids);
+      if (result.appliedEntries) stockReadCache.delete(user.businessId);
+      sendJson(response, 200, { result });
       return;
     }
 

@@ -8,6 +8,7 @@ export type { StoreAdminSession, StoreAdminPrice } from "./store-admin.js";
 export { normalizeHistoryQuery, historyRequestPath } from "./operational-history.js";
 export type { HistoryKind, HistoryCursor, HistoryQuery, HistoryEntry, HistoryPage } from "./operational-history.js";
 export * from "./inventory-query.js";
+export * from "./mobile-intake.js";
 
 export type Business = {
   id: string;
