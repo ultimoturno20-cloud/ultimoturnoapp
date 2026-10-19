@@ -1,6 +1,29 @@
 # UltimoTurno - estado actual
 
-Actualizado: 2026-10-16
+Actualizado: 2026-10-19
+
+## Continuidad al 19/10 y desplazamiento de Ordenes
+
+PR #28 integrado por el usuario en 4215399 y confirmado online. El retiro del
+Preview identificado y la correccion de entornos fueron confirmados por el
+usuario; no equivalen a auditoria de toda la cuenta Vercel. Tras restaurar la
+configuracion productiva se comprobo DATABASE_URL configurada, Postgres
+accesible y presencia de stock/ventas/claim. Verificar esos campos: ok=true o
+HTTP 200 solos NO demuestran que la DB este conectada. Estado del 19/10: sano.
+El cierre posterior consta tambien en comentarios de PR #28; no repetir su merge.
+
+Pedido visual independiente del OP-1.4c.2b: rama codex/orders-board-scroll,
+base 4215399. Tablero de Ordenes con slider horizontal superior, flechas,
+teclado y sincronizacion con scroll nativo. Barras horizontales/verticales
+visibles; grid acotado a la ventana para no desplazar la pagina entera.
+Selector movil existente conservado, slider oculto si no hace falta y posicion
+reiniciada al cambiar tablero. Detalles, arrastre, cantidades y pagos sin cambios
+de logica ni API/DB. Pruebas de limites y Chrome sobre 28 pedidos ficticios,
+320/390/768/1440/1788 px, filtros, agregar columna, lista y cambio de tablero.
+Sin requests productivos de QA. Gate completo aprobado: 289 tests, tipos,
+lint, db:verify y build. Entrega por PR con merge humano pendiente; no online.
+El plan de optimizacion sigue pendiente por los mismos IDs; no se completo el
+picker de Ordenes ni se repararon en esta entrega los jobs de backup/precios.
 
 ## Coordinacion Codex + Claude
 
@@ -13,7 +36,7 @@ Se reemplaza el push directo a main por ramas/PR; online solo tras merge
 autorizado y verificacion del SHA resultante. El plan OP sigue sin reiniciarse.
 Baseline remoto verificado: main y produccion e233094, public-status ok=true,
 DB accesible, PILOTO REAL, ejemplos deshabilitados. Produccion no se usa para QA.
-Esta preparacion sigue pendiente de integracion mientras su PR no este mergeado.
+Estado al redactar esa preparacion: pendiente; cierre posterior en la seccion del 19/10.
 Proteccion remota aplicada y releida por API el 16/10: PR + check actualizado
 requeridos incluso para admin, conversaciones resueltas, sin force-push/borrado.
 No se exige autoaprobacion del unico propietario; merge humano por protocolo.
@@ -23,9 +46,9 @@ autorizacion a D:\UltimoTurno\Stock-claude, dependencias regeneradas y
 resolucion propia y typecheck aprobados; CI solo cancela PRs, main agrupa por SHA.
 Guia legacy reemplazada y orden tsc -b/tests/build aclarado. vercel.json limita
 auto-deploys Git a main, sin cambios de rutas, datos ni codigo de negocio.
-Bloqueo operativo: verificar aislamiento de credenciales en Preview conservando
-Production y retirar/revisar previews anteriores; sin evidencia de correccion.
-No abrir previews ni mergear la preparacion mientras siga ese pendiente.
+El bloqueo operativo de entonces se cerro por confirmacion humana y chequeos
+posteriores de produccion, segun continuidad del 19/10. No abrir otros previews
+sin comprobar su aislamiento; no se audito toda la cuenta Vercel.
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.

@@ -12522,15 +12522,26 @@ main:has(.trello-orders) .operations-dock { display:none; }
 
 .trello-board,
 .trello-cards {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: #777783 #151518;
 }
 
 .trello-board::-webkit-scrollbar,
 .trello-cards::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 10px;
+  height: 10px;
+}
+
+.trello-board::-webkit-scrollbar-track,
+.trello-cards::-webkit-scrollbar-track {
+  background: #151518;
+}
+
+.trello-board::-webkit-scrollbar-thumb,
+.trello-cards::-webkit-scrollbar-thumb {
+  background: #777783;
+  border: 2px solid #151518;
+  border-radius: 5px;
 }
 
 .trello-toolbar {
@@ -12810,6 +12821,7 @@ main:has(.trello-orders) .operations-dock { display:none; }
 }
 
 .shell.orders-mode {
+  grid-template-columns: minmax(0, 1fr);
   padding: 10px 16px 0;
 }
 

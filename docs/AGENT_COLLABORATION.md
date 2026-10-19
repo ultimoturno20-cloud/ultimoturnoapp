@@ -30,8 +30,8 @@ division al usuario; se puede avanzar en pruebas o areas realmente independiente
 
 Ambas carpetas son worktrees del mismo repositorio GitHub, no aplicaciones ni
 bases nuevas. La rama inicial de Claude parte de la preparacion compartida y
-no tiene tarea funcional asignada. Esperar el merge humano del PR de preparacion
-antes de crear la primera rama funcional desde origin/main actualizado.
+no tiene tarea funcional asignada. PR de preparacion #28 integrado por el usuario
+en 4215399; crear las ramas funcionales desde origin/main actualizado.
 No reutilizar claude/preparacion-local para desarrollo ni asumir que sera
 ancestro de main: squash/rebase cambian la historia. Crear una rama NUEVA
 desde origin/main despues del merge, sin resetear ni forzar la de preparacion.
@@ -213,8 +213,12 @@ avanzar a PRs funcionales con migraciones:
    permisos sobre produccion, con workers desactivados. No requiere otra base
    real de UltimoTurno: mientras tanto toda QA sigue en PGlite local temporal.
 
-No se verifico aun la correccion del alcance ni el retiro de previews antiguos. El PR de
-preparacion no se considera listo para merge hasta resolver ese punto operativo.
+El usuario confirmo correccion de entornos y retiro del Preview identificado;
+PR #28 integrado en 4215399 y Postgres productivo accesible, verificado el 19/10.
+Esto no equivale a auditoria autenticada de toda la cuenta ni otros previews.
+No repetir ese merge. Cualquier preview nuevo requiere aislamiento explicito.
+Para verificar salud comprobar databaseUrlConfigured y databaseReachable;
+HTTP 200 y ok=true pueden coexistir con una base desconectada.
 No agregar deploys productivos al CI de PRs ni forzar un redeploy de Production.
 
 Referencias: [Git por rama](https://vercel.com/docs/project-configuration/git-configuration)
