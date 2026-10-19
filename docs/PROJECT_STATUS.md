@@ -148,7 +148,8 @@ primera version no reemplazan lo implementado por un commit posterior.
   y lectura fresca de IDs antes de lotes/publicacion (hasta 64 por request).
   /stock completo se conserva para los otros sectores. Nombres de revendedores
   sin cargar dashboards. Frescura/cancelacion/errores y precios entre pestanas
-  conservados, snapshot cambiado reinicia recorrido; no nueva cache persistente.
+  conservados. El reinicio por snapshot cambio se corrige en issue #33,
+  pendiente de merge/online: ver docs/new-platform/INVENTORY_NAVIGATION.md.
   Fixture 1000 DTO: payload 1051899 -> 26058 bytes para pagina 24 con metadata.
   La lectura fria SQL aun construye snapshot completo, no un LIMIT SQL ni una
   metrica de latencia productiva. Chrome: entrada sin GET /stock ni /resellers.
@@ -1491,3 +1492,17 @@ de5a4f1 Filter reference rows in unified catalog
 
 Si online no refleja el comportamiento esperado, revisar en Vercel si el commit
 activo es el ultimo de `main`.
+
+## Correccion de navegacion de Inventario - 2026-10-19
+
+Issue #33, rama codex/inventory-stay-on-page, base 4215399. Cobrar una venta
+permanece en Inventario; crear una reserva mantiene su envio a Ordenes.
+Actualizaciones manuales/automaticas, guardados y snapshots distintos conservan
+pagina. Recarga de pestana restaura posicion/tamano via sessionStorage por
+usuario/negocio/filtro; cambios de filtros/tamano empiezan en cero. Si desaparece
+la pagina, la API existente ajusta a la ultima valida. Sin cambios API/DB/dinero.
+QA: 290 tests, lint/tipos/db:verify/build y Chrome con 73 cartas ficticias en
+PGlite nuevo, cinco anchos, cobro real local, snapshots de precio/cantidad,
+ultima pagina, filtros/vacio, lectura retenida y fallo/reintento. Sin QA productivo.
+Pendiente de revision/merge humano y verificacion online. PR #32 (slider Ordenes)
+sigue separado; no afirmar que este cambio lo incluye ni que completa el plan OP.

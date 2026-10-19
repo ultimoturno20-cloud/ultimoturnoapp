@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { inventoryRequestPath, type InventoryFilters, type InventoryPage, type InventoryQueryItem } from "@ultimoturno/domain";
 import type { ApiOptions } from "./admin-api.js";
+import { inventoryPageStorage, readInventoryPagePosition, writeInventoryPagePosition } from "./inventory-page-position.js";
 
 type Props<T> = {
   active: boolean; scope: string; filters: InventoryFilters; keepIds: string[]; fallback: T[];
@@ -10,8 +11,10 @@ type Props<T> = {
 };
 export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) {
   const filterKey = JSON.stringify([props.scope, props.filters]);
-  const [controls, setControls] = useState({ filterKey, offset: 0, limit: 24 });
-  const current = { ...controls, filterKey, offset: controls.filterKey === filterKey ? controls.offset : 0 };
+  const [controls, setControls] = useState(() => ({ scope: props.scope, ...readInventoryPagePosition(inventoryPageStorage(), props.scope, filterKey) }));
+  const current = controls.scope !== props.scope
+    ? { scope: props.scope, ...readInventoryPagePosition(inventoryPageStorage(), props.scope, filterKey) }
+    : { ...controls, filterKey, offset: controls.filterKey === filterKey ? controls.offset : 0 };
   const config = useRef({ props, current }); config.current = { props, current };
   const [page, setPage] = useState<InventoryPage<T> | null>(null);
   const [remembered, setRemembered] = useState<Map<string, T>>(new Map());
@@ -19,14 +22,13 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
   const [error, setError] = useState("");
   const pending = useRef<{ key: string; controller: AbortController; promise: Promise<void> } | null>(null);
   const applied = useRef("");
-  const pageRef = useRef(page); pageRef.current = page;
   const memoryScope = useRef(props.scope);
   const sameScope = memoryScope.current === props.scope;
   useEffect(() => {
     if (memoryScope.current === props.scope) return;
     pending.current?.controller.abort(); pending.current = null; applied.current = "";
     memoryScope.current = props.scope;
-    pageRef.current = null; setPage(null); setRemembered(new Map());
+    setPage(null); setRemembered(new Map());
   }, [props.scope]);
 
   const readItems = useCallback(async (ids: string[], signal?: AbortSignal) => {
@@ -43,7 +45,6 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
     setPage(previous => {
       if (!previous?.items.some(row => row.id === item.id && row !== item)) return previous;
       const next = { ...previous, items: previous.items.map(row => row.id === item.id ? item : row) };
-      pageRef.current = next;
       return next;
     });
   }, []);
@@ -56,10 +57,10 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
     });
   }, [keepKey]);
 
-  const load = useCallback((reset = false, fresh = false) => {
+  const load = useCallback((fresh = false) => {
     const { props: input, current: chosen } = config.current;
     if (!input.active) return Promise.resolve();
-    const target = { ...chosen, offset: reset ? 0 : chosen.offset };
+    const target = { ...chosen };
     const key = JSON.stringify([target, input.revision(), fresh]);
     if (pending.current?.key === key) return pending.current.promise;
     pending.current?.controller.abort();
@@ -68,12 +69,8 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
     pending.current = entry;
     setBusy(true); setError("");
     entry.promise = input.readAndApply(async () => {
-      let value = await input.request<InventoryPage<T>>(inventoryRequestPath(input.filters, target.offset, target.limit) + (fresh ? "&fresh=1" : ""), { signal: controller.signal });
-      const previous = pageRef.current;
-      // A changed snapshot starts a new traversal instead of mixing offsets.
-      if (target.offset > 0 && previous && previous.revision !== value.revision) {
-        value = await input.request<InventoryPage<T>>(inventoryRequestPath(input.filters, 0, target.limit), { signal: controller.signal });
-      }
+      // Each response is a complete fresh page; the API clamps an obsolete offset.
+      const value = await input.request<InventoryPage<T>>(inventoryRequestPath(input.filters, target.offset, target.limit) + (fresh ? "&fresh=1" : ""), { signal: controller.signal });
       const keep = config.current.props.keepIds.filter(id => !value.items.some(item => item.id === id));
       const retained = await readItems(keep, controller.signal);
       return { value, retained };
@@ -83,7 +80,7 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
         config.current.current.limit !== target.limit) return;
       const next = { ...target, offset: value.offset };
       config.current.current = next;
-      setControls(next); setPage(value); pageRef.current = value;
+      setControls(next); setPage(value);
       setRemembered(previous => {
         const next = new Map(previous);
         for (const item of [...retained, ...value.items]) if (config.current.props.keepIds.includes(item.id)) next.set(item.id, item);
@@ -100,6 +97,9 @@ export function useInventoryPage<T extends InventoryQueryItem>(props: Props<T>) 
   }, [readItems]);
 
   const configKey = JSON.stringify(current);
+  useEffect(() => {
+    if (props.active) writeInventoryPagePosition(inventoryPageStorage(), props.scope, current);
+  }, [props.active, props.scope, configKey]);
   useEffect(() => {
     if (!props.active) {
       pending.current?.controller.abort(); pending.current = null; applied.current = ""; setBusy(false);

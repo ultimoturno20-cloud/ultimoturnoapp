@@ -870,3 +870,14 @@ pool en Vercel/Supabase.
 No pegar secretos completos en archivos versionados. Usar variables de entorno.
 La app online es https://ultimoturno.app/
 ```
+
+## Pedido de Inventario del 2026-10-19
+
+Issue #33, rama codex/inventory-stay-on-page desde main 4215399: entrega de
+navegacion/pagina, no una nueva etapa OP. Gate local 290 tests y Chrome aislado
+aprobados. Cobros permanecen en Inventario, reservas siguen a Ordenes; refrescar
+o guardar no reinicia pagina. F5 restaura posicion/tamano por sesion y cuenta;
+solo filtros/tamano reinician y resultados reducidos ajustan a la ultima pagina.
+Detalle tecnico y limites: docs/new-platform/INVENTORY_NAVIGATION.md.
+Entregar por PR/CI y merge humano; luego comparar SHA y salud DB online.
+El PR #32 del slider de Ordenes sigue separado y pendiente al iniciar esta tarea.

@@ -124,8 +124,9 @@ mapper compartido listStockInternal(any uuid[]). Admin o stock_owner propio;
 business/propietario, orden solicitado y 404 generico para faltante/ajeno.
 Frontend use-inventory-page.ts conserva pagina y solo seleccion/carrito/editor,
 descarta filtros viejos, aplica revision del transporte OP-1.3 y pide frescura
-tras escritura/manual/precio entre pestanas. Snapshot distinto al paginar
-reinicia en cero, no promete cursor/MVCC congelado. Lotes/publicacion vuelven
+tras escritura/manual/precio entre pestanas. El reinicio por snapshot distinto
+se corrige en issue #33 (pendiente de merge/online): INVENTORY_NAVIGATION.md.
+No promete cursor/MVCC congelado. Lotes/publicacion vuelven
 a leer IDs; doble clic bloqueado, escrituras sin reenvio. PUT legacy de lote
 sigue secuencial, sin nueva atomicidad ni bloqueo entre lectura/escritura.
 Ingreso conserva carga completa mientras se adapta en OP-1.4c; no poblar
