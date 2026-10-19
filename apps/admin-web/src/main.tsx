@@ -7,6 +7,7 @@ import { mobileCaptureKey, type MobileInventoryEntry, type MobileIntakeStatus } 
 import { useMobileIntakePage } from "./use-mobile-intake-page.js";
 import { MobileIntakePagination, type MobileIntakePaging } from "./mobile-intake-pagination.js";
 import { InventoryPagination } from "./inventory-pagination.js";
+import { OrderBoardScroller } from "./order-board-scroller.js";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { createAdminApi, type ApiOptions } from "./admin-api.js";
@@ -4915,7 +4916,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
       <span className="trello-save-status" role="status">{busy?"Guardando...":notice}</span>
     </header>
     {!workspace && !error && <p>Cargando tableros...</p>}
-    <div className="trello-board" aria-label={selectedBoard?.name}>{columns.map(column=>{
+    <OrderBoardScroller boardKey={selectedBoard?.id || ""} label={selectedBoard?.name || "Tablero de ordenes"}>{columns.map(column=>{
       const cards=orders.filter(s=>columnOf(s.id)===column.id).sort(compareOrderCards);
       return <section key={column.id} className={`trello-column ${activeMobileColumnId===column.id?"mobile-active":""} ${over===column.id?"drag-over":""}`} aria-label={column.name} onDragOver={e=>{if(!busy){e.preventDefault();setOver(column.id);}}} onDrop={e=>{if(!busy)drop(e,column.id);}}>
         <header><h3>{column.name} <span>{cards.length}</span></h3><button aria-label={`Renombrar columna ${column.name}`} onClick={()=>setEditor({action:"renameColumn",id:column.id,name:column.name})}>···</button></header>
@@ -4930,7 +4931,7 @@ function OrdersView(props: Parameters<typeof OrdersListView>[0]) {
           </button>;
         })}{!cards.length && <p className="trello-empty">{query?"Sin coincidencias":"Sin ordenes"}</p>}</div>
       </section>;
-    })}</div>
+    })}</OrderBoardScroller>
     <dialog aria-label="Detalle de orden" className="trello-order-dialog" ref={dialog} onCancel={()=>setOpenId("")} onClose={()=>setOpenId("")}>
       {openOrder && <><header className="trello-dialog-heading"><h2>{openOrder.customerName}</h2><button autoFocus className="secondary-action" onClick={()=>setOpenId("")}>Cerrar</button></header><div className="trello-move"><label>Mover a<select value={destination} onChange={e=>setDestination(e.target.value)}>{workspace?.boards.map(b=><optgroup key={b.id} label={b.name}>{workspace.columns.filter(c=>c.boardId===b.id).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button className="secondary-action" disabled={busy || !destination || destination===columnOf(openId)} onClick={()=>void change({action:"move",saleId:openId,columnId:destination})}>Mover tarjeta</button><span role="status">{busy?"Guardando...":notice}</span>{error && <span role="alert">{error}</span>}</div>
         <OrderCard key={openId} order={openOrder} boardLabel={workspace?.columns.find(c=>c.id===columnOf(openId))?.name || "Orden"} stockItems={props.stockItems} blueRate={props.blueRate} resellers={props.resellers} open focused={false} selected={false} copied={false} onToggle={()=>{}} onSelectedChange={()=>{}} onAssignReseller={async (id,resellerId)=>{await props.onAssignReseller(id,resellerId);refreshBoards();}} onComplete={async id=>{await props.onComplete(id);refreshBoards();}} onCancel={async id=>{await props.onCancel(id);refreshBoards();}} onPacked={async id=>{await props.onPacked(id);refreshBoards();}} onDelivered={async id=>{await props.onDelivered(id);refreshBoards();}} onPayment={async (id,amount,due)=>{await props.onPayment(id,amount,due);refreshBoards();}} onNote={async (id,note)=>{await props.onNote(id,note);}} onMessageSent={sent=>props.onMessageSent(openId,sent)} onLinePacked={async (id,packed)=>{await props.onLinePacked(id,packed);refreshBoards();}} onLines={async (id,lines)=>{await props.onLines(id,lines);refreshBoards();}} onCopy={()=>void copyToClipboard(buildClaimOrderMessage(openOrder))}/></>}

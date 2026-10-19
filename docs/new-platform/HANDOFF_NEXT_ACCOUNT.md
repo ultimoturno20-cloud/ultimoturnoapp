@@ -1,5 +1,23 @@
 # Traspaso de contexto - UltimoTurno
 
+## Continuidad - 2026-10-19
+
+PR #28 mergeado por el usuario en 4215399, confirmado online. La configuracion
+productiva faltante se restauro; public-status comprobo DB configurada/accesible
+y stock/ventas/claim presentes, tambien el 19/10. HTTP 200/ok=true por si solos
+no alcanzan para diagnosticar salud. Preview identificado retirado segun usuario;
+no hay auditoria general de otros proyectos/entornos. No repetir merge #28.
+El texto del 16/10 inferior conserva contexto previo a esa confirmacion.
+
+Nuevo pedido visual: slider horizontal para Ordenes. Rama codex/orders-board-scroll
+desde 4215399, cambios aislados de frontend, barras nativas visibles y grid
+sin desbordar ventana. Componente local sincroniza slider/flechas/scroll,
+ResizeObserver y columnas agregadas, conserva selector movil y detalles/DnD.
+QA Chrome con 28 pedidos ficticios, cinco anchos y cero requests productivos.
+Gate completo 289 tests aprobado; entrega por PR/merge humano, no desplegado
+aun. OP-1.4c.2b y otros pendientes
+del plan siguen abiertos, al igual que el seguimiento de jobs de respaldo/precios.
+
 ## Codex + Claude Code - 2026-10-16
 
 El usuario pide trabajo paralelo en esta PC. Reglas comunes en AGENTS.md;

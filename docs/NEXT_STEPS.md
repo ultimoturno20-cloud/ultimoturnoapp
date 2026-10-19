@@ -1,6 +1,6 @@
 # UltimoTurno - proximos pasos
 
-Actualizado: 2026-10-16
+Actualizado: 2026-10-19
 
 > Usar primero el orden de continuidad y el prompt de este documento.
 > Los detalles por sector conservan verificaciones pendientes, no autorizan
@@ -8,18 +8,23 @@ Actualizado: 2026-10-16
 
 ## Orden de continuidad
 
-Antes de nuevas tareas paralelas: integrar con autorizacion humana la preparacion
-Codex/Claude y seguir docs/AGENT_COLLABORATION.md. Cada tarea requiere propietario,
+Preparacion Codex/Claude ya integrada por el usuario en PR #28, main/online
+4215399. Seguir docs/AGENT_COLLABORATION.md. Cada tarea requiere propietario,
 alcance y rama/worktree propios; no hay asignacion funcional automatica a Claude.
 AGENTS.md es comun; no duplicar reglas en CLAUDE.md. Ramas y PRs reemplazan pushes
 directos a main. Commit/push/CI por entrega; online se confirma despues del merge
 humano, comparando public-status con el SHA resultante de main.
-Revision de Claude: usar worktree hermano D:\UltimoTurno\Stock-claude, no el
-anidado anterior. Antes del merge de preparacion queda quitar Preview de las
-credenciales compartidas en Vercel y retirar/revisar previews antiguos; el usuario
-debe confirmar esa correccion sin publicar configuracion sensible ni valores.
-El PR agrega bloqueo de auto-deploy Git fuera de main; no modifica env remotas
-ni elimina previews existentes. No iniciar otro PR funcional con ese riesgo abierto.
+Usar worktree hermano D:\UltimoTurno\Stock-claude, no el anidado anterior.
+El usuario confirmo remediacion del Preview identificado y correccion de
+configuracion productiva; DB accesible y datos presentes verificados el 19/10.
+No repetir ese merge ni confundir esa confirmacion con auditoria total Vercel.
+Control online siempre incluye databaseUrlConfigured y databaseReachable,
+no solo ok=true. Los auto-deploys Git fuera de main siguen deshabilitados.
+
+Pedido actual de usuario: slider horizontal en tablero de Ordenes, rama
+codex/orders-board-scroll. Implementacion y QA aislada completados, 289 tests;
+entrega por PR y merge humano. No equivale a OP-1.4c.2b ni autoriza escrituras de QA
+productivas. Backup/CoolStuff detectados pendientes se revisan por separado.
 
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
 sus cinco etapas por IDs con pruebas/commit/push/PR y online tras merge autorizado.
