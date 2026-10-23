@@ -1193,7 +1193,7 @@ function App() {
 
   const [costSaving, setCostSaving] = useState(false);
   async function refreshStock(fresh = false) {
-    if (view === "inventory") { await inventoryPage.refresh(true, fresh); return; }
+    if (view === "inventory") { await inventoryPage.refresh(fresh); return; }
     await adminApi.readAndApply(() => api<{ summary: StockSummary; items: StockRow[] }>(fresh ? "/stock?fresh=1" : "/stock"), setStock);
   }
 
@@ -1227,7 +1227,7 @@ function App() {
         ]);
         updates.push(() => { setStock(stockData); setMovements(movementData.movements); setAudit(auditData.audit); setSales(salesData.sales); });
       } else if (targetView === "inventory") {
-        await inventoryPage.refresh(true, force);
+        await inventoryPage.refresh(force);
       } else if (targetView === "stock-intake") {
         updates.push(() => setIntakeSearchRevision(value => value + 1));
       } else if (targetView === "resellers") {
@@ -1574,7 +1574,7 @@ function App() {
       const changes = new Map(result.items.map(item => [item.id, item.storefrontPublished]));
       setStock(current => ({ ...current, items: current.items.map(item => changes.has(item.id) ? { ...item, storefrontPublished: changes.get(item.id) } : item) }));
       showMessage(`${result.changedCount} item(s): publicacion ${published ? "habilitada" : "oculta"}.`);
-      await inventoryPage.refresh(true).catch(failure => showError(new Error("Publicacion guardada. No se pudo recargar: " + errorMessage(failure))));
+      await inventoryPage.refresh().catch(failure => showError(new Error("Publicacion guardada. No se pudo recargar: " + errorMessage(failure))));
     } catch (nextError) {
       setStock(current => ({ ...current, items: current.items.map(item => previous.has(item.id) ? { ...item, storefrontPublished: previous.get(item.id) } : item) }));
       showError(nextError);
@@ -1700,7 +1700,7 @@ function App() {
       });
       inventoryPage.remember(result.item);
       showMessage(result.message || `Imagen reparada para ${item.product.name}.`);
-      void inventoryPage.refresh(true).catch(showError);
+      void inventoryPage.refresh().catch(showError);
     } catch (nextError) {
       showError(nextError);
     } finally {
@@ -1781,7 +1781,7 @@ function App() {
       setCart([]);
       setCustomerName("");
       await refresh();
-      setView(cartMode === "reservation" ? "orders" : "sales");
+      if (cartMode === "reservation") setView("orders");
     } catch (nextError) {
       showError(nextError);
     }
@@ -2848,7 +2848,7 @@ function App() {
           loadError={inventoryPage.error}
           onPageChange={inventoryPage.navigate}
           onPageSizeChange={inventoryPage.changeLimit}
-          onRetry={() => { adminApi.invalidate(); void inventoryPage.refresh(true, true).catch(() => undefined); }}
+          onRetry={() => { adminApi.invalidate(); void inventoryPage.refresh(true).catch(() => undefined); }}
           onReadItems={inventoryPage.readFreshItems}
           onSelectAll={inventoryPage.selectAll}
           onExportAll={async () => exportInventoryCsv(await inventoryPage.exportAll())}
@@ -2878,7 +2878,7 @@ function App() {
           onSelect={(item) => { inventoryPage.remember(item); setSelectedId(item.id); }}
           onStockSaved={(saved) => {
             inventoryPage.remember(saved); setSelectedId(saved.id);
-            void inventoryPage.refresh(true).catch(showError);
+            void inventoryPage.refresh().catch(showError);
             setStock((current) => { const items = current.items.map((item) => item.id === saved.id ? saved : item); return { items, summary: summarizeStockRows(items) }; });
           }}
           onRestock={startRestock}
