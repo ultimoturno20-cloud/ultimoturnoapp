@@ -15,7 +15,7 @@ export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrder
 export { listOperationalHistory } from "./operational-history.js";
 export { searchInventoryIntakeCandidates } from "./inventory-intake-search.js";
 import { guardStoreOrder } from "./store-checkout.js";
-import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
+import { allocateClaimBuyerUnits, normalizeClaimBuyerKey, canReadAdmin, isReadOnlyAdmin } from "@ultimoturno/domain";
 import { normalizeMobileIntakeQuery, type MobileIntakePage, type MobileInventoryEntry } from "@ultimoturno/domain";
 export type { MobileInventoryEntry } from "@ultimoturno/domain";
 
@@ -1319,19 +1319,21 @@ export async function createManagedUser(db: PGlite, input: {
   displayName: string;
   email: string;
   password: string;
-  role: "admin" | "stock_owner";
+  role: "admin" | "stock_owner" | "admin_readonly";
 }, actor: AuthenticatedUser): Promise<ManagedUser> {
+  if (isReadOnlyAdmin(actor.roles) || (actor.roles && !actor.roles.includes("admin"))) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
   const displayName = input.displayName.trim();
   const email = input.email.trim().toLowerCase();
   if (!displayName) throw new Error("El nombre es obligatorio.");
   if (!email || !email.includes("@")) throw new Error("Ingresa un email valido.");
   if (input.password.length < 10) throw new Error("La password debe tener al menos 10 caracteres.");
-  if (!(["admin", "stock_owner"] as const).includes(input.role)) throw new Error("Rol invalido.");
+  if (!(["admin", "stock_owner", "admin_readonly"] as const).includes(input.role)) throw new Error("Rol invalido.");
   const userId = crypto.randomUUID();
   await db.transaction(async (tx) => {
     const connection = tx as unknown as PGlite;
     const existing = await tx.query("select id from app_users where business_id = $1 and lower(email) = lower($2)", [actor.businessId, email]);
     if (existing.rows[0]) throw new Error("Ya existe un usuario con ese email.");
+    if (input.role === "admin_readonly") await tx.query("insert into roles (id,business_id,name,description) values ($1,$2,'admin_readonly','Observador del panel, solo lectura') on conflict (business_id,name) do nothing", [crypto.randomUUID(), actor.businessId]);
     const role = await tx.query<{ id: string }>("select id from roles where business_id = $1 and name = $2 limit 1", [actor.businessId, input.role]);
     if (!role.rows[0]) throw new Error("El rol solicitado no existe.");
     await tx.query(`
@@ -4321,11 +4323,11 @@ export async function listStockForBusiness(db: PGlite, businessId: string): Prom
 }
 
 export async function getInventoryItemsForActor(db: PGlite, ids: string[], actor: AuthenticatedUser): Promise<DbStockRow[]> {
-  if (!actor.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+  if (!canReadAdmin(actor.roles) && !actor.roles?.includes("stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
   if (!Array.isArray(ids) || !ids.length || ids.length > 64 || ids.some(id => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) throw Object.assign(new Error("Seleccion de inventario invalida."), { statusCode: 400 });
   const normalized = [...new Set(ids.map(id => id.toLowerCase()))];
   const stock = await listStockInternal(db, actor.businessId, normalized);
-  const items = actor.roles.includes("admin") ? stock.items : stock.items.filter(item => item.ownerUserId === actor.id);
+  const items = canReadAdmin(actor.roles) ? stock.items : stock.items.filter(item => item.ownerUserId === actor.id);
   if (items.length !== normalized.length) throw Object.assign(new Error("Una carta seleccionada no esta disponible o no pertenece a este inventario."), { statusCode: 404 });
   const byId = new Map(items.map(item => [item.id, item]));
   return normalized.map(id => byId.get(id)!);
@@ -4333,7 +4335,7 @@ export async function getInventoryItemsForActor(db: PGlite, ids: string[], actor
 
 export async function listStockForActor(db: PGlite, actor: AuthenticatedUser): Promise<{ summary: DbStockSummary; items: DbStockRow[] }> {
   const stock = await listStockInternal(db, actor.businessId);
-  if (!actor.roles?.includes("stock_owner") || actor.roles.includes("admin")) return stock;
+  if (!actor.roles?.includes("stock_owner") || canReadAdmin(actor.roles)) return stock;
   const items = stock.items.filter((item) => item.ownerUserId === actor.id);
   return { summary: summarizeDbStock(items), items };
 }
@@ -4724,7 +4726,8 @@ async function assertInventoryFolder(db: PGlite, inventoryItemId: string, actor:
   );
   const item = result.rows[0];
   if (!item || item.item_kind !== "folder") throw new Error("No se encontro la carpeta.");
-  if (actor.roles && !actor.roles.includes("admin") && item.owner_user_id !== actor.id) throw new Error("No podes modificar stock de otro propietario.");
+  if (editing && isReadOnlyAdmin(actor.roles)) throw Object.assign(new Error("Esta cuenta es de solo lectura."), { statusCode: 403 });
+  if (actor.roles && !(editing ? actor.roles.includes("admin") : canReadAdmin(actor.roles)) && item.owner_user_id !== actor.id) throw new Error("No podes modificar stock de otro propietario.");
   if (editing) {
     if (item.quantity_reserved || !item.quantity_on_hand) throw new Error("La carpeta esta reservada o vendida; su contenido no se puede cambiar.");
     const assigned = await db.query("select 1 from reseller_stock_assignments where inventory_item_id = $1 and business_id = $2 and quantity_assigned > quantity_sold + quantity_returned limit 1", [inventoryItemId, actor.businessId]);
@@ -4970,7 +4973,7 @@ export async function listMobileIntakePage(db: PGlite, actor: AuthenticatedUser,
 }
 
 function requireMobileIntakeAdmin(actor: AuthenticatedUser) {
-  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+  if (!canReadAdmin(actor.roles)) throw Object.assign(new Error("Se requiere acceso al panel."), { statusCode: 403 });
 }
 
 export async function getMobilePendingMatch(db: PGlite, actor: AuthenticatedUser, key: string): Promise<{ count: number; units: number }> {
@@ -9870,7 +9873,8 @@ async function readOrderBoards(db: PGlite, businessId: string): Promise<OrderBoa
   return {boards:boards.rows,columns:columns.rows,cards:cards.rows};
 }
 
-export async function getOrderBoards(db: PGlite, businessId: string): Promise<OrderBoardWorkspace> {
+export async function getOrderBoards(db: PGlite, businessId: string, options: { readOnly?: boolean } = {}): Promise<OrderBoardWorkspace> {
+  if (options.readOnly) return readOrderBoards(db, businessId);
   return inventoryTransaction(db, async tx => {
     if (getOperationalDatabaseDriver(tx) === "pglite") {
       await syncOrderBoardRules(tx,businessId);

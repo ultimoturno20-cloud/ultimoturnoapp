@@ -1,9 +1,10 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { normalizeHistoryQuery, type HistoryEntry, type HistoryPage } from "@ultimoturno/domain";
 import type { AuthenticatedUser } from "./index.js";
+import { canReadAdmin } from "@ultimoturno/domain";
 
 export async function listOperationalHistory(db: PGlite, actor: AuthenticatedUser, input: Record<string, unknown> = {}): Promise<HistoryPage> {
-  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+  if (!canReadAdmin(actor.roles)) throw Object.assign(new Error("Se requiere acceso al panel."), { statusCode: 403 });
   const query = normalizeHistoryQuery(input);
   const stock = query.kind === "stock";
   const source = stock ? `

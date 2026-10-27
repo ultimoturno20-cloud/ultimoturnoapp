@@ -10,6 +10,7 @@ export type { HistoryKind, HistoryCursor, HistoryQuery, HistoryEntry, HistoryPag
 export * from "./inventory-query.js";
 export * from "./mobile-intake.js";
 export * from "./catalog-picker.js";
+export { canReadAdmin, isReadOnlyAdmin } from "./admin-access.js";
 
 export type Business = {
   id: string;

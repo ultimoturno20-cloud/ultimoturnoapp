@@ -1,17 +1,18 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { inventoryLanguageGroup, normalizeIntakeSearchQuery, parseUiSearchQuery, scoreStockSearch, stockRowToCatalogEntry, uiSearchTokenVariants, type CatalogPickerEntry, type InventoryQueryItem } from "@ultimoturno/domain";
 import { getInventoryItemsForActor, type AuthenticatedUser } from "./index.js";
+import { canReadAdmin } from "@ultimoturno/domain";
 
 function normalizedSql(expression: string) {
   return `trim(regexp_replace(replace(replace(lower(regexp_replace(normalize(coalesce(${expression},''),NFD), U&'[\\0300-\\036f]', '', 'g')),chr(39),''),chr(8217),''),'[^a-z0-9]+',' ','g'))`;
 }
 
 export async function searchInventoryIntakeCandidates(db: PGlite, actor: AuthenticatedUser, input: Record<string, unknown>, limit = 30): Promise<CatalogPickerEntry[]> {
-  if (!actor.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+  if (!canReadAdmin(actor.roles) && !actor.roles?.includes("stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
   if (!Number.isInteger(limit) || limit < 1 || limit > 60) throw Object.assign(new Error("Limite de candidatos invalido."), { statusCode: 400 });
   const { query: text, languageGroup } = normalizeIntakeSearchQuery(input);
   const query = parseUiSearchQuery(text);
-  const params: unknown[] = [actor.businessId, actor.roles.includes("admin") ? null : actor.id];
+  const params: unknown[] = [actor.businessId, canReadAdmin(actor.roles) ? null : actor.id];
   const filters: string[] = [];
   for (const token of query.textTokens) {
     params.push(uiSearchTokenVariants(token));

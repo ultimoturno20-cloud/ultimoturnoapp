@@ -1,6 +1,7 @@
 import type { PGlite } from '@electric-sql/pglite';
 import { applyTournamentCommand, importTournament, newTournament, type TournamentState, type TournamentCommand } from '@ultimoturno/domain';
 import { inventoryTransaction, type AuthenticatedUser } from './index.js';
+import { canReadAdmin } from '@ultimoturno/domain';
 export type TournamentDocument = { id: string; version: number; state: TournamentState; updatedAt: string };
 function error(message: string, statusCode: number): never { throw Object.assign(new Error(message),{statusCode}); }
 function admin(actor: AuthenticatedUser) { if (!actor.roles?.includes('admin')) error('Se requiere rol administrador para torneos.',403); }
@@ -8,12 +9,12 @@ function uuid(id: unknown): string { if (typeof id !== 'string' || !/^[0-9a-f]{8
 type Row = { id: string; version: number; state: TournamentState; updated_at: string };
 function document(r: Row): TournamentDocument { return {id:r.id,version:Number(r.version),state:r.state,updatedAt:String(r.updated_at)}; }
 export async function listTournaments(db: PGlite,actor: AuthenticatedUser) {
-  admin(actor);
+  if (!canReadAdmin(actor.roles)) error('Se requiere rol administrador u observador para torneos.',403);
   const result = await db.query<Row>("select id,version,state,updated_at::text from tournaments where business_id=$1 order by updated_at desc limit 200",[actor.businessId]);
   return result.rows.map(r => ({id:r.id,version:Number(r.version),name:r.state.name,players:r.state.players.length,swissRounds:r.state.swiss.length,swissCount:r.state.swissCount,cutStarted:!!r.state.cut.length,updatedAt:String(r.updated_at)}));
 }
 export async function getTournament(db: PGlite,id: string,actor: AuthenticatedUser): Promise<TournamentDocument> {
-  admin(actor);
+  if (!canReadAdmin(actor.roles)) error('Se requiere rol administrador u observador para torneos.',403);
   const result = await db.query<Row>('select id,version,state,updated_at::text from tournaments where id=$1 and business_id=$2',[uuid(id),actor.businessId]);
   if (!result.rows[0]) error('Torneo no encontrado.',404);
   return document(result.rows[0]);
