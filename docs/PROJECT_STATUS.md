@@ -1506,3 +1506,19 @@ PGlite nuevo, cinco anchos, cobro real local, snapshots de precio/cantidad,
 ultima pagina, filtros/vacio, lectura retenida y fallo/reintento. Sin QA productivo.
 Pendiente de revision/merge humano y verificacion online. PR #32 (slider Ordenes)
 sigue separado; no afirmar que este cambio lo incluye ni que completa el plan OP.
+
+## Observador del panel - 2026-10-27
+
+PR #34 integrado con autorizacion expresa del usuario y online en 266015b
+el 23/10: cobro/paginacion de inventario entregados, DB configurada y accesible.
+El estado de pendiente anterior queda superado por esa evidencia del PR.
+Issue #35, rama codex/admin-readonly, agrega rol admin_readonly sin conceder
+admin; lecturas de negocio y guardia explicita contra escrituras/GET con efectos.
+No expira pedidos, sincroniza tableros ni repara imagenes al consultar con ese rol.
+Alta transaccional del rol al crear usuario, sin migracion ni cuentas anteriores
+modificadas. UI Solo lectura y opcion Observador en alta de usuarios.
+Pruebas HTTP con huellas de todas las tablas y Chrome de 13 vistas aisladas,
+cinco anchos, cobro rechazado y stock intacto. Ver ADMIN_READONLY.md.
+Correo aleatorio pedido por el usuario; alta real/publicacion pendientes de
+confirmacion sobre datos reales y autorizacion para desplegar. No hay usuario
+productivo nuevo aun. No completar OP ni integrar el slider #32 por este pedido.

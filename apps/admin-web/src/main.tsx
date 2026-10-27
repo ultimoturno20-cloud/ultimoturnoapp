@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildDuplicateIdentityKeys, summarizeStockQuality, inventoryLanguageGroup, inventoryTags, parseUiSearchQuery, uiSearchTokenVariants, normalizedTextIncludesToken, normalizedWordsIncludeToken, primaryCardNumber, scoreStockSearch, normalizeInventoryText as normalize, inventoryPriceValue, type InventoryMetadata } from "@ultimoturno/domain";
 import { useInventoryPage } from "./use-inventory-page.js";
+import { canReadAdmin, isReadOnlyAdmin } from "@ultimoturno/domain";
 import { useIntakeSearch } from "./use-intake-search.js";
 import { cleanCatalogPickerName, cleanCatalogPickerExpansion, catalogSourceLabel, type CatalogPickerEntry } from "@ultimoturno/domain";
 import { mobileCaptureKey, type MobileInventoryEntry, type MobileIntakeStatus } from "@ultimoturno/domain";
@@ -1167,7 +1168,7 @@ function App() {
     const ownerRestricted = nextRoles.includes("stock_owner") && !nextRoles.includes("admin");
     const targetView = ownerRestricted && !stockOwnerViewAllowed(view) ? "stock-intake" : view;
     setUserRoles(nextRoles);
-    const managedUsersRequest = nextRoles.includes("admin")
+    const managedUsersRequest = canReadAdmin(nextRoles)
       ? api<{ users: ManagedUser[] }>("/users").then((result) => setManagedUsers(result.users))
       : Promise.resolve(setManagedUsers([{ id: me.user.id, displayName: me.user.displayName, email: "", active: true, roles: nextRoles, createdAt: "" }]));
     setEnvironment(nextEnvironment);
@@ -2737,6 +2738,7 @@ function App() {
         </div>
         <div className="header-actions">
           <div className="header-badges">
+            {isReadOnlyAdmin(userRoles) ? <span className="profile-badge">Solo lectura</span> : null}
             <span className={`profile-badge ${environment.allowExamples ? "examples" : "pilot"}`}>{environment.dataProfile}</span>
             <span className={`profile-badge blue-rate-badge ${blueRate.fallback ? "fallback" : ""}`} title={blueRate.source}>Dólar {formatArs(blueRate.sell)}</span>
           </div>
@@ -7006,7 +7008,7 @@ function ResellerPortal() {
 }
 
 function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCreated: (user: ManagedUser) => void }) {
-  const [form, setForm] = useState({ displayName: "", email: "", password: "", role: "stock_owner" as "admin" | "stock_owner" });
+  const [form, setForm] = useState({ displayName: "", email: "", password: "", role: "stock_owner" as "admin" | "stock_owner" | "admin_readonly" });
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
   async function submit(event: React.FormEvent) {
@@ -7023,12 +7025,12 @@ function UserManagementPanel({ users, onCreated }: { users: ManagedUser[]; onCre
   }
   return <section className="panel user-management-panel">
     <div className="section-heading"><div><h3>Usuarios y propietarios</h3><p>Los administradores operan todo. Los propietarios cargan su stock y pueden asignarlo a revendedores.</p></div></div>
-    <div className="managed-user-list">{users.map((user) => <div key={user.id}><span><strong>{user.displayName}</strong><small>{user.email}</small></span><b>{user.roles.includes("admin") ? "Administrador" : user.roles.includes("stock_owner") ? "Stock propio" : user.roles.join(", ")}</b><em>{user.active ? "Activo" : "Inactivo"}</em></div>)}</div>
+    <div className="managed-user-list">{users.map((user) => <div key={user.id}><span><strong>{user.displayName}</strong><small>{user.email}</small></span><b>{isReadOnlyAdmin(user.roles) ? "Observador" : user.roles.includes("admin") ? "Administrador" : user.roles.includes("stock_owner") ? "Stock propio" : user.roles.join(", ")}</b><em>{user.active ? "Activo" : "Inactivo"}</em></div>)}</div>
     <form className="managed-user-create" onSubmit={submit}>
       <input required placeholder="Nombre" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
       <input required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
       <input required minLength={10} type="password" placeholder="Password inicial" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-      <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as "admin" | "stock_owner" })}><option value="admin">Administrador</option><option value="stock_owner">Stock propio</option></select>
+      <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as "admin" | "stock_owner" | "admin_readonly" })}><option value="admin">Administrador</option><option value="stock_owner">Stock propio</option><option value="admin_readonly">Observador (solo lectura)</option></select>
       <button className="primary-action" disabled={saving}><Icon name="plus" />{saving ? "Creando..." : "Crear usuario"}</button>
     </form>
     {feedback ? <p className="muted" role="status">{feedback}</p> : null}

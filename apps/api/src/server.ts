@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { findExactTcgdexClaimImage, resolveClaimImage } from "./claim-image-resolver.js";
+import { canReadAdmin, isReadOnlyAdmin } from "@ultimoturno/domain";
+import { readOnlyAdminRouteAllowed } from "./admin-readonly.js";
 import {
   listStoreCatalog,
   setStorefrontPublication,
@@ -3969,12 +3971,20 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
+    const accessUser = bearerToken(request) ? await getAuthenticatedUserContext(await dbPromise, bearerToken(request)) : null;
+    const readOnly = isReadOnlyAdmin(accessUser?.roles);
+    // This runs before public/store/cron handlers too, after dispatcher normalization.
+    if (readOnly && !readOnlyAdminRouteAllowed(url.pathname, request.method || "GET")) {
+      sendJson(response, 403, { ok: false, error: "Esta cuenta es de solo lectura. No puede modificar la plataforma." });
+      return;
+    }
+
     if (url.pathname === "/store/catalog") {
       if (request.method !== "GET") { sendJson(response, 405, { error: "Solo consulta de catalogo." }); return; }
       const query = normalizeStoreCatalogQuery(Object.fromEntries(["query", "expansion", "language", "condition", "cardType", "category", "sort", "offset"].map(key => [key, url.searchParams.get(key) ?? undefined])));
       const ids = url.searchParams.has("ids") ? url.searchParams.get("ids")!.split(",") : undefined;
       if (ids && (!ids.length || ids.length>30 || ids.some(id=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))) throw Object.assign(new Error("Seleccion de carrito invalida."), {statusCode:400});
-      try { const storeDb = await dbPromise; if(await expireStoreOrders(storeDb))stockReadCache.clear(); sendJson(response, 200, await listStoreCatalog(storeDb, query, "ultimoturno", ids)); }
+      try { const storeDb = await dbPromise; if(!readOnly && await expireStoreOrders(storeDb))stockReadCache.clear(); sendJson(response, 200, await listStoreCatalog(storeDb, query, "ultimoturno", ids)); }
       catch (error) { console.error("No se pudo leer el catalogo publico", error); sendJson(response, 503, { error: "No se pudo cargar el catalogo." }); }
       return;
     }
@@ -4119,7 +4129,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const db = await dbPromise;
       const session = await loginUser(db, body.email?.trim() || "", body.password || "", clientIp(request));
       const context = await getAuthenticatedUserContext(db, session.token);
-      if (!context || !context.roles.some((role) => role === "admin" || role === "stock_owner" || role === "reseller")) {
+      if (!context || !context.roles.some((role) => role === "admin" || role === "admin_readonly" || role === "stock_owner" || role === "reseller")) {
         await logoutUser(db, session.token);
         sendJson(response, 403, { ok: false, error: "Este usuario no tiene acceso a UltimoTurno." });
         return;
@@ -4200,16 +4210,16 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const db = await dbPromise;
-    const sessionUser = bearerToken(request) ? await getAuthenticatedUserContext(db, bearerToken(request)) : null;
+    const sessionUser = accessUser;
     if (!requestHasAccess(request) && !sessionUser) {
       sendJson(response, 401, { ok: false, error: "Clave de acceso requerida o incorrecta." });
       return;
     }
-    if (sessionUser && !sessionUser.roles.includes("admin") && !sessionUser.roles.includes("stock_owner")) {
+    if (sessionUser && !canReadAdmin(sessionUser.roles) && !sessionUser.roles.includes("stock_owner")) {
       sendJson(response, 403, { ok: false, error: "Este usuario no tiene acceso al panel operativo." });
       return;
     }
-    if (sessionUser?.roles.includes("stock_owner") && !sessionUser.roles.includes("admin") && !stockOwnerRouteAllowed(url.pathname, request.method || "GET")) {
+    if (sessionUser?.roles.includes("stock_owner") && !canReadAdmin(sessionUser.roles) && !stockOwnerRouteAllowed(url.pathname, request.method || "GET")) {
       sendJson(response, 403, { ok: false, error: "Esta seccion requiere permisos de administrador." });
       return;
     }
@@ -4225,7 +4235,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         sendBuffer(response, 200, cached.body, cached.contentType, request.method === "HEAD");
         return;
       }
-      const repaired = await fetchAndCacheMissingPriceChartingImage(db, fileName);
+      const repaired = readOnly ? null : await fetchAndCacheMissingPriceChartingImage(db, fileName);
       if (repaired) {
         sendBuffer(response, 200, repaired.body, repaired.contentType, request.method === "HEAD");
         return;
@@ -4246,10 +4256,11 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     const user: AuthenticatedUser = sessionUser || { ...(await operationalUser()), roles: ["admin"] };
 
-    if (["/stock", "/inventory/view", "/inventory/items", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
+    if (!readOnly && ["/stock", "/inventory/view", "/inventory/items", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
       if (await expireStoreOrders(db, user.businessId)) stockReadCache.delete(user.businessId);
     }
     if (url.pathname === "/store-settings") {
+      if (request.method === "GET" && canReadAdmin(user.roles)) { sendJson(response, 200, await getStoreSettings(db, "ultimoturno", user.businessId)); return; }
       if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
       if (request.method === "GET") { sendJson(response, 200, await getStoreSettings(db, "ultimoturno", user.businessId)); return; }
       if (request.method === "PUT") { sendJson(response, 200, await saveStoreSettings(db, await readJson(request, 8192), user)); return; }
@@ -4257,7 +4268,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/users" && request.method === "GET") {
-      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      if (!canReadAdmin(user.roles)) throw Object.assign(new Error("Se requiere acceso al panel."), { statusCode: 403 });
       sendJson(response, 200, await listManagedUsers(db, user.businessId));
       return;
     }
@@ -4284,7 +4295,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     if (url.pathname === "/users" && request.method === "POST") {
       if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
-      const body = await readJson<{ displayName: string; email: string; password: string; role: "admin" | "stock_owner" }>(request);
+      const body = await readJson<{ displayName: string; email: string; password: string; role: "admin" | "stock_owner" | "admin_readonly" }>(request);
       sendJson(response, 201, { user: await createManagedUser(db, body, user) });
       return;
     }
@@ -4370,13 +4381,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/auth/me") {
-      sendJson(response, 200, { user, roles: user.roles || ["admin"], environment: { dataProfile, allowExamples } });
+      sendJson(response, 200, { user, roles: user.roles || ["admin"], environment: { dataProfile, allowExamples: allowExamples && !readOnly } });
       return;
     }
 
     if (url.pathname === "/inventory/intake-search" && request.method === "GET") {
       const query = normalizeIntakeSearchQuery(Object.fromEntries(url.searchParams));
-      if (!user.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+      if (!canReadAdmin(user.roles) && !user.roles?.includes("stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
       sendJson(response, 200, await inventoryIntakeSearch(
         () => readCatalogSearch(db, query.query, 30, query.languageGroup, false),
         () => searchInventoryIntakeCandidates(db, user, query, 60)
@@ -4385,9 +4396,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/inventory/view" && request.method === "GET") {
-      if (!user.roles?.some(role => role === "admin" || role === "stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
+      if (!canReadAdmin(user.roles) && !user.roles?.includes("stock_owner")) throw Object.assign(new Error("No autorizado."), { statusCode: 403 });
       const rate = await getBlueExchangeRate();
-      const stock = user.roles.includes("admin") ? await readStockForRequest(db, user.businessId, url.searchParams.get("fresh") === "1") : await listStockForActor(db, user);
+      const stock = readOnly ? await listStockForBusiness(db, user.businessId) : user.roles?.includes("admin") ? await readStockForRequest(db, user.businessId, url.searchParams.get("fresh") === "1") : await listStockForActor(db, user);
       const view = inventoryView(revalueInventoryFolders(stock, rate.sell), rate, Object.fromEntries(url.searchParams));
       if ("metadata" in view) {
         const names = await db.query<{ user_id: string; display_name: string }>("select u.id as user_id, u.display_name from reseller_profiles rp join app_users u on u.id=rp.user_id and u.business_id=rp.business_id where rp.business_id=$1 and u.active=true order by u.display_name,u.id", [user.businessId]);
@@ -4404,7 +4415,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/stock" && request.method === "GET") {
-      const stock = user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId, url.searchParams.get("fresh")==="1");
+      const stock = readOnly ? await listStockForBusiness(db, user.businessId) : user.roles?.includes("stock_owner") && !user.roles.includes("admin") ? await listStockForActor(db, user) : await readStockForRequest(db, user.businessId, url.searchParams.get("fresh")==="1");
       sendRevalidatedJson(response, revalueInventoryFolders(stock, (await getBlueExchangeRate()).sell));
       return;
     }
@@ -4646,7 +4657,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     if (url.pathname === "/order-boards" && request.method === "GET") {
-      sendJson(response, 200, await getOrderBoards(db, user.businessId));
+      sendJson(response, 200, await getOrderBoards(db, user.businessId, { readOnly }));
       return;
     }
     if (url.pathname === "/order-boards" && request.method === "POST") {

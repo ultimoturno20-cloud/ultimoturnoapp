@@ -1,5 +1,16 @@
 # Traspaso de contexto - UltimoTurno
 
+## Continuidad de accesos - 2026-10-27
+
+PR #34 integrado por autorizacion expresa del usuario el 23/10, online 266015b
+con DB accesible: cobro conserva Inventario y refrescar conserva pagina.
+Issue #35: usuario solicita cuenta para ver plataforma al preparar v2.0 y acepta
+email interno aleatorio. Rama codex/admin-readonly, rol separado sin admin y
+guardas de escritura/lecturas sin efectos secundarios. Detalle y evidencia en
+ADMIN_READONLY.md. No crear cuenta ni publicar hasta confirmar datos reales y
+autorizacion de despliegue solicitadas en chat. No guardar credenciales en Git.
+PR #32 del slider sigue separado. Este pedido no implementa v2.0 ni cierra OP.
+
 ## Codex + Claude Code - 2026-10-16
 
 El usuario pide trabajo paralelo en esta PC. Reglas comunes en AGENTS.md;

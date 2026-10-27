@@ -881,3 +881,13 @@ solo filtros/tamano reinician y resultados reducidos ajustan a la ultima pagina.
 Detalle tecnico y limites: docs/new-platform/INVENTORY_NAVIGATION.md.
 Entregar por PR/CI y merge humano; luego comparar SHA y salud DB online.
 El PR #32 del slider de Ordenes sigue separado y pendiente al iniciar esta tarea.
+
+## Acceso para inspeccion de v2.0 - 2026-10-27
+
+Issue #35, rama codex/admin-readonly desde 266015b. Preparar entrega del rol
+Observador con check:new, revision y PR. No es un admin completo ni otra base.
+Email interno aleatorio aceptado; falta confirmacion de datos reales/publicacion
+antes de crear la cuenta. Credenciales solo por canal privado, nunca Git/chat.
+Ver docs/new-platform/ADMIN_READONLY.md para guardas, pruebas y operacion de alta.
+El PR #34 ya esta integrado/online desde el 23/10 por autorizacion explicita;
+PR #32 sigue separado. No reiniciar ni dar por terminado el plan de optimizacion.
