@@ -1346,6 +1346,62 @@ export async function createManagedUser(db: PGlite, input: {
   return created;
 }
 
+export interface IsolatedStockUserInput {
+  requestId: string;
+  businessName: string;
+  displayName: string;
+  email: string;
+  password: string;
+}
+
+export async function createIsolatedStockUser(db: PGlite, input: IsolatedStockUserInput, actor: AuthenticatedUser): Promise<{
+  created: boolean;
+  business: { id: string; name: string; slug: string };
+  user: ManagedUser;
+}> {
+  if (!actor.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+  if (!input || typeof input !== "object" || [input.requestId, input.businessName, input.displayName, input.email, input.password].some(value => typeof value !== "string")) {
+    throw Object.assign(new Error("Datos de alta incompletos."), { statusCode: 400 });
+  }
+  const requestId = input.requestId.toLowerCase();
+  const businessName = input.businessName.trim();
+  const displayName = input.displayName.trim();
+  const email = input.email.trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestId) || requestId === actor.businessId
+    || !businessName || businessName.length > 120 || !displayName || displayName.length > 120 || displayName.toLowerCase() === "sistema local"
+    || !/^[^\s@]+@[^\s@]+$/.test(email) || email.length > 254 || input.password.length < 10 || input.password.length > 256) {
+    throw Object.assign(new Error("Revisa el identificador, nombre, email y password del alta independiente."), { statusCode: 400 });
+  }
+  return inventoryTransaction(db, async connection => {
+    // Only the main business can provision a tenant; lock it to serialize retries.
+    const main = await connection.query("select id from businesses where id=$1 and slug=$2 for update", [actor.businessId, localBusinessSlug]);
+    if (!main.rows[0]) throw Object.assign(new Error("El alta independiente requiere un administrador de UltimoTurno."), { statusCode: 403 });
+    const slug = `stock-${requestId}`;
+    const existing = await connection.query<{ id: string; name: string; slug: string }>("select id,name,slug from businesses where id=$1", [requestId]);
+    if (existing.rows[0]) {
+      const users = (await listManagedUsers(connection, requestId)).users;
+      const user = users[0];
+      if (existing.rows[0].slug !== slug || existing.rows[0].name !== businessName || users.length !== 1 || !user.active
+        || user.email !== email || user.displayName !== displayName || user.roles.length !== 1 || user.roles[0] !== "stock_owner") {
+        throw Object.assign(new Error("El identificador de alta ya fue utilizado con otros datos."), { statusCode: 409 });
+      }
+      return { created: false, business: existing.rows[0], user };
+    }
+    // Login uses email across businesses, so never reuse an existing identity.
+    const duplicate = await connection.query("select id from app_users where lower(email)=lower($1) limit 1", [email]);
+    if (duplicate.rows[0]) throw Object.assign(new Error("Ya existe un usuario con ese email."), { statusCode: 409 });
+    const userId = crypto.randomUUID();
+    const roleId = crypto.randomUUID();
+    await connection.query("insert into businesses (id,name,slug) values ($1,$2,$3)", [requestId, businessName, slug]);
+    await connection.query("insert into roles (id,business_id,name,description) values ($1,$2,'stock_owner','Usuario con inventario propio')", [roleId, requestId]);
+    await connection.query("insert into app_users (id,business_id,display_name,email,password_hash,active) values ($1,$2,$3,$4,$5,true)", [userId, requestId, displayName, email, hashPassword(input.password)]);
+    await connection.query("insert into user_roles (user_id,role_id) values ($1,$2)", [userId, roleId]);
+    await writeAudit(connection, actor, "user.create-isolated-stock", "app_user", userId, null, { businessId: requestId, displayName, email, role: "stock_owner" });
+    const user = (await listManagedUsers(connection, requestId)).users[0];
+    return { created: true, business: { id: requestId, name: businessName, slug }, user };
+  });
+}
+
 export async function createReseller(db: PGlite, input: {
   displayName: string;
   email: string;

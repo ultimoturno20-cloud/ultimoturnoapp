@@ -1,5 +1,20 @@
 # UltimoTurno - estado actual
 
+## Alta de stock independiente - 2026-10-30
+
+Issue #37, rama codex/isolated-stock-user, base main/produccion 266015b.
+Se solicita otra cuenta con inventario totalmente separado; Stock propio dentro
+del negocio principal no alcanza porque los admins ven/venden ese stock.
+Se prepara POST /users/isolated-stock: negocio vacio nuevo y rol stock_owner,
+sin copiar operaciones ni permisos admin. Transaccion, requestId idempotente,
+password intacta en reintentos y pruebas de aislamiento por negocio.
+Detalle en docs/new-platform/ISOLATED_STOCK_ACCOUNTS.md. Gate check:new: 298 tests,
+lint/tipos/DB verify/build OK; ocho regresiones finales y Chrome aislado en cinco
+anchos, alta/carga/consulta/recarga/logout y stock central intacto comprobados.
+Pendiente revision, aprobacion, release y luego alta real privada. No se creo
+la cuenta ni credenciales reales. No hay migraciones ni cambios de UI.
+PR #32 y observador #36 siguen separados y no se integran con este pedido.
+
 Actualizado: 2026-10-16
 
 ## Coordinacion Codex + Claude

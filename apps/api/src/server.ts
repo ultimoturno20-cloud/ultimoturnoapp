@@ -49,6 +49,8 @@ import {
   createPurchase,
   createSale,
   createManagedUser,
+  createIsolatedStockUser,
+  type IsolatedStockUserInput,
   createReseller,
   createResellerStockRequest,
   createResellerOrder,
@@ -4279,6 +4281,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     if (tournamentRoute && request.method === "PUT") {
       const body = await readJson<{ version: number; command: TournamentCommand }>(request);
       sendJson(response, 200, { tournament: await commandTournament(db,tournamentRoute[1],body,user) });
+      return;
+    }
+
+    if (url.pathname === "/users/isolated-stock" && request.method === "POST") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const result = await createIsolatedStockUser(db, await readJson<IsolatedStockUserInput>(request, 8192), user);
+      sendJson(response, result.created ? 201 : 200, result);
       return;
     }
 

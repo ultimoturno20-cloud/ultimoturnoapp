@@ -1,5 +1,17 @@
 # Traspaso de contexto - UltimoTurno
 
+## Stock Independiente - 2026-10-30
+
+Usuario pide cuenta capaz de cargar stock en un espacio totalmente separado y
+acepta email interno aleatorio. Issue #37, codex/isolated-stock-user, base
+main 266015b. Alta administrativa transaccional de negocio vacio y cuenta con
+solo stock_owner, sin copiar datos ni permisos. Detalle de alcance, limites,
+requestId y reintentos en ISOLATED_STOCK_ACCOUNTS.md. Gate check:new aprobado:
+298 tests, lint/tipos/DB verify/build; ocho regresiones finales y Chrome local
+en cinco anchos, carga/consulta/recarga/logout y stock central intacto.
+No cuenta real ni password generada. Release requiere aprobacion humana. No mezclar el
+observador pendiente del PR #36 o el slider del #32.
+
 ## Codex + Claude Code - 2026-10-16
 
 El usuario pide trabajo paralelo en esta PC. Reglas comunes en AGENTS.md;
