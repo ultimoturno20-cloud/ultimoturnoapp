@@ -1,5 +1,15 @@
 # UltimoTurno - proximos pasos
 
+## Cuenta Independiente - 2026-10-30
+
+Continuar issue #37 en codex/isolated-stock-user, base 266015b. Alta de otro
+negocio con stock_owner, no otro propietario dentro del stock de UltimoTurno.
+Cerrar pruebas/PR y solicitar integracion humana antes del alta real; verificar
+SHA desplegado y DB. Crear credenciales solo en archivo privado con ACL,
+preservando requestId ante respuestas inciertas. No cargar ejemplos en produccion.
+Ver ISOLATED_STOCK_ACCOUNTS.md. No mergear #32 o #36 por esta solicitud ni
+reiniciar/cerrar el plan de optimizacion.
+
 Actualizado: 2026-10-16
 
 > Usar primero el orden de continuidad y el prompt de este documento.
