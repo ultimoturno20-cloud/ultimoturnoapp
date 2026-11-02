@@ -3,6 +3,18 @@
 Vigente desde 2026-10-16. Reglas comunes en AGENTS.md; CLAUDE.md remite alli.
 No reemplaza NEXT_STEPS ni OPTIMIZATION_PLAN, y no agrega un backlog paralelo.
 
+## Estado al 2026-11-02
+
+Preparacion integrada por [PR #28](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/28)
+en 4215399 el 16/10. Main/produccion actuales: a4c839e, con #34 y #38 tambien
+integrados; #32 sigue abierto y #36 draft. Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para evidencia
+y pendientes. No volver a pedir el merge de preparacion ni confundir un check
+verde de una rama anterior con integracion/revalidacion contra main actual.
+Los merges de #34/#38 tuvieron autorizacion expresa del usuario para esas
+entregas; no son permiso permanente para integrar otros PR o autoaprobarse.
+No se modificaron las protecciones ni se verifico una nueva separacion tecnica
+de identidades GitHub. Esta sigue pendiente y no se deduce de los worktrees.
+
 ## Fuente de verdad y responsabilidades
 
 GitHub conserva codigo integrado en main, propuestas en PRs y asignaciones en
@@ -23,15 +35,15 @@ division al usuario; se puede avanzar en pruebas o areas realmente independiente
 
 ## Carpetas de esta PC
 
-| Agente | Checkout | Rama inicial |
+| Agente | Checkout | Uso de rama |
 |---|---|---|
-| Codex | D:\UltimoTurno\Stock | codex/colaboracion-claude |
-| Claude Code | D:\UltimoTurno\Stock-claude | claude/preparacion-local |
+| Codex | D:\UltimoTurno\Stock | codex/<tarea>, nueva desde origin/main |
+| Claude Code | D:\UltimoTurno\Stock-claude | claude/preparacion-local aun sin tarea funcional; crear rama propia nueva cuando se asigne |
 
 Ambas carpetas son worktrees del mismo repositorio GitHub, no aplicaciones ni
 bases nuevas. La rama inicial de Claude parte de la preparacion compartida y
-no tiene tarea funcional asignada. Esperar el merge humano del PR de preparacion
-antes de crear la primera rama funcional desde origin/main actualizado.
+no tiene tarea funcional asignada. La preparacion ya esta integrada: actualizar
+refs y crear una rama funcional desde origin/main solo con tarea asignada.
 No reutilizar claude/preparacion-local para desarrollo ni asumir que sera
 ancestro de main: squash/rebase cambian la historia. Crear una rama NUEVA
 desde origin/main despues del merge, sin resetear ni forzar la de preparacion.
@@ -184,7 +196,15 @@ enforce_admins=true, conversaciones resueltas, sin force-push ni borrado.
 Aprobaciones GitHub requeridas: 0; la decision de merge sigue siendo humana.
 Esta evidencia no garantiza que las reglas no cambien despues.
 
-## Previews: bloqueo operativo
+## Previews: Estado y Limites
+
+El bloqueo identificado el 16/10 quedo cerrado por confirmacion humana guiada
+por capturas del ajuste de scopes/redeploy y eliminacion del Preview 0e19d5b:
+[evidencia](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/28#issuecomment-6214603874).
+Fue suficiente para liberar esa entrega, no una auditoria autenticada de todos
+los proyectos, variables compartidas, overrides o despliegues de la cuenta.
+No se abrio el Preview para probarlo. La configuracion Git sigue limitando
+auto-deploy a main; no se habilitaron nuevos previews en esta consolidacion.
 
 La revision detecto que la API importa server.js al primer request;
 createOperationalDatabase aplica
@@ -199,23 +219,22 @@ las demas ramas con **. Las reglas Vercel permiten un match true sobre false:
 main sigue habilitada. No bloquea CLI/manual ni modifica variables remotas.
 Comprobar el resultado del proximo push; no inferir que un preview viejo se retiro.
 
-Pendiente del usuario/integrador en Vercel, ANTES de habilitar previews o
-avanzar a PRs funcionales con migraciones:
+Para habilitar futuros previews, el usuario/integrador debe comprobar en Vercel:
 
-1. Editar DATABASE_URL y PRICECHARTING_TOKEN para quitar SOLO Preview,
-   conservando Production y sus valores. Revisar tambien variables compartidas
+1. Comprobar que DATABASE_URL y PRICECHARTING_TOKEN productivos no alcancen
+   Preview, conservando Production y sus valores. Revisar variables compartidas
    del equipo, integraciones, overrides por rama y otros proyectos del mismo repo.
-2. Revisar/retirar previews anteriores que heredaron esas variables sin tocar
-   despliegues Production. Cambiar scopes NO cambia despliegues ya creados.
+2. Revisar previews anteriores que heredaron esas variables; retirar solo los
+   explicitamente autorizados, sin tocar Production. Cambiar scopes NO cambia despliegues ya creados.
    No abrirlos para probar: su primer request puede ejecutar inicializacion.
 3. Registrar evidencia de nombres/entornos y estado de previews, nunca secretos.
    Si se habilita QA remoto futuro, usar credenciales/recursos aislados y sin
    permisos sobre produccion, con workers desactivados. No requiere otra base
    real de UltimoTurno: mientras tanto toda QA sigue en PGlite local temporal.
 
-No se verifico aun la correccion del alcance ni el retiro de previews antiguos. El PR de
-preparacion no se considera listo para merge hasta resolver ese punto operativo.
-No agregar deploys productivos al CI de PRs ni forzar un redeploy de Production.
+La correccion y retiro del Preview identificado se confirmaron humanamente,
+sin extender esa evidencia a toda la cuenta ni a futuros despliegues. No agregar
+deploys productivos al CI de PRs ni forzar redeploys para documentar continuidad.
 
 Referencias: [Git por rama](https://vercel.com/docs/project-configuration/git-configuration)
 y [alcance de variables y despliegues existentes](https://vercel.com/docs/environment-variables).
@@ -227,7 +246,7 @@ Trabaja en D:\UltimoTurno\Stock-claude, worktree del remoto
 ultimoturno20-cloud/ultimoturnoapp. Lee CLAUDE.md, AGENTS.md y los documentos
 obligatorios. Revisa status/log/remote/worktrees y public-status sin credenciales.
 No uses C:\Users\skype\Documents\Stock ni edites el checkout de Codex.
-Primero confirma que el PR de preparacion ya se integro y fetch origin.
+La preparacion #28 ya se integro. Ejecuta fetch origin y confirma SHA/estado actual.
 Espera mi asignacion de issue, OP ID y alcance; no tomes automaticamente Ordenes.
 Crea claude/<tarea> desde origin/main limpio. No toques hotspots ocupados.
 Prueba en base temporal sin secretos; entrega commit, push y PR, sin merge.

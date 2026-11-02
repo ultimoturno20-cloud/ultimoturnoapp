@@ -1,21 +1,84 @@
 # UltimoTurno - estado actual
 
-## Alta de stock independiente - 2026-10-30
+Actualizado: 2026-11-02. Consolidacion documental; no altas ni QA operativa real.
 
-Issue #37, rama codex/isolated-stock-user, base main/produccion 266015b.
-Se solicita otra cuenta con inventario totalmente separado; Stock propio dentro
-del negocio principal no alcanza porque los admins ven/venden ese stock.
-Se prepara POST /users/isolated-stock: negocio vacio nuevo y rol stock_owner,
-sin copiar operaciones ni permisos admin. Transaccion, requestId idempotente,
-password intacta en reintentos y pruebas de aislamiento por negocio.
-Detalle en docs/new-platform/ISOLATED_STOCK_ACCOUNTS.md. Gate check:new: 298 tests,
-lint/tipos/DB verify/build OK; ocho regresiones finales y Chrome aislado en cinco
-anchos, alta/carga/consulta/recarga/logout y stock central intacto comprobados.
-Pendiente revision, aprobacion, release y luego alta real privada. No se creo
-la cuenta ni credenciales reales. No hay migraciones ni cambios de UI.
-PR #32 y observador #36 siguen separados y no se integran con este pedido.
+## Estado Confirmado
 
-Actualizado: 2026-10-16
+GitHub y public-status releidos el 02/11: origin/main y produccion estan en
+a4c839ecf82db1afedbe181a13cd13156bf8b963 (a4c839e). HTTP 200, ok=true,
+DATABASE_URL configurada, databaseReachable y rawPostgres.reachable verdaderos;
+stock, ventas y cartas de claim presentes. No es un censo de sus cantidades.
+CI check del merge tambien success. No evaluar salud solo por HTTP 200/ok=true.
+La rama documental codex/docs-continuity-20261102 no esta desplegada por existir
+o publicarse: su integracion necesita autorizacion propia. Seguimiento issue #39.
+
+| Entrega | Estado al 02/11 | Referencia |
+|---|---|---|
+| Colaboracion Codex/Claude | Integrada el 16/10; reglas compartidas, worktrees hermanos y auto-deploy Git solo main | [PR #28](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/28), merge 4215399 |
+| Cobro y pagina de Inventario | Online: cobrar conserva Inventario; refresh/F5 conserva pagina y filtros por cuenta | [PR #34](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/34), merge 266015b |
+| Slider de Ordenes | PR abierto, no integrado ni online | [PR #32](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/32), head 288fbd4 |
+| Observador administrativo | PR en borrador, no integrado, sin cuenta real confirmada | [PR #36](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/36), head c26108d |
+| Alta de stock independiente | Codigo integrado y online el 30/10; alta real aun no confirmada por autenticacion | [PR #38](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/38), head 477d8a9, merge a4c839e |
+
+Los checks verdes de #32/#36 corresponden a sus heads anteriores, no acreditan
+su integracion con main actual. Actualizar/revisar antes de decidir cada merge.
+Las autorizaciones expresas para #34/#38 no incluyen #32, #36 ni futuras tareas.
+QA registrada en las entregas originales: #34, 290 tests; #36, 297 tests; #38,
+298 tests y ocho regresiones finales, mas navegador aislado en cinco anchos.
+Esas cifras describen cada entrega, no un nuevo release. La verificacion de
+esta consolidacion documental se registra por separado en su propio PR.
+
+## Cuenta Independiente
+
+Se entrego POST /users/isolated-stock: negocio vacio distinto y cuenta con solo
+stock_owner. No es agregar un propietario al negocio de UltimoTurno, cuyos
+administradores ven/venden ese stock; tampoco es el Observador del PR #36.
+La separacion es logica por business_id, no una base fisica ni otra tienda.
+Detalle y limites en [ISOLATED_STOCK_ACCOUNTS.md](new-platform/ISOLATED_STOCK_ACCOUNTS.md).
+
+El usuario autorizo integrar y crear la cuenta el 30/10. El merge y despliegue
+se completaron; el alta no quedo confirmada y la clave administrativa local
+devolvio 401. Existe una solicitud privada con requestId y credencial aleatoria,
+protegida por ACL y fuera de Git; no existe el archivo final de acceso ni se
+confirmo login de la cuenta. Conservar esa solicitud: no generar otra identidad,
+no cambiar requestId y no resetear passwords para resolver una respuesta incierta.
+La comprobacion de otra fuente de credenciales fue bloqueada; la autorizacion
+solicitada despues no fue respondida. El pedido documental del 02/11 no la
+concede ni autoriza repetir el alta o consultar secretos. Evidencia:
+[cierre operativo del PR #38](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/38#issuecomment-6532947327).
+Issue #37 cerrado por el merge acredita entrega del codigo, no una cuenta activa.
+
+## Grillas Entregadas
+
+- 28/10: cuatro PNG, 61 referencias y 331 unidades de la lista proporcionada,
+  cantidades/precios unitarios USD conservados. 59 imagenes y dos fichas de
+  Yu-Gi-Oh pendientes de edicion; sin imagen inventada ni importacion a stock.
+- 29/10: 18 PNG desde CSV, 397 filas conservadas en 273 fichas agrupadas por
+  identidad/precio. Se uso la columna precio, no 75%/80%; 273 imagenes,
+  65 de referencia base indicadas expresamente para no fingir el acabado.
+- ZIP, imagenes, HTML, verificacion y generadores quedaron localmente bajo
+  .work, ignorados por Git. No son productos publicados, un modulo nuevo del
+  panel ni cotizaciones actualizadas al dia. No subir CSV, precios detallados,
+  archivos operativos o solicitudes privadas a este repositorio publico.
+
+## Pendientes Operativos
+
+- Backups: ultima corrida consultada, 01/11, failure en Check secrets.
+  Falta o esta vacio al menos uno de SUPABASE_DB_URL/BACKUP_PASSPHRASE;
+  no se leyeron valores ni se identifico cual. No afirmar backup recuperable
+  por existir el cron. [Run](https://github.com/ultimoturno20-cloud/ultimoturnoapp/actions/runs/41316920382),
+  procedimiento y limites en [BACKUPS.md](BACKUPS.md).
+- CoolStuff: ultima corrida consultada, 01/11, success. No implica cobertura
+  completa, precios correctos de cada carta ni cierre automatico del incidente
+  [#30](https://github.com/ultimoturno20-cloud/ultimoturnoapp/issues/30).
+  [Run](https://github.com/ultimoturno20-cloud/ultimoturnoapp/actions/runs/41314574410).
+- Dependencias: [#29](https://github.com/ultimoturno20-cloud/ultimoturnoapp/issues/29)
+  sigue abierto. No se aplicaron actualizaciones ni audit fix por documentar.
+- Optimizacion: sigue OP-1.4c.2b, empezando por Ordenes; luego OP-1.5 y etapas
+  2-5. Cuentas, grillas y correcciones de navegacion no completan esos OP.
+
+Las secciones siguientes conservan contexto de entregas previas. Este estado
+fechado reemplaza sus pendientes de integracion/Preview cuando se contradigan.
 
 ## Coordinacion Codex + Claude
 
@@ -28,7 +91,7 @@ Se reemplaza el push directo a main por ramas/PR; online solo tras merge
 autorizado y verificacion del SHA resultante. El plan OP sigue sin reiniciarse.
 Baseline remoto verificado: main y produccion e233094, public-status ok=true,
 DB accesible, PILOTO REAL, ejemplos deshabilitados. Produccion no se usa para QA.
-Esta preparacion sigue pendiente de integracion mientras su PR no este mergeado.
+Esta preparacion quedo integrada por el PR #28 en 4215399 el 16/10.
 Proteccion remota aplicada y releida por API el 16/10: PR + check actualizado
 requeridos incluso para admin, conversaciones resueltas, sin force-push/borrado.
 No se exige autoaprobacion del unico propietario; merge humano por protocolo.
@@ -38,9 +101,10 @@ autorizacion a D:\UltimoTurno\Stock-claude, dependencias regeneradas y
 resolucion propia y typecheck aprobados; CI solo cancela PRs, main agrupa por SHA.
 Guia legacy reemplazada y orden tsc -b/tests/build aclarado. vercel.json limita
 auto-deploys Git a main, sin cambios de rutas, datos ni codigo de negocio.
-Bloqueo operativo: verificar aislamiento de credenciales en Preview conservando
-Production y retirar/revisar previews anteriores; sin evidencia de correccion.
-No abrir previews ni mergear la preparacion mientras siga ese pendiente.
+El bloqueo Preview de esa entrega se cerro por confirmacion humana guiada por
+capturas del ajuste de scopes y retiro del Preview anterior; no por una auditoria
+autenticada de toda la cuenta Vercel. Ver AGENT_COLLABORATION.md. Nuevos previews
+siguen deshabilitados y requieren comprobar aislamiento antes de habilitarlos.
 
 > Esta seccion reemplaza el estado fechado 2026-09-11 que se conserva mas abajo
 > como referencia historica.
