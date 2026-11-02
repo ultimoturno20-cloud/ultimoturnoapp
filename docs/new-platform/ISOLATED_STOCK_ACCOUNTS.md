@@ -1,7 +1,33 @@
 # Cuentas con stock independiente
 
-Propuesta del 2026-10-30, issue #37. Basada en main 266015b; no desplegada.
-No equivale al observador del PR #36 ni cambia el plan OP de optimizacion.
+Actualizado: 2026-11-02. Codigo online; alta real aun no confirmada.
+
+Issue #37; [PR #38](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/38)
+integrado con autorizacion expresa del usuario el 30/10. Head 477d8a9, base
+266015b y merge a4c839ecf82db1afedbe181a13cd13156bf8b963. El 02/11 se
+reconfirmaron ese SHA en produccion, DB configurada/accesible y CI success.
+No equivale al Observador pendiente del PR #36 ni cambia el plan OP.
+
+## Estado del Alta Real
+
+La autorizacion del usuario para integrar y crear la cuenta fue recibida; el
+release ya se completo. El intento operativo no quedo confirmado y el acceso
+administrativo local devolvio 401. Evidencia:
+[cierre operativo](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/38#issuecomment-6532947327).
+
+Ya existe una solicitud local privada con requestId y credencial aleatoria,
+protegida por ACL y fuera de Git. No existe el archivo final de acceso ni un
+login confirmado de la cuenta. No describirla como creada/lista, ni afirmar
+que no se genero ninguna credencial local. No abrir o copiar la solicitud para
+esta documentacion; no exponer nombre/email/password o identificadores privados.
+
+La consulta de una fuente alternativa de credenciales fue bloqueada; sigue
+pendiente la autorizacion expresa solicitada al usuario. El pedido documental
+del 02/11 no la concede ni permite volver a ejecutar POST/login productivos, cambiar secretos
+o buscar credenciales de Windows/navegador/otros entornos. Para continuar el alta
+se requiere autenticacion vigente y autorizada. Usar la MISMA solicitud: no
+generar otro requestId, otra identidad ni resetear passwords. Issue #37 cerrado
+por merge representa el codigo entregado, no prueba que la cuenta este activa.
 
 ## Separacion
 
@@ -55,9 +81,11 @@ alterados no se reactiva silenciosamente al reintentar.
 
 ## Operacion Segura
 
-Antes del alta real: aprobar el PR, verificar CI e integrar con autorizacion
-humana. Confirmar el SHA resultante en public-status y DB configurada/accesible.
-Generar email/password nuevos de forma criptograficamente aleatoria y guardar
+En cualquier alta nueva: aprobar el PR pertinente, verificar CI e integrar con
+autorizacion humana. Para #38 esos pasos ya estan completos; no repetirlos ni
+generar otra solicitud para el intento pendiente. Confirmar siempre el SHA
+resultante en public-status y DB configurada/accesible antes de operar.
+Para una solicitud realmente nueva, generar email/password aleatorios y guardar
 el requestId y la solicitud en un archivo privado con ACL restringida ANTES
 del POST. La password solo en ese archivo privado; nunca en Git, PR, chat o logs.
 Si la respuesta es incierta, conservar la solicitud y reintentar exactamente

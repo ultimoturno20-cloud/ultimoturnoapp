@@ -1,6 +1,16 @@
 # Plan de optimizacion de UltimoTurno
 
-Actualizado: 2026-10-16
+Actualizado: 2026-11-02 (revision documental; ultimo avance OP del 16/10).
+
+## Continuidad del Plan
+
+La consolidacion de chats/PR confirma main y produccion en a4c839e: #28,
+#34 y #38 integrados; #32/#36 no integrados. Estas entregas y las grillas
+locales no completan nuevos OP. Se conservan literalmente los IDs y estados
+del checklist: sigue OP-1.4c.2b, empezando por Ordenes, luego OP-1.5 y etapas
+2-5. No se implemento optimizacion adicional ni se midio latencia productiva
+por esta revision. Estado de cuentas, autenticacion y workflows en
+[PROJECT_STATUS.md](PROJECT_STATUS.md) y [NEXT_STEPS.md](NEXT_STEPS.md).
 
 ## Objetivo y alcance
 

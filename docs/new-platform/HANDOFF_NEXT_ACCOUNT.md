@@ -1,16 +1,50 @@
 # Traspaso de contexto - UltimoTurno
 
-## Stock Independiente - 2026-10-30
+## Continuidad Confirmada - 2026-11-02
 
-Usuario pide cuenta capaz de cargar stock en un espacio totalmente separado y
-acepta email interno aleatorio. Issue #37, codex/isolated-stock-user, base
-main 266015b. Alta administrativa transaccional de negocio vacio y cuenta con
-solo stock_owner, sin copiar datos ni permisos. Detalle de alcance, limites,
-requestId y reintentos en ISOLATED_STOCK_ACCOUNTS.md. Gate check:new aprobado:
-298 tests, lint/tipos/DB verify/build; ocho regresiones finales y Chrome local
-en cinco anchos, carga/consulta/recarga/logout y stock central intacto.
-No cuenta real ni password generada. Release requiere aprobacion humana. No mezclar el
-observador pendiente del PR #36 o el slider del #32.
+Pedido vigente: actualizar registros. No es una respuesta afirmativa a la
+pregunta pendiente sobre otra fuente de credenciales, ni autoriza altas nuevas.
+Repositorio unico D:\UltimoTurno\Stock; Claude en Stock-claude, sin modificarlo.
+origin/main y produccion a4c839ecf82db1afedbe181a13cd13156bf8b963, Postgres
+configurado y accesible, stock/ventas/claim presentes en public-status.
+
+- #28 integrado en 4215399: colaboracion y bloqueo de auto-deploy Git fuera
+  de main. Cierre Preview por confirmacion humana/capturas, no auditoria total.
+- #34 integrado en 266015b: cobrar conserva Inventario y refresh/F5 conserva
+  pagina. #32 del slider sigue abierto, head 288fbd4; no esta online.
+- #36 Observador sigue draft, head c26108d, CI success de ese head y 297 tests
+  locales de la entrega. No integrado ni cuenta real confirmada; alcance sobre
+  datos reales y release pendientes. Su guia vive en ese PR, no copiar su codigo
+  o documentos a main como parte de otra tarea.
+- #38 integrado con autorizacion expresa el 30/10 en a4c839e: alta de otro
+  negocio vacio y cuenta con solo stock_owner. 298 tests y ocho regresiones
+  finales, navegador en cinco anchos y CI success. Sin migraciones ni UI nueva.
+  No confundir head 477d8a9 con merge a4c839e. No es un admin de otro negocio,
+  un observador ni una nueva tienda; ver [ISOLATED_STOCK_ACCOUNTS.md](ISOLATED_STOCK_ACCOUNTS.md).
+
+Alta real independiente aun NO confirmada. El acceso local devolvio 401.
+Existe solicitud con requestId y password aleatoria en archivo privado con ACL,
+pero no archivo final de acceso ni login confirmado. NO generar otra identidad,
+NO cambiar requestId ni resetear passwords. La consulta de credenciales de otra
+fuente fue bloqueada y requiere autorizacion expresa aun pendiente. No leer
+solicitudes/passwords para documentar; no copiar sus valores ni datos personales
+a Git, PR o chat. Esta revision no reintento autenticacion ni altas productivas.
+Issue #37 cerrado por merge no prueba que la cuenta este activa. Evidencia:
+[comentario de release](https://github.com/ultimoturno20-cloud/ultimoturnoapp/pull/38#issuecomment-6532947327).
+
+Entregas locales: cuatro grillas PNG del 28/10 (61 fichas, 59 imagenes y dos
+Yu-Gi-Oh pendientes de edicion), y 18 PNG desde CSV del 29/10 (397 filas,
+273 fichas, precios de columna precio en USD sin 75%/80%; 65 imagenes base
+etiquetadas). Archivos/generadores/ZIP en .work ignorado; no importaron stock,
+no son precios de hoy ni se suben datos operativos a Git.
+
+Pendientes: backup del 01/11 fallo en Check secrets; no asegurar backups
+recuperables sin prueba aislada. CoolStuff tuvo ultimo run success el 01/11,
+pero issue #30 sigue abierto y no se verifico cobertura; #29 dependencias abierto.
+Siguiente OP sin cambios: OP-1.4c.2b (Ordenes primero), OP-1.5 y etapas 2-5.
+La consolidacion documental es issue #39, rama codex/docs-continuity-20261102,
+se entrega por PR propio y requiere integracion propia. No reutilizar las
+autorizaciones de #34/#38.
 
 ## Codex + Claude Code - 2026-10-16
 
@@ -24,13 +58,15 @@ ni pushes directos a main: usuario integra con CI aprobado. Verificar online
 solo despues del merge autorizado, contra el SHA resultante de main.
 Este protocolo reemplaza instrucciones anteriores de push/deploy por entrega;
 conserva commit, push y pruebas, pero distingue PR pendiente de produccion.
-Preparacion basada en e233094, sin nueva funcionalidad ni QA sobre datos reales.
+Preparacion basada en e233094, integrada en 4215399 por #28 el 16/10,
+sin nueva funcionalidad ni QA sobre datos reales.
 Proximo alcance funcional sigue OP-1.4c.2b (Ordenes primero), no asignado aun.
 Revision de Claude: CI no cancela commits de main y typecheck/tsc -b ya emite
 paquetes antes de tests; no hay que mover el build final. Guia legacy retirada.
-Vercel: verificar/corregir alcance Preview y revisar despliegues anteriores, sin tocar
-Production. vercel.json limita auto-deploy Git a main, no retira previews viejos
-ni cambia variables remotas. No mergear preparacion hasta verificar aislamiento.
+Vercel: el bloqueo de esa entrega se cerro por confirmacion humana guiada por
+capturas del ajuste de scopes y retiro del Preview identificado. No acredita
+auditoria integral de toda la cuenta. vercel.json limita auto-deploy Git a main;
+no habilitar nuevos previews sin recursos/credenciales aislados verificados.
 
 ## Optimizacion integral - 2026-10-14
 

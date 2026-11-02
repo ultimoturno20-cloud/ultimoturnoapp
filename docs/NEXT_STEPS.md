@@ -1,16 +1,39 @@
 # UltimoTurno - proximos pasos
 
-## Cuenta Independiente - 2026-10-30
+Actualizado: 2026-11-02. Pedido actual: consolidar registros, no reintentar altas.
 
-Continuar issue #37 en codex/isolated-stock-user, base 266015b. Alta de otro
-negocio con stock_owner, no otro propietario dentro del stock de UltimoTurno.
-Cerrar pruebas/PR y solicitar integracion humana antes del alta real; verificar
-SHA desplegado y DB. Crear credenciales solo en archivo privado con ACL,
-preservando requestId ante respuestas inciertas. No cargar ejemplos en produccion.
-Ver ISOLATED_STOCK_ACCOUNTS.md. No mergear #32 o #36 por esta solicitud ni
-reiniciar/cerrar el plan de optimizacion.
+## Continuidad Inmediata
 
-Actualizado: 2026-10-16
+Produccion y origin/main confirmados en a4c839e, con DB configurada/accesible.
+PR #28 (colaboracion), #34 (Inventario) y #38 (alta independiente) integrados.
+PR #32 (slider) abierto y #36 (Observador) en borrador: no estan en produccion.
+Los checks anteriores de esos PR no sustituyen actualizarlos contra main.
+Esta consolidacion se entrega por issue #39 y PR propio, sin asumir su merge.
+
+1. Cuenta independiente: el codigo ya esta online, pero el alta real no esta
+   confirmada por 401 de la clave administrativa local. No volver a mergear #38.
+   Conservar la solicitud privada ya creada y su requestId/password; no generar
+   otra cuenta ni resetear acceso. Antes de reintentar se necesita autenticacion
+   vigente/autorizada. La consulta de otra fuente de credenciales sigue sin
+   autorizacion expresa; este pedido documental no la concede. No enviar secretos
+   por chat/Git. Ver [ISOLATED_STOCK_ACCOUNTS.md](new-platform/ISOLATED_STOCK_ACCOUNTS.md).
+2. Revisar por separado #32 y #36 cuando el usuario lo decida. El Observador
+   requiere confirmar alcance sobre datos reales y release; su cuenta no se
+   creo. No confundirlo con stock_owner en otro negocio o con una v2.0 terminada.
+3. Backups: ultima ejecucion consultada fallo en Check secrets. Confirmar la
+   configuracion de los secretos requeridos con el responsable, sin pedir sus
+   valores por chat; diagnosticar y probar recuperacion en entorno aislado con
+   autorizacion. No ejecutar dump/restore, alterar secretos ni usar produccion
+   para pruebas por esta tarea. [BACKUPS.md](BACKUPS.md).
+4. Revisar #29 (dependencias) y #30 (incidente CoolStuff) como tareas separadas.
+   CoolStuff tuvo una ultima corrida success el 01/11: validar cobertura antes
+   de dar el incidente por cerrado, sin repricing productivo no solicitado.
+5. Proximo desarrollo del plan: OP-1.4c.2b, picker de Ordenes primero. Luego
+   los otros consumidores, OP-1.5 y etapas 2-5. Checklist y prioridades conservados.
+
+Las grillas del 28/29 de octubre ya fueron entregadas como archivos locales:
+no son una carga de inventario ni precios recotizados. Los datos y credenciales
+privados permanecen fuera de Git; no incluirlos al consolidar la historia.
 
 > Usar primero el orden de continuidad y el prompt de este documento.
 > Los detalles por sector conservan verificaciones pendientes, no autorizan
@@ -18,18 +41,17 @@ Actualizado: 2026-10-16
 
 ## Orden de continuidad
 
-Antes de nuevas tareas paralelas: integrar con autorizacion humana la preparacion
-Codex/Claude y seguir docs/AGENT_COLLABORATION.md. Cada tarea requiere propietario,
+La preparacion Codex/Claude ya esta integrada por #28; seguir
+docs/AGENT_COLLABORATION.md. Cada tarea requiere propietario,
 alcance y rama/worktree propios; no hay asignacion funcional automatica a Claude.
 AGENTS.md es comun; no duplicar reglas en CLAUDE.md. Ramas y PRs reemplazan pushes
 directos a main. Commit/push/CI por entrega; online se confirma despues del merge
 humano, comparando public-status con el SHA resultante de main.
 Revision de Claude: usar worktree hermano D:\UltimoTurno\Stock-claude, no el
-anidado anterior. Antes del merge de preparacion queda quitar Preview de las
-credenciales compartidas en Vercel y retirar/revisar previews antiguos; el usuario
-debe confirmar esa correccion sin publicar configuracion sensible ni valores.
-El PR agrega bloqueo de auto-deploy Git fuera de main; no modifica env remotas
-ni elimina previews existentes. No iniciar otro PR funcional con ese riesgo abierto.
+anidado anterior. El usuario confirmo el ajuste Preview y retiro del deployment
+identificado el 16/10; eso cerro el bloqueo operativo de #28, no acredita una
+auditoria integral de Vercel. Auto-deploy Git solo main. No abrir/habilitar
+previews sin volver a comprobar recursos y credenciales aislados.
 
 Plan de desarrollo solicitado el 14/10: docs/OPTIMIZATION_PLAN.md. Completar
 sus cinco etapas por IDs con pruebas/commit/push/PR y online tras merge autorizado.
