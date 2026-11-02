@@ -1,0 +1,27 @@
+name: Stock companion
+on:
+  pull_request:
+    paths:
+      - 'tools/stock-companion/**'
+      - 'scripts/start-stock-companion.cmd'
+      - '.github/workflows/stock-companion.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/stock-companion/**'
+      - '.github/workflows/stock-companion.yml'
+jobs:
+  companion:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --test tools/stock-companion/core.test.mjs tools/stock-companion/server.test.mjs
