@@ -46,7 +46,7 @@ cantidad editada, navegación a lotes, bloqueo de navegación externa, cierre,
 liberación del bloqueo y recuperación de cantidad al reabrir. Sin llamadas a
 producción. Dos pruebas adicionales cubren bloqueo vivo/muerto/inválido y
 navegación permitida. El flujo de stock conserva las 33 pruebas del compañero.
-Validación general de esta entrega: lint, typecheck, db:verify y build aprobados.
+Validación de la entrega inicial de escritorio: lint, typecheck, db:verify y build aprobados.
 La suite general dio 297/298: una prueba de historial de precios abortó dentro
 de WASM/PGlite (`Aborted()`), sin cambios de código en esa área. Esa misma prueba
 pasó al repetirla aislada. No se declara una ejecución completa de check:new
@@ -84,10 +84,13 @@ no se elimina una fila editada ni se modifica parcialmente el lote.
 1. Conectar Android por USB con depuración autorizada, abrir scrcpy y Monprice.
 2. Elegir nombre del lote, idioma y condición habitual en la PC; pulsar
    **Conectar Monprice**. La primera conexión incluye la sesión actual de la app.
-3. Escanear en Monprice. Ante otra identidad reconocida, el puente abre su lista,
-   copia cantidades/acabados y vuelve al escáner. No usa el precio como contador
-   ni suma por cada frame. Las repetidas se resuelven en Monprice o editando
-   cantidad en la PC, como pidió el usuario.
+3. Escanear en Monprice. El puente lee nombre, edición y número directamente
+   del escáner, sin tocar controles, abrir la lista ni volver a la cámara por
+   cada carta. La PC muestra una vista previa por identidad, con cantidad inicial
+   1 y acabado pendiente. No usa el precio como contador ni suma por frame.
+   Las cantidades reales, repetidas y acabados se copian de la lista completa
+   únicamente al terminar o preparar el envío. Las cantidades editadas en la PC
+   se conservan; una variante ambigua editada requiere revisión explícita.
 4. Ajustar cantidades con teclado o +/−. Las correcciones de PC sobreviven a
    nuevas lecturas. La cantidad original de Monprice queda visible como referencia.
 5. **Enviar al stock** comprueba toda la lista, vincula coincidencias exactas,
@@ -95,7 +98,10 @@ no se elimina una fila editada ni se modifica parcialmente el lote.
    prepara las capturas y aplica solo sus IDs desde un único botón. El precio
    existente se conserva; las altas nuevas necesitan precio ARS explícito.
 
-**Terminar captura** permite revisar antes de enviar y deja Monprice en su lista.
+**Terminar captura** abre y comprueba una vez toda la lista antes de enviar,
+incluidas cartas que no llegaron a observarse en la cámara, y deja Monprice en
+su lista. No se permite enviar solamente la vista previa. Si una carta sigue
+visible, sus frames repetidos o una reconexión no agregan unidades.
 Después de un envío, otro lote exige comenzar con una sesión vacía de Monprice:
 no vuelve a copiar automáticamente las cartas del lote anterior. Las operaciones
 de stock siguen requiriendo admin. No se hicieron cargas productivas de prueba.
@@ -106,6 +112,22 @@ imagen, usar el Pixel directamente o mantener scrcpy abierto. ADB se descubre
 desde PATH, la instalación de scrcpy en ejecución o `COMPANION_ADB_PATH`.
 No se instalan apps en Android. Los frames viven en memoria; no se versionan
 capturas, seriales, catálogos operativos ni exportaciones reales.
+
+Corrección de velocidad (2026-11-03): se elimina la navegación automática por
+cada carta. La lectura de identidades y la descarga de capturas corren separadas,
+con una sola imagen en vuelo: una captura lenta no demora la próxima identidad.
+La espera entre lecturas baja a 250 ms y la PC consulta el estado cada 500 ms.
+ADB/UIAutomator aún puede tardar varios segundos; no equivale a video en vivo.
+Se midió una captura de aproximadamente 3,1 s en el Pixel. No se promete latencia
+constante ni capturar cada carta en una pasada rápida: la lista final recupera
+lo que no llegó a verse entre consultas, sin inventar cantidades por frames.
+
+Validación de esta corrección: Pixel real lee Squirtle/Team Up/23/181 con cero
+órdenes de input; usuario confirma que permanece en el escáner. 39 pruebas del
+compañero y 2 del escritorio aprobadas, incluida captura lenta, desconexión sin
+frames tardíos, variantes ambiguas, correcciones con cantidad editada y envío
+idempotente. Ejecutable verificado con importación sintética, edición y reapertura.
+Gate general check:new aprobado: lint, tipos, 298 pruebas, DB verify y build.
 
 La lectura requiere Monprice al frente. Si aparece otra app, una pantalla de
 permisos o un bloqueo, se pausa la captura y no se automatiza esa pantalla.

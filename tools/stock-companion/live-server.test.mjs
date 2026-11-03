@@ -34,13 +34,15 @@ test('live phone session keeps PC quantity edits and sends through a single retr
     const call = async (route, body = {}) => { const r = await fetch(app.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Companion-Token': token }, body: JSON.stringify(body) }); return { status: r.status, data: await r.json() }; };
     const start = await call('/android/start', { name: 'Synthetic scan', language: 'EN', condition: 'NM' }); assert.equal(start.status, 200, start.data.error);
     const sessionId = start.data.androidSessionId, rowId = start.data.sessions[0].rows[0].id;
-    assert.equal(start.data.sessions[0].rows[0].quantity, '3');
+    assert.equal(start.data.sessions[0].rows[0].quantity, '1');
+    assert.equal(start.data.sessions[0].rows[0].scannerPreview, true); assert.equal(phoneMode, 'scanner');
     assert.equal((await fetch(app.url + '/android/frame')).status, 403);
     assert.equal((await fetch(app.url + '/android/frame', { headers: { 'X-Companion-Token': token } })).status, 200);
     await call('/edit', { sessionId, rowId, patch: { quantity: '5' } });
     await call('/login', { email: 'qa@example.invalid', password: 'synthetic' });
     assert.equal((await call('/send', { sessionId })).status, 400); assert.equal(creates, 0);
     const finalized = await call('/android/finalize'); assert.equal(finalized.status, 200, finalized.data.error); assert.equal(finalized.data.sessions[0].rows[0].quantity, '5');
+    assert.equal(finalized.data.sessions[0].rows[0].id, rowId); assert.equal(finalized.data.sessions[0].rows[0].scannerPreview, false);
     await call('/choose', { sessionId, rowId, query: 'Example', candidateId: 'stock' }); await call('/review-matched', { sessionId });
     assert.equal((await call('/send', { sessionId })).status, 200); assert.equal(stock, 13); assert.equal(creates, 1); assert.equal(applies, 1);
     assert.equal((await call('/send', { sessionId })).status, 200); assert.equal(stock, 13); assert.equal(creates, 1); assert.equal(applies, 1);

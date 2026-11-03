@@ -68,9 +68,56 @@ export function readMonprice(root, language) {
   return { mode: 'list', total: Number(totalText), rows, scroll: nodes.find(n => n.attrs.scrollable === 'true' && flatten(n).some(c => ['Nombre', 'Name'].includes(c.attrs.text))) };
 }
 
+const sameIdentity = (a, b) => ['name', 'expansion', 'number', 'language'].every(field => a[field] === b[field]);
+
+export function previewRecognition(session, identity, language) {
+  if (session.appliedAt || session.rows.some(r => r.transfer !== 'local')) throw new Error('Este lote ya comenzó a enviarse. No se modifica su captura.');
+  const card = { ...identity, language };
+  // The camera exposes identity, not counts/finish. Show each identity once;
+  // never infer a physical scan or add units from repeated camera frames.
+  if (session.rows.some(row => sameIdentity(row, card))) return false;
+  session.rows.push({ ...card, id: randomUUID(), sourceRow: 0, androidKey: 'preview:' + JSON.stringify(card), scannerPreview: true,
+    quantity: '1', finish: '', condition: session.androidCondition, gradingCompany: '', grade: '', gradingPending: true,
+    candidate: null, priceArs: '', reviewed: false, ignored: false, transfer: 'local' });
+  session.androidPreviewAt = new Date().toISOString();
+  return true;
+}
+
+function reconcilePreviews(session, sourceRows) {
+  const previews = session.rows.filter(row => row.scannerPreview);
+  const existing = session.rows.filter(row => !row.scannerPreview);
+  const claimed = new Set(existing.map(row => row.androidKey));
+  const incomingKeys = new Set(sourceRows.map(sourceKey));
+  const removed = existing.filter(row => row.androidKey && !incomingKeys.has(row.androidKey));
+  const added = sourceRows.filter(source => !claimed.has(sourceKey(source)));
+  // Keep the existing authoritative replacement path in charge of corrections,
+  // even if the camera has already shown a preview of the new printing.
+  if (removed.length === 1 && added.length === 1 &&
+      (removed[0].androidSnapshotName || removed[0].name) === added[0].name &&
+      removed[0].language === added[0].language && removed[0].sourceQuantity === added[0].quantity) claimed.add(sourceKey(added[0]));
+  const adopted = [];
+  for (const row of previews) {
+    let matches = sourceRows.filter(source => !claimed.has(sourceKey(source)) && sameIdentity(row, source) && (!row.finish || row.finish === source.finish));
+    // A single printing corrected in Monprice can replace its camera preview.
+    if (!matches.length && previews.filter(other => other.name === row.name && other.language === row.language).length === 1) {
+      matches = sourceRows.filter(source => !claimed.has(sourceKey(source)) && row.name === source.name && row.language === source.language);
+    }
+    if (matches.length !== 1) {
+      if (row.quantityEdited || row.candidate) throw new Error('Una carta editada de la vista previa no coincide con una única variante de Monprice. Revisá edición y acabado en el editor del lote antes de terminar.');
+      continue;
+    }
+    const source = matches[0], key = sourceKey(source), next = { ...row, androidKey: key, scannerPreview: false, sourceQuantity: source.quantity };
+    if (!row.identityCorrected) Object.assign(next, { name: source.name, expansion: source.expansion, number: source.number, language: source.language, finish: source.finish, gradingCompany: source.gradingCompany, grade: source.grade, gradingPending: source.gradingPending, candidate: null, priceArs: '' });
+    if (!row.quantityEdited) next.quantity = String(source.quantity);
+    adopted.push(next); claimed.add(key);
+  }
+  return [...existing, ...adopted];
+}
+
 export function mergeSnapshot(session, sourceRows) {
   if (session.appliedAt || session.rows.some(r => r.transfer !== 'local')) throw new Error('Este lote ya comenzó a enviarse. No se modifica su captura.');
-  const existing = new Map(session.rows.filter(r => r.androidKey).map(r => [r.androidKey, r]));
+  const reconciled = reconcilePreviews(session, sourceRows);
+  const existing = new Map(reconciled.filter(r => r.androidKey).map(r => [r.androidKey, r]));
   const incomingKeys = new Set(sourceRows.map(sourceKey));
   const removed = [...existing.values()].filter(row => !incomingKeys.has(row.androidKey));
   const added = sourceRows.filter(row => !existing.has(sourceKey(row)));
@@ -99,7 +146,7 @@ export function mergeSnapshot(session, sourceRows) {
     }
     return { id: randomUUID(), sourceRow: 0, ...source, androidSnapshotName: source.name, quantity: String(source.quantity), sourceQuantity: source.quantity, androidKey: key, condition: session.androidCondition, priceArs: '', candidate: null, reviewed: false, ignored: false, transfer: 'local', gradingPending: source.gradingPending };
   });
-  session.rows = [...session.rows.filter(r => !r.androidKey), ...next];
+  session.rows = [...reconciled.filter(r => !r.androidKey), ...next];
   session.androidSnapshot = sourceRows;
   session.androidSyncedAt = new Date().toISOString();
 }
@@ -121,8 +168,8 @@ async function findAdb() {
 }
 
 export class AndroidBridge {
-  constructor({ onSnapshot, adbPath, executeAdb, interval = 1000 } = {}) {
-    this.onSnapshot = onSnapshot; this.adbPath = adbPath; this.executeAdb = executeAdb; this.interval = interval;
+  constructor({ onSnapshot, onRecognition, adbPath, executeAdb, interval = 250 } = {}) {
+    this.onSnapshot = onSnapshot; this.onRecognition = onRecognition; this.adbPath = adbPath; this.executeAdb = executeAdb; this.interval = interval;
     this.status = { connected: false, mode: 'off', message: 'Conectá el Pixel con Monprice abierto.' };
   }
   async run(args, binary = false) {
@@ -146,32 +193,41 @@ export class AndroidBridge {
     if (screen.language && screen.language !== language) throw new Error('El idioma seleccionado no coincide con Monprice.');
     if (!allowExisting && !(screen.empty || (screen.mode === 'list' && screen.total === 0))) throw new Error('Para otro lote, iniciá una sesión de escaneo vacía en Monprice.');
     if (!['scanner', 'list', 'correction'].includes(screen.mode)) throw new Error('Abrí el escáner o la lista de cartas escaneadas de Monprice.');
-    this.status = { connected: true, mode: 'capture', message: 'Leyendo Monprice. Las cantidades se copian de su lista.' };
-    await this.tick(); this.schedule();
+    this.status = { connected: true, mode: 'capture', message: 'Leyendo el escáner. La lista se comprueba al terminar.' };
+    await this.tick(screen); this.schedule();
   }
   schedule() { clearTimeout(this.timer); if (this.status.connected && !this.suspended) { this.timer = setTimeout(() => { this.tick().finally(() => this.schedule()); }, this.interval); this.timer.unref?.(); } }
-  async pause() { this.suspended = true; clearTimeout(this.timer); if (this.pending) await this.pending; }
+  async pause() { this.suspended = true; clearTimeout(this.timer); if (this.pending) await this.pending; if (this.framePending) await this.framePending; }
   resume() { this.suspended = false; this.schedule(); }
-  async tick() {
+  captureFrame() {
+    if (this.framePending || !this.status.connected) return;
+    const generation = this.frameGeneration || 0;
+    this.framePending = (async () => {
+      try {
+        const frame = await this.run(['exec-out', 'screencap', '-p'], true);
+        if (this.status.connected && generation === (this.frameGeneration || 0)) { this.frame = frame; this.status.frameAt = Date.now(); }
+      } catch { /* Image failure must not block card identity; retry on next tick. */ }
+    })().finally(() => { this.framePending = null; });
+  }
+  async tick(initialScreen) {
     if (this.pending) return this.pending;
     this.pending = (async () => {
       try {
-        const screen = await this.ui();
+        const screen = initialScreen || await this.ui();
         if (screen.language && screen.language !== this.language) throw new Error('Cambió el idioma en Monprice. Elegí el idioma correcto para continuar.');
         if (!this.finalized && screen.mode === 'scanner' && screen.latest && JSON.stringify(screen.latest) !== this.lastLatest) {
-          this.status.message = 'Copiando la lista de Monprice…';
-          await this.sync(true); this.lastLatest = JSON.stringify(screen.latest);
-        } else if (!this.finalized && screen.mode === 'list') await this.sync(false);
-        this.frame = await this.run(['exec-out', 'screencap', '-p'], true);
-        this.status.frameAt = Date.now();
-        this.status.message = this.finalized ? 'Captura terminada. Revisá cantidades y enviá el lote.' : 'Monprice conectado. Escaneá la siguiente carta.';
+          await this.onRecognition?.(screen.latest, this.language);
+          this.lastLatest = JSON.stringify(screen.latest);
+        }
+        this.captureFrame();
+        this.status.message = this.finalized ? 'Captura terminada. Revisá cantidades y enviá el lote.' : 'Escaneá sin salir de la cámara. Cantidades y acabados se comprueban al terminar.';
         this.status.error = null;
-      } catch (error) { this.frame = null; this.status.frameAt = Date.now(); this.status.error = error.message; this.status.message = error.message; }
+      } catch (error) { this.frameGeneration = (this.frameGeneration || 0) + 1; this.frame = null; this.status.frameAt = Date.now(); this.status.error = error.message; this.status.message = error.message; }
     })();
     try { await this.pending; } finally { this.pending = null; }
   }
   async tapNode(node) { const [x1, y1, x2, y2] = bounds(node); await this.run(['shell', 'input', 'tap', String(Math.round((x1 + x2) / 2)), String(Math.round((y1 + y2) / 2))]); }
-  async sync(returnToScanner) {
+  async sync() {
     let screen = await this.ui();
     if (screen.mode === 'scanner') { if (!screen.next) throw new Error('Monprice todavía no tiene una lista de escaneos.'); await this.tapNode(screen.next); screen = await this.ui(); }
     if (screen.mode !== 'list') throw new Error('Abrí la lista de cartas escaneadas en Monprice.');
@@ -190,7 +246,6 @@ export class AndroidBridge {
       this.status.message = `Copiando Monprice: ${units}/${expected} unidades…`;
       if (units === expected) {
         await this.onSnapshot?.([...found.values()].map(({ bounds: unused, ...row }) => row));
-        if (returnToScanner) await this.run(['shell', 'input', 'keyevent', '4']);
         return;
       }
       if (units > expected) throw new Error('La lista leída no coincide con la cantidad total de Monprice.');
@@ -205,11 +260,13 @@ export class AndroidBridge {
   }
   async finalize() {
     clearTimeout(this.timer); if (this.pending) await this.pending;
-    try { await this.sync(false); this.finalized = true; this.status.mode = 'review'; this.status.error = null; this.frame = await this.run(['exec-out', 'screencap', '-p'], true); }
+    if (this.framePending) await this.framePending;
+    try { await this.sync(); this.finalized = true; this.status.mode = 'review'; this.status.error = null; this.frame = await this.run(['exec-out', 'screencap', '-p'], true); }
     finally { this.schedule(); }
   }
   async input({ x, y, back = false }) {
     clearTimeout(this.timer); if (this.pending) await this.pending;
+    if (this.framePending) await this.framePending;
     try {
       await this.ui();
       if (back) await this.run(['shell', 'input', 'keyevent', '4']);
@@ -223,6 +280,7 @@ export class AndroidBridge {
   }
   async stop() {
     clearTimeout(this.timer); this.status.connected = false; if (this.pending) await this.pending;
+    if (this.framePending) await this.framePending;
     if (this.serial) { try { await this.run(['shell', 'rm', '-f', `/data/local/tmp/ultimoturno-companion-${process.pid}.xml`]); } catch { /* disconnected phone; no retry */ } }
     this.serial = null; this.frame = null; this.status = { connected: false, mode: 'off', message: 'Captura detenida. El lote sigue guardado en esta PC.' };
   }

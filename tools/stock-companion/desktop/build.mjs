@@ -18,7 +18,8 @@ try {
   await mkdir(path.join(staging, 'node_modules'), { recursive: true });
   await cp(path.join(directory, 'node_modules/csv-parse'), path.join(staging, 'node_modules/csv-parse'), { recursive: true });
   await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.join(directory, 'node_modules/electron-builder/cli.js'), '--projectDir', staging, '--win', 'portable', '--x64'], { stdio: 'inherit', windowsHide: true });
+    const target = process.argv.includes('--dir') ? ['--win', '--x64', '--dir'] : ['--win', 'portable', '--x64'];
+    const child = spawn(process.execPath, [path.join(directory, 'node_modules/electron-builder/cli.js'), '--projectDir', staging, ...target], { stdio: 'inherit', windowsHide: true });
     child.on('error', reject);
     child.on('exit', code => code === 0 ? resolve() : reject(new Error('No se pudo empaquetar: ' + code)));
   });

@@ -41,7 +41,7 @@ function render(force = false) {
   $('#match').disabled = !current || !rows.length || !state.user?.roles.includes('admin') || !!current.appliedAt;
   $('#send').disabled = !current || !rows.length || !!current.appliedAt;
   $('#recover').hidden = !rows.some(r => r.transfer === 'uncertain');
-  $('#review-message').textContent = current?.appliedAt ? 'Lote enviado. Para otro lote, iniciá una sesión de escaneo vacía en Monprice.' : current?.androidFinalized ? 'Captura comprobada. Revisá cantidades y vínculos antes de enviar.' : 'Las cantidades se copian de Monprice. Tus correcciones en la PC se conservan al actualizar la lista.';
+  $('#review-message').textContent = current?.appliedAt ? 'Lote enviado. Para otro lote, iniciá una sesión de escaneo vacía en Monprice.' : current?.androidFinalized ? 'Captura comprobada. Revisá cantidades y vínculos antes de enviar.' : 'Vista previa del escáner: una fila por carta reconocida. Cantidades y acabados se completan al terminar; tus cantidades editadas se conservan.';
   $('#receipt').textContent = current?.appliedAt ? `${current.receipt.unitsApplied} unidades sumadas en la confirmación; ${current.receipt.skippedEntries} capturas ya procesadas u omitidas. Comprobante guardado.` : current?.applyPending ? 'La confirmación anterior quedó sin respuesta. Enviar vuelve a comprobar los mismos IDs.' : '';
   if (!force && document.activeElement?.closest('#queue')) return;
   const view = rowPage(current?.rows || [], { query: $('#filter').value, page, pageSize: 25 }); page = view.page;
@@ -50,6 +50,7 @@ function render(force = false) {
   for (const row of view.rows) {
     const tr = node('tr'); tr.dataset.rowId = row.id;
     const identity = node('td'); identity.append(node('strong', row.name), node('small', row.expansion), node('small', `#${row.number}`));
+    if (row.scannerPreview) identity.append(node('small', 'Vista previa · cantidad y acabado por comprobar', 'status'));
     if (row.sourceCorrection) identity.append(node('small', row.identityCorrected ? 'Corrección manual conservada' : 'Corregida en Monprice', 'good'));
     const variant = node('td'); variant.append(node('span', `${row.language} · ${row.finish || 'Acabado pendiente'}`), node('small', row.gradingCompany ? `${row.gradingCompany} ${row.grade}` : row.condition));
     const quantityCell = node('td'), editor = node('div', undefined, 'quantity-edit'), minus = node('button', '−', 'secondary'), plus = node('button', '+', 'secondary'), input = node('input');
@@ -83,7 +84,7 @@ async function imageFrame() {
 }
 async function poll() {
   if (!working) try { state = await api('/state'); render(); await imageFrame(); } catch (error) { notice('No se pudo actualizar el programa. ' + error.message, true); }
-  setTimeout(poll, 1000);
+  setTimeout(poll, 500);
 }
 $('#connect-form').onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget); run(async () => { notice('Conectando con el Pixel y leyendo Monprice…'); await mutate('/android/start', { name: form.get('name'), language: form.get('language'), condition: form.get('condition') }); page = 1; notice('Monprice conectado. Podés escanear desde esta pantalla.'); await imageFrame(); }); };
 $('#stop').onclick = () => run(async () => { await mutate('/android/stop'); $('#phone-frame').hidden = true; $('#phone-placeholder').hidden = false; notice('Pixel desconectado. El lote sigue guardado.'); });

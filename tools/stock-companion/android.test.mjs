@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AndroidBridge, parseHierarchy, readMonprice, mergeSnapshot, monpriceFinish } from './android.mjs';
+import { AndroidBridge, parseHierarchy, readMonprice, mergeSnapshot, previewRecognition, monpriceFinish } from './android.mjs';
 const leaf = (text = '', description = '') => `<node text="${text}" content-desc="${description}" bounds="[0,0][20,20]"/>`;
 const root = content => `<hierarchy><node package="com.sarafan.pokemon" bounds="[0,0][1080,2424]">${content}</node></hierarchy>`;
 const card = (name = 'Example', quantity = 1, finish = 'Normal') => `<node bounds="[0,700][1080,1200]">${leaf('', 'Decrease count')}${leaf(String(quantity))}${leaf('', 'Increase count')}${leaf('Nombre')}${leaf(name)}${leaf('Establecer')}${leaf('Example Set')}${leaf('Número')}${leaf('001/100')}${leaf('Tipo:')}${leaf(finish)}${leaf('Grading')}${leaf('', 'RAW')}</node>`;
@@ -42,21 +42,23 @@ test('a stationary recognition does not add units; repeated cards use Monprice c
   bridge.suspended = true;
   try {
     await bridge.start('EN'); await bridge.tick(); await bridge.tick();
-    assert.equal(snapshots.length, 1); assert.equal(snapshots[0][0].quantity, 3); assert.equal(phone.mode, 'scanner');
+    assert.equal(snapshots.length, 0); assert.equal(phone.mode, 'scanner');
+    assert.equal(phone.commands.some(args => args[1] === 'input'), false);
     await bridge.finalize(); assert.equal(bridge.finalized, true); assert.equal(phone.mode, 'list');
+    assert.equal(snapshots.length, 1); assert.equal(snapshots[0][0].quantity, 3);
   } finally { await bridge.stop(); }
 });
 test('reads all pages and deduplicates overlapping rows without summing a row twice', async () => {
   const phone = fakePhone({ pages: [list(card('A', 2), 5, true), list(card('A', 2) + card('B', 3), 5, true)] }); let rows;
   const bridge = new AndroidBridge({ executeAdb: phone.execute, onSnapshot: value => { rows = value; } }); bridge.suspended = true;
-  try { await bridge.start('EN'); assert.equal(rows.length, 2); assert.equal(rows.reduce((sum, r) => sum + r.quantity, 0), 5); }
+  try { await bridge.start('EN'); assert.equal(rows, undefined); await bridge.finalize(); assert.equal(rows.length, 2); assert.equal(rows.reduce((sum, r) => sum + r.quantity, 0), 5); }
   finally { await bridge.stop(); }
 });
 test('never publishes an incomplete or conflicting list', async () => {
   for (const pages of [[list(card('A', 1), 2)], [list(card('A', 1), 2, true), list(card('A', 2), 2, true)]]) {
     const phone = fakePhone({ pages }); let snapshots = 0;
     const bridge = new AndroidBridge({ executeAdb: phone.execute, onSnapshot: () => snapshots++ }); bridge.suspended = true;
-    try { await bridge.start('EN'); assert.equal(snapshots, 0); assert.ok(bridge.status.error); }
+    try { await bridge.start('EN'); await assert.rejects(bridge.finalize()); assert.equal(snapshots, 0); assert.notEqual(bridge.finalized, true); }
     finally { await bridge.stop(); }
   }
 });
@@ -103,4 +105,82 @@ test('a rejected ambiguous source update does not mutate any previously saved ro
   const before = structuredClone(session);
   assert.throws(() => mergeSnapshot(session, [{ ...source, quantity: 2 }]), /quitaría/);
   assert.deepEqual(session, before);
+});
+
+test('camera recognition never navigates, swipes or reads the scan list until finalize', async () => {
+  const phone = fakePhone(), seen = [], bridge = new AndroidBridge({ executeAdb: phone.execute, onRecognition: identity => seen.push(identity.name) });
+  bridge.suspended = true;
+  try {
+    await bridge.start('EN'); await bridge.tick();
+    phone.latest = 'Another'; await bridge.tick();
+    phone.latest = 'Example'; await bridge.tick();
+    assert.deepEqual(seen, ['Example', 'Another', 'Example']);
+    assert.equal(phone.mode, 'scanner'); assert.equal(phone.commands.some(args => args[1] === 'input'), false);
+    phone.mode = 'list'; await bridge.tick();
+    assert.equal(phone.commands.some(args => args[1] === 'input'), false);
+  } finally { await bridge.stop(); }
+});
+
+test('camera previews do not count repeated frames and reconcile quantities/finish using the final list', () => {
+  const session = { rows: [], androidCondition: 'NM' };
+  const source = readMonprice(parseHierarchy(list(card('Example', 3, 'Reverse Holo Poke Ball'), 3)), 'EN').rows[0];
+  const { name, expansion, number } = source;
+  assert.equal(previewRecognition(session, { name, expansion, number }, 'EN'), true);
+  const id = session.rows[0].id;
+  assert.equal(previewRecognition(session, { name, expansion, number }, 'EN'), false);
+  assert.equal(session.rows[0].quantity, '1'); assert.equal(session.rows[0].finish, '');
+  mergeSnapshot(session, [source]);
+  assert.equal(session.rows.length, 1); assert.equal(session.rows[0].id, id);
+  assert.equal(session.rows[0].quantity, '3'); assert.equal(session.rows[0].finish, 'poke ball'); assert.equal(session.rows[0].scannerPreview, false);
+});
+
+test('final list includes missed camera cards and preserves edited preview quantities without duplicates', () => {
+  const session = { rows: [], androidCondition: 'NM' }, rows = readMonprice(parseHierarchy(list(card('Example', 3) + card('Missed', 2), 5)), 'EN').rows;
+  previewRecognition(session, rows[0], 'EN');
+  session.rows[0].quantity = '7'; session.rows[0].quantityEdited = true;
+  const id = session.rows[0].id;
+  mergeSnapshot(session, rows);
+  assert.equal(session.rows.length, 2); assert.equal(session.rows[0].id, id); assert.equal(session.rows[0].quantity, '7'); assert.equal(session.rows[0].sourceQuantity, 3);
+  assert.equal(session.rows[1].quantity, '2');
+});
+
+test('ambiguous variants cannot silently drop an edited preview; failed reconciliation is atomic', () => {
+  const session = { rows: [], androidCondition: 'NM' }, source = readMonprice(parseHierarchy(list(card(), 1)), 'EN').rows[0];
+  previewRecognition(session, source, 'EN'); session.rows[0].quantity = '7'; session.rows[0].quantityEdited = true;
+  const before = structuredClone(session);
+  assert.throws(() => mergeSnapshot(session, [source, { ...source, finish: 'poke ball' }]), /única variante/);
+  assert.deepEqual(session, before);
+  session.rows[0].finish = 'poke ball';
+  mergeSnapshot(session, [source, { ...source, finish: 'poke ball' }]);
+  assert.equal(session.rows.find(row => row.finish === 'poke ball').quantity, '7');
+});
+
+test('a corrected camera preview cannot steal the saved row or its edited quantity', () => {
+  const session = { rows: [], androidCondition: 'NM' }, source = readMonprice(parseHierarchy(list(card(), 1)), 'EN').rows[0];
+  mergeSnapshot(session, [source]);
+  const id = session.rows[0].id;
+  session.rows[0].quantity = '7'; session.rows[0].quantityEdited = true;
+  const corrected = { ...source, expansion: 'Corrected Set', number: '004/131', finish: 'poke ball' };
+  previewRecognition(session, corrected, 'EN');
+  mergeSnapshot(session, [corrected]);
+  assert.equal(session.rows.length, 1); assert.equal(session.rows[0].id, id);
+  assert.equal(session.rows[0].quantity, '7'); assert.equal(session.rows[0].expansion, 'Corrected Set');
+});
+
+test('a slow screenshot cannot delay the next identity or leave a late frame after disconnect', async () => {
+  const phone = fakePhone(), seen = [];
+  let finishFrame, captures = 0;
+  const frameGate = new Promise(resolve => { finishFrame = resolve; });
+  const bridge = new AndroidBridge({ onRecognition: identity => seen.push(identity.name), executeAdb: async (...args) => {
+    if (args[0][1] === 'screencap') { captures++; await frameGate; return png; }
+    return phone.execute(...args);
+  } });
+  bridge.suspended = true;
+  try {
+    await bridge.start('EN');
+    phone.latest = 'Next card'; await bridge.tick();
+    assert.deepEqual(seen, ['Example', 'Next card']); assert.equal(captures, 1); assert.equal(bridge.frame, null);
+    const stopped = bridge.stop(); finishFrame(); await stopped;
+    assert.equal(bridge.frame, null); assert.equal(bridge.status.connected, false);
+  } finally { finishFrame(); await bridge.stop(); }
 });

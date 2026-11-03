@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseExport, transfer, reconcile, assertAccount, exactStockCandidate, rowErrors } from './core.mjs';
 import { fillMissingDefaults, languages, conditions } from './batch.mjs';
-import { AndroidBridge, mergeSnapshot } from './android.mjs';
+import { AndroidBridge, mergeSnapshot, previewRecognition } from './android.mjs';
 
 export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://ultimoturno.app/api', fetchImpl = fetch, androidOptions = {} } = {}) {
   const base = new URL(apiBase);
@@ -38,7 +38,11 @@ export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://
     if (!response.ok) throw new Error(`API ${response.status}: ${String(result.error || 'No se pudo completar la operación.').slice(0, 240)}`);
     return result;
   };
-  const android = new AndroidBridge({ ...androidOptions, onSnapshot: async rows => {
+  const android = new AndroidBridge({ ...androidOptions, onRecognition: async (identity, language) => {
+    const session = state.sessions.find(s => s.id === state.androidSessionId);
+    if (!session || session.androidFinalized || session.appliedAt) return;
+    if (previewRecognition(session, identity, language)) await save();
+  }, onSnapshot: async rows => {
     const session = state.sessions.find(s => s.id === state.androidSessionId);
     if (!session || session.androidFinalized || session.appliedAt) return;
     mergeSnapshot(session, rows); await save();
