@@ -2,7 +2,7 @@ import { rowErrors, rowPage, quantityValue } from '/batch.mjs';
 const $ = query => document.querySelector(query);
 const token = $('meta[name=companion-token]').content;
 const node = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; };
-let state, working = false, page = 1, frameUrl, frameAt, pickedRow, searchQuery = '';
+let state, working = false, page = 1, frameUrl, frameAt, pickedRow, searchQuery = '', showRemoved = false;
 const session = () => state?.sessions.find(s => s.id === state.androidSessionId) || state?.sessions[0];
 const headers = { 'Content-Type': 'application/json', 'X-Companion-Token': token };
 async function api(route, body) {
@@ -33,6 +33,11 @@ function render(force = false) {
   $('#account-button').textContent = state.user ? state.user.displayName : 'Conectar cuenta';
   $('#login-form').hidden = !!state.user; $('#logged-in').hidden = !state.user; $('#user-name').textContent = state.user ? `${state.user.displayName} · ${state.user.roles.includes('admin') ? 'Administrador' : 'Esta cuenta no admite envío de capturas'}` : '';
   const rows = current?.rows.filter(r => !r.ignored) || [];
+  const removedCount = current?.rows.filter(r => r.ignored).length || 0;
+  if (!removedCount) showRemoved = false;
+  $('#removed').hidden = !removedCount;
+  $('#removed').textContent = showRemoved ? 'Volver a las cartas' : `Ver eliminadas (${removedCount})`;
+  $('#removed').setAttribute('aria-pressed', String(showRemoved));
   const quantity = rows.reduce((sum, r) => sum + (quantityValue(r) || 0), 0);
   $('#unit-total').textContent = `${quantity} unidades`;
   $('#batch-name').textContent = current ? `${current.name} · ${rows.length} cartas${current.androidSyncedAt ? ' · lista copiada de Monprice' : ''}` : 'La lista aparecerá cuando Monprice reconozca una carta.';
@@ -44,9 +49,11 @@ function render(force = false) {
   $('#review-message').textContent = current?.appliedAt ? 'Lote enviado. Para otro lote, iniciá una sesión de escaneo vacía en Monprice.' : current?.androidFinalized ? 'Captura comprobada. Revisá cantidades y vínculos antes de enviar.' : 'Vista previa del escáner: una fila por carta reconocida. Cantidades y acabados se completan al terminar; tus cantidades editadas se conservan.';
   $('#receipt').textContent = current?.appliedAt ? `${current.receipt.unitsApplied} unidades sumadas en la confirmación; ${current.receipt.skippedEntries} capturas ya procesadas u omitidas. Comprobante guardado.` : current?.applyPending ? 'La confirmación anterior quedó sin respuesta. Enviar vuelve a comprobar los mismos IDs.' : '';
   if (!force && document.activeElement?.closest('#queue')) return;
-  const view = rowPage(current?.rows || [], { query: $('#filter').value, page, pageSize: 25 }); page = view.page;
+  const visible = (current?.rows || []).filter(row => showRemoved ? row.ignored : !row.ignored);
+  const view = rowPage(visible, { query: $('#filter').value, page, pageSize: 25 }); page = view.page;
   $('#range').textContent = `${view.from}–${view.to} de ${view.total} cartas`; $('#previous').disabled = page === 1; $('#next').disabled = page === view.pageCount;
   const body = $('#queue'); body.replaceChildren(); $('#empty').hidden = !!view.rows.length;
+  $('#empty').textContent = $('#filter').value ? 'No hay cartas que coincidan con la búsqueda.' : showRemoved ? 'No hay cartas eliminadas.' : 'Escaneá tu primera carta. También podés restaurar las cartas eliminadas.';
   for (const row of view.rows) {
     const tr = node('tr'); tr.dataset.rowId = row.id;
     const identity = node('td'); identity.append(node('strong', row.name), node('small', row.expansion), node('small', `#${row.number}`));
@@ -63,9 +70,15 @@ function render(force = false) {
     if (row.sourceQuantity !== undefined) quantityCell.append(node('small', `Monprice: ${row.sourceQuantity}${row.quantityEdited ? ' · editada' : ''}`));
     const review = node('td');
     const errors = rowErrors({ ...row, reviewed: true }, true); if (row.gradingPending) errors.push('graduación');
-    review.append(node('span', row.ignored ? 'Omitida' : row.transfer === 'sent' ? 'Enviada' : errors.length ? errors.join(', ') : 'Vinculada', errors.length ? 'status' : 'status good'));
+    review.append(node('span', row.ignored ? 'Eliminada de este lote' : row.transfer === 'sent' ? 'Enviada' : errors.length ? errors.join(', ') : 'Vinculada', errors.length ? 'status' : 'status good'));
     const choose = node('button', row.candidate ? 'Cambiar vínculo' : 'Vincular', 'secondary'); choose.disabled = locked || !state.user?.roles.includes('admin');
-    choose.onclick = () => { pickedRow = row.id; $('#search-query').value = `${row.name} ${row.number.split('/')[0]}`; $('#candidates').replaceChildren(); $('#picker').showModal(); $('#search-query').focus(); }; review.append(choose);
+    choose.onclick = () => { pickedRow = row.id; $('#search-query').value = `${row.name} ${row.number.split('/')[0]}`; $('#candidates').replaceChildren(); $('#picker').showModal(); $('#search-query').focus(); };
+    const actions = node('div', undefined, 'row-actions'), remove = node('button', row.ignored ? 'Restaurar' : 'Eliminar', row.ignored ? 'secondary' : 'secondary remove-card');
+    remove.setAttribute('aria-label', `${row.ignored ? 'Restaurar' : 'Eliminar'} ${row.name} del lote`);
+    remove.title = 'Solo afecta este lote de carga.';
+    remove.disabled = row.transfer !== 'local' || !!current.appliedAt;
+    remove.onclick = () => run(async () => { await mutate('/edit', { rowId: row.id, patch: { ignored: !row.ignored } }); notice(row.ignored ? 'Carta restaurada.' : 'Carta eliminada del lote. Podés restaurarla desde «Ver eliminadas».'); });
+    actions.append(choose, remove); review.append(actions);
     if (row.candidate && !row.candidate.inventoryItemId) {
       const label = node('label', 'Precio de venta ARS', 'price-edit'), price = node('input'); price.id = `price-${row.id}`; price.value = row.priceArs; price.inputMode = 'decimal'; price.disabled = locked;
       price.onchange = () => run(async () => { await mutate('/edit', { rowId: row.id, patch: { priceArs: price.value } }); }); label.append(price); review.append(label);
@@ -94,6 +107,7 @@ $('#finalize').onclick = () => run(async () => { notice('Comprobando la lista co
 $('#match').onclick = () => run(async () => { notice('Buscando coincidencias exactas…'); await mutate('/match'); notice('Coincidencias actualizadas. Las cartas pendientes se vinculan desde la lista.'); });
 $('#recover').onclick = () => run(async () => { await mutate('/reconcile'); notice('Transferencia comprobada.'); });
 $('#filter').oninput = () => { page = 1; render(true); }; $('#previous').onclick = () => { page--; render(true); }; $('#next').onclick = () => { page++; render(true); };
+$('#removed').onclick = () => { showRemoved = !showRemoved; page = 1; render(true); };
 $('#account-button').onclick = () => $('#login-dialog').showModal();
 $('#login-form').onsubmit = event => { event.preventDefault(); const form = event.currentTarget, data = new FormData(form); const credentials = { email: data.get('email'), password: data.get('password') }; form.elements.password.value = ''; run(async () => { await mutate('/login', credentials); $('#login-dialog').close(); notice('Cuenta conectada.'); }); };
 $('#logout').onclick = () => run(async () => { await mutate('/logout'); $('#login-dialog').close(); notice('Cuenta desconectada.'); });

@@ -62,6 +62,27 @@ los workers. No carga `.env` del repositorio.
 
 ## Pantalla Monprice + lista + envío
 
+La mesa de escaneo y el editor de lotes usan la paleta de UltimoTurno:
+negro `#050506`, paneles carbón `#111114` y acento rojo `#f52546`, con controles
+y tipografía consistentes. La cabecera identifica UltimoTurno Stock.
+
+Cada fila local ofrece **Eliminar**, que la excluye de este lote, sus totales y
+el futuro envío. No borra stock existente ni modifica Monprice. **Ver eliminadas**
+permite revisar las excluidas y **Restaurar** reincorporarlas. La elección queda
+guardada al cerrar/reabrir y se conserva al comprobar la lista de Monprice.
+Si se elimina una vista previa sin acabado y luego aparece en varias variantes,
+todas quedan excluidas; se pueden restaurar individualmente. Esas variantes
+requieren vinculación nueva, para no heredar el destino de otra variante.
+Las filas enviadas, inciertas y los lotes aplicados no permiten eliminar/restaurar.
+Se reutiliza `ignored` y la ruta existente de edición; no hay API nueva ni borrado
+destructivo. El editor completo conserva su opción compatible **Omitir fila**.
+
+QA del cambio visual y eliminación: 40 pruebas del compañero aprobadas,
+navegador aislado en 320/390/768/1440/1788 px, teclado, totales, persistencia,
+restauración, envío bloqueado y ambos temas comprobados. Ejecutable empaquetado
+verificado con datos sintéticos y cierre/reapertura. No se borraron cartas reales
+durante QA ni se realizaron operaciones productivas.
+
 La raíz abre la mesa de escaneo: Pixel/Monprice a la izquierda, cartas y editor
 de cantidades a la derecha. El flujo anterior de archivos sigue en `/batches`.
 No incorpora otro reconocedor ni cambia el manejo de repetidas de Monprice.

@@ -102,6 +102,16 @@ function reconcilePreviews(session, sourceRows) {
     if (!matches.length && previews.filter(other => other.name === row.name && other.language === row.language).length === 1) {
       matches = sourceRows.filter(source => !claimed.has(sourceKey(source)) && row.name === source.name && row.language === source.language);
     }
+    if (row.ignored) {
+      // Removing an unfinished camera identity excludes all its final variants,
+      // rather than recreating them when the authoritative list arrives.
+      for (const [index, source] of matches.entries()) {
+        const key = sourceKey(source);
+        adopted.push({ ...row, ...source, id: index ? randomUUID() : row.id, androidKey: key, scannerPreview: false, quantity: String(source.quantity), sourceQuantity: source.quantity, candidate: null, priceArs: '', reviewed: false, identityCorrected: false });
+        claimed.add(key);
+      }
+      continue;
+    }
     if (matches.length !== 1) {
       if (row.quantityEdited || row.candidate) throw new Error('Una carta editada de la vista previa no coincide con una única variante de Monprice. Revisá edición y acabado en el editor del lote antes de terminar.');
       continue;

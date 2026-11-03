@@ -184,3 +184,14 @@ test('a slow screenshot cannot delay the next identity or leave a late frame aft
     assert.equal(bridge.frame, null); assert.equal(bridge.status.connected, false);
   } finally { finishFrame(); await bridge.stop(); }
 });
+
+test('deleted camera cards stay excluded across recognition and final variant reconciliation', () => {
+  const session = { rows: [], androidCondition: 'NM' }, source = readMonprice(parseHierarchy(list(card(), 1)), 'EN').rows[0];
+  previewRecognition(session, source, 'EN'); session.rows[0].ignored = true; session.rows[0].candidate = { inventoryItemId: 'previous-choice' };
+  assert.equal(previewRecognition(session, source, 'EN'), false);
+  mergeSnapshot(session, [source, { ...source, finish: 'poke ball', quantity: 2 }]);
+  assert.equal(session.rows.length, 2); assert.ok(session.rows.every(row => row.ignored));
+  assert.ok(session.rows.every(row => row.candidate === null));
+  mergeSnapshot(session, [source, { ...source, finish: 'poke ball', quantity: 3 }]);
+  assert.ok(session.rows.every(row => row.ignored));
+});
