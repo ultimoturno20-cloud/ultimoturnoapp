@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, open, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseExport, transfer, reconcile, assertAccount, exactStockCandidate, rowErrors } from './core.mjs';
+import { fillMissingDefaults } from './batch.mjs';
 
 export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://ultimoturno.app/api', fetchImpl = fetch } = {}) {
   const base = new URL(apiBase);
@@ -47,11 +48,11 @@ export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://
     if (req.headers.host !== `127.0.0.1:${server.address().port}` || (req.headers.origin && req.headers.origin !== origin)) return reply(res, 403, { error: 'Origen no permitido.' });
     const url = new URL(req.url, origin);
     try {
-      if (req.method === 'GET' && ['/', '/app.js', '/style.css'].includes(url.pathname)) {
-        const filename = { '/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css' }[url.pathname];
+      if (req.method === 'GET' && ['/', '/app.js', '/batch.mjs', '/style.css'].includes(url.pathname)) {
+        const filename = { '/': 'index.html', '/app.js': 'app.js', '/batch.mjs': 'batch.mjs', '/style.css': 'style.css' }[url.pathname];
         let content = await readFile(path.join(dir, filename), 'utf8');
         if (filename === 'index.html') content = content.replace('COMPANION_TOKEN', secret);
-        res.writeHead(200, { 'Content-Type': { 'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8', 'style.css': 'text/css; charset=utf-8' }[filename], 'Cache-Control': 'no-store' });
+        res.writeHead(200, { 'Content-Type': filename.endsWith('.mjs') ? 'text/javascript; charset=utf-8' : { 'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8', 'style.css': 'text/css; charset=utf-8' }[filename], 'Cache-Control': 'no-store' });
         return res.end(content);
       }
       if (req.headers['x-companion-token'] !== secret) return reply(res, 403, { error: 'Abrí el programa desde su dirección local.' });
@@ -91,6 +92,9 @@ export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://
             if (typeof body.patch?.ignored === 'boolean') row.ignored = body.patch.ignored;
             if (typeof body.patch?.reviewed === 'boolean') row.reviewed = body.patch.reviewed;
             await save();
+          } else if (url.pathname === '/defaults') {
+            session.lastDefaults = fillMissingDefaults(session, body.defaults);
+            await save();
           } else if (url.pathname === '/match') {
             assertAccount(session, connection?.user);
             session.account ||= { userId: connection.user.id, businessId: connection.user.businessId, displayName: connection.user.displayName };
@@ -99,7 +103,7 @@ export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://
               if (rowErrors({ ...row, reviewed: true }).length) continue;
               const { candidates } = await api('/mobile-intake/search?' + new URLSearchParams({ q: `${row.name} ${row.number}`.slice(0, 160), limit: '30' }));
               const candidate = exactStockCandidate(row, candidates);
-              if (candidate) { row.candidate = candidate; row.priceArs = String(candidate.priceArs); row.reviewed = false; await save(); }
+              if (candidate) { row.candidate = candidate; row.condition = candidate.condition; row.priceArs = String(candidate.priceArs); row.reviewed = false; await save(); }
             }
             await save();
           } else if (url.pathname === '/review-matched') {

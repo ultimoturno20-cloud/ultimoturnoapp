@@ -94,4 +94,8 @@ test('automatic matches require exact full identity, a unique existing item and 
   assert.equal(exactStockCandidate(row, [{ ...candidate, inventoryItemId: undefined }]), null);
   const graded = parseExport('Name,Set,Number,Count,GradingCompany,Grade\nA,B,001,1,PSA,10').rows[0];
   assert.equal(graded.gradingCompany, 'PSA'); assert.equal(graded.grade, '10');
+  const gradedRow = { ...row, gradingCompany: 'PSA', grade: '10' };
+  const gradedCandidate = { ...candidate, gradingCompany: 'PSA', grade: '10', condition: 'GRADED' };
+  assert.equal(exactStockCandidate(gradedRow, [gradedCandidate]), gradedCandidate);
+  assert.equal(payloadFor(session(), gradedRow).condition, 'GRADED');
 });

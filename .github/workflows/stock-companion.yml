@@ -24,4 +24,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node --test tools/stock-companion/core.test.mjs tools/stock-companion/server.test.mjs
+      - run: npm run typecheck
+      - run: node --test tools/stock-companion/*.test.mjs

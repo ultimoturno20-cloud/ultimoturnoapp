@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { rowErrors } from './batch.mjs';
+export { rowErrors } from './batch.mjs';
 const require = createRequire(import.meta.url);
 // Resolved from the repository when installed under tools/stock-companion.
 const { parse } = require('csv-parse/sync');
@@ -38,31 +40,13 @@ export function parseExport(text, filename = '') {
   return { rows, fingerprint };
 }
 
-export function rowErrors(row, online = false) {
-  const errors = [];
-  if (!row.name.trim()) errors.push('nombre');
-  if (!row.expansion.trim()) errors.push('edición');
-  if (!row.number.trim()) errors.push('número');
-  if (!/^\d+$/.test(String(row.quantity)) || !Number.isSafeInteger(Number(row.quantity)) || Number(row.quantity) < 1 || Number(row.quantity) > 100000) errors.push('cantidad entera entre 1 y 100.000');
-  if (!['EN', 'ES', 'JP', 'JA', 'ZH', 'KO', 'FR', 'DE', 'IT', 'PT'].includes(row.language)) errors.push('idioma');
-  if (!['NM', 'LP', 'MP', 'HP', 'DMG'].includes(row.condition)) errors.push('condición');
-  if (!row.finish.trim()) errors.push('acabado');
-  if (Boolean(row.gradingCompany) !== Boolean(row.grade)) errors.push('certificadora y grado');
-  if (!row.reviewed) errors.push('revisión');
-  if (online) {
-    if (!row.candidate?.priceChartingId && !row.candidate?.inventoryItemId) errors.push('vínculo con catálogo');
-    if (!row.candidate?.inventoryItemId && (!/^\d+(\.\d{1,2})?$/.test(String(row.priceArs)) || Number(row.priceArs) <= 0)) errors.push('precio de venta ARS');
-  }
-  return errors;
-}
-
 export function payloadFor(session, row) {
   const candidate = row.candidate;
   return {
     helperName: 'Programa compañero', matchType: candidate.inventoryItemId ? 'inventory' : 'card_index',
     inventoryItemId: candidate.inventoryItemId || undefined, priceChartingId: candidate.priceChartingId || '',
     sku: candidate.sku || '', name: row.name, expansion: row.expansion, number: row.number,
-    language: row.language, condition: row.condition, finish: row.finish,
+    language: row.language, condition: row.gradingCompany?.trim() && row.grade?.trim() ? 'GRADED' : row.condition, finish: row.finish,
     gradingCompany: row.gradingCompany || '', grade: row.grade || '',
     quantityOnHand: Number(row.quantity), priceArs: candidate.inventoryItemId ? candidate.priceArs : Number(row.priceArs),
     priceUsd: candidate.inventoryItemId ? candidate.priceUsd : null, imageUrl: candidate.imageUrl || '',
@@ -75,9 +59,10 @@ export const markerFor = (session, row) => `UT-COMPANION:${session.id}:${row.id}
 export function exactStockCandidate(row, candidates) {
   if (candidates.length >= 30) return null; // A truncated result cannot establish uniqueness.
   const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
-  const fields = ['name', 'expansion', 'number', 'language', 'condition', 'finish', 'gradingCompany', 'grade'];
+  const fields = ['name', 'expansion', 'number', 'language', 'finish', 'gradingCompany', 'grade'];
   if (rowErrors({ ...row, reviewed: true }).length) return null;
-  const matches = candidates.filter(c => c.inventoryItemId && fields.every(f => norm(c[f]) === norm(row[f])));
+  const effectiveCondition = value => value.gradingCompany?.trim() && value.grade?.trim() ? 'graded' : norm(value.condition);
+  const matches = candidates.filter(c => c.inventoryItemId && fields.every(f => norm(c[f]) === norm(row[f])) && effectiveCondition(c) === effectiveCondition(row));
   return matches.length === 1 ? matches[0] : null;
 }
 

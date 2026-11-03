@@ -21,6 +21,11 @@ los workers. No carga `.env` del repositorio.
 3. Revisar nombre, edición, número, unidades nuevas, idioma, condición, acabado
    y certificadora/grado si corresponde.
    Se puede omitir una fila. Los filtros no cambian el alcance del lote.
+   **Completar vacíos** aplica idioma, condición y/o acabado elegidos a las
+   filas locales de TODO el lote, incluso fuera del filtro/página. No reemplaza
+   valores existentes, precios ni cantidades; no cambia filas enviadas,
+   inciertas u omitidas. Las filas modificadas pierden su vínculo/revisión
+   previa para volver a confirmar su identidad.
 4. Conectar una cuenta administradora. **Vincular coincidencias exactas** busca
    cartas ya existentes por identidad completa, incluida graduación, sin tomar
    resultados ambiguos ni listas truncadas. El resto se vincula manualmente a
@@ -53,6 +58,12 @@ Se admiten equivalentes básicos en español. No se asume conocer todos los
 esquemas de Monprice: falta validar con una exportación real del usuario.
 Máximo 10 MB desde la interfaz, 10.000 filas; cantidades enteras de 1 a 100.000.
 Un idioma/acabado vacío se mantiene pendiente. Sin agrupación automática.
+La revisión muestra 25/50/100 filas por página, con filtros adicionales de
+sin vínculo, omitidas y transferencia incierta. Totales y acciones siguen
+abarcando todo el lote. Cantidades inválidas quedan señaladas y no se suman
+al contador de unidades. La UI y el servidor comparten las mismas validaciones.
+Se conservan códigos de chino CHS/CHT. Cartas con certificadora y grado usan
+la condición canónica GRADED al enviarse; sin esos dos datos quedan pendientes.
 
 La huella reconoce archivos con las mismas filas normalizadas aunque cambie el
 separador. **Nuevo lote físico** permite importar otro conjunto real idéntico;
@@ -94,12 +105,17 @@ operación; no reconstruye silenciosamente un outbox vacío.
 
 ## Validación aislada
 
-`node --test tools/stock-companion/*.test.mjs`
+`npm run typecheck` y `node --test tools/stock-companion/*.test.mjs`
 
 Incluye CSV/JSON, cantidades, variantes, precio conservado, corte antes/después
 de crear, recuperación paginada, aislamiento por actor/negocio, rechazo de origen,
 sesiones sin credenciales, instancia única y persistencia al reiniciar. La
 prueba HTTP usa API simulada con cartas sintéticas (8 + 3 = 11; repetir = 11).
+La prueba de integración adicional utiliza la API real compilada y una PGlite
+temporal sin credenciales productivas: 124 filas, cuatro variantes distintas,
+precios conservados y respuesta de aplicación perdida después del commit.
+Reintentar los IDs no vuelve a sumar existencias. Esta prueba no usa la API
+desplegada; desactiva integraciones antes de importar el módulo de servidor.
 No realiza autenticaciones ni operaciones de QA en producción.
 
 Variables opcionales sin `.env`: `COMPANION_PORT`, `COMPANION_DATA_DIR` y
@@ -113,10 +129,12 @@ la llegada del archivo desde el teléfono. La captura en vivo con scrcpy o un
 reconocedor propio requiere comprobar eventos de escaneo y dos ejemplares
 iguales consecutivos. Esta entrega no lee la cámara ni controla Monprice.
 
-Validación local realizada: 15 pruebas del compañero aprobadas; Chrome sin
+Validación local realizada: 21 pruebas del compañero aprobadas; Chrome sin
 conexión externa en 320/390/768/1440/1788 px, edición por teclado, filtros,
 persistencia, duplicado de archivo, error de acceso y botones de envío
-bloqueados sin conexión. No se verificó login ni sincronización productiva.
+bloqueados sin conexión. Prueba de 123 filas en navegador: completar vacíos
+desde un filtro, conservar ES/LP/reverse, navegar 25/100 filas, recargar y
+marcar cantidades inválidas. No se verificó login ni sincronización productiva.
 `npm run check:new` aprobado: lint, tipos, suite general, verificación aislada
 de DB y compilación. `git diff --check` sin errores. La creación de issue/PR
 requiere autenticación de GitHub; sigue pendiente si no hay sesión disponible.
