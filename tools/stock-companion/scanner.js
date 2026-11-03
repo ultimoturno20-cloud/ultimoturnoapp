@@ -50,6 +50,7 @@ function render(force = false) {
   for (const row of view.rows) {
     const tr = node('tr'); tr.dataset.rowId = row.id;
     const identity = node('td'); identity.append(node('strong', row.name), node('small', row.expansion), node('small', `#${row.number}`));
+    if (row.sourceCorrection) identity.append(node('small', row.identityCorrected ? 'Corrección manual conservada' : 'Corregida en Monprice', 'good'));
     const variant = node('td'); variant.append(node('span', `${row.language} · ${row.finish || 'Acabado pendiente'}`), node('small', row.gradingCompany ? `${row.gradingCompany} ${row.grade}` : row.condition));
     const quantityCell = node('td'), editor = node('div', undefined, 'quantity-edit'), minus = node('button', '−', 'secondary'), plus = node('button', '+', 'secondary'), input = node('input');
     input.id = `quantity-${row.id}`; input.value = row.quantity; input.inputMode = 'numeric'; input.setAttribute('aria-label', `Cantidad de ${row.name}`);

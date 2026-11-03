@@ -18,6 +18,21 @@ los workers. No carga `.env` del repositorio.
 La raíz abre la mesa de escaneo: Pixel/Monprice a la izquierda, cartas y editor
 de cantidades a la derecha. El flujo anterior de archivos sigue en `/batches`.
 No incorpora otro reconocedor ni cambia el manejo de repetidas de Monprice.
+Las correcciones de edición y acabado se hacen con los controles de Monprice:
+el selector de cartas semejantes y el campo Tipo de cada carta. Se verificó
+en pantalla PRE 004/131 frente a ASC 016/217, y las opciones Normal, Reverse Holo,
+Reverse Holo Master Ball y Reverse Holo Poke Ball. No se añade un segundo
+corrector para reemplazar esas funciones.
+
+El puente traduce las etiquetas específicas Master Ball/Poké Ball a los
+acabados `master ball`/`poke ball` del stock. No las reduce a Reverse Holo.
+Los demás acabados, incluidos los que aún no se probaron físicamente, se
+conservan sin inventar equivalencias. Una sustitución única de la misma carta
+en Monprice, con idioma y cantidad de origen iguales, conserva la fila y la
+cantidad editada en PC; actualiza edición/número/acabado y elimina el vínculo
+automático anterior. Una elección de catálogo hecha explícitamente en PC se
+conserva y vuelve a quedar pendiente de revisión. Si la sustitución es ambigua,
+no se elimina una fila editada ni se modifica parcialmente el lote.
 
 1. Conectar Android por USB con depuración autorizada, abrir scrcpy y Monprice.
 2. Elegir nombre del lote, idioma y condición habitual en la PC; pulsar
@@ -179,7 +194,7 @@ edición manual de cantidades y vuelta a un lote guardado. También validar el
 CSV/JSON del usuario como alternativa. La conexión lee/controla Monprice por
 ADB; no implementa un reconocedor propio ni intenta contar pasos físicos.
 
-Validación local realizada: 29 pruebas del compañero aprobadas; Chrome sin
+Validación local realizada: 33 pruebas del compañero aprobadas; Chrome sin
 conexión externa en 320/390/768/1440/1788 px, edición por teclado, filtros,
 persistencia, duplicado de archivo, error de acceso y botones de envío
 bloqueados sin conexión. Prueba de 123 filas en navegador: completar vacíos

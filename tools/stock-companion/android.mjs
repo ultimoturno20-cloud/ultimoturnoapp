@@ -32,6 +32,12 @@ function bounds(node) {
   return n;
 }
 const languages = { 'Inglés': 'EN', 'English': 'EN', 'Español': 'ES', 'Spanish': 'ES', 'Japonés': 'JA', 'Japanese': 'JA', 'Chino': 'ZH', 'Chinese': 'ZH' };
+export function monpriceFinish(value) {
+  const text = String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  if (/\bmaster\s*ball\b/.test(text)) return 'master ball';
+  if (/\bpoke\s*ball\b/.test(text)) return 'poke ball';
+  return text;
+}
 export function readMonprice(root, language) {
   const nodes = flatten(root), all = texts(root);
   const list = all.includes('Cartas Escaneadas') || all.includes('Scanned Cards');
@@ -39,7 +45,8 @@ export function readMonprice(root, language) {
   const selectedLanguage = nodes.map(n => languages[n.attrs['content-desc']]).find(Boolean);
   const readIdentity = values => ({ name: valueAfter(values, ['Nombre', 'Name']), expansion: valueAfter(values, ['Establecer', 'Set']), number: valueAfter(values, ['Número', 'Number']) });
   const identity = readIdentity(all);
-  if (!list) return { mode: settings ? 'scanner' : 'other', language: selectedLanguage, empty: all.includes('0 tarjetas') || all.includes('0 cards'), latest: identity.name && identity.expansion && identity.number ? identity : null, next: nodes.find(n => n.attrs['content-desc'] === 'next icon') };
+  const correction = all.includes('Which card is it?') || all.some(value => /reverse holo (?:poke|master) ball/i.test(value));
+  if (!list) return { mode: settings ? 'scanner' : correction ? 'correction' : 'other', language: selectedLanguage, empty: all.includes('0 tarjetas') || all.includes('0 cards'), latest: identity.name && identity.expansion && identity.number ? identity : null, next: nodes.find(n => n.attrs['content-desc'] === 'next icon') };
   const totalText = valueAfter(all, ['Cantidad', 'Quantity']);
   if (!/^\d+$/.test(totalText)) throw new Error('Monprice no mostró la cantidad total de la lista.');
   const rows = [], seenParents = new Set();
@@ -55,7 +62,7 @@ export function readMonprice(root, language) {
     const type = valueAfter(labels, ['Tipo:', 'Type:', 'Tipo', 'Type']);
     const raw = inner.some(n => n.attrs['content-desc'] === 'RAW' || n.attrs.text === 'RAW');
     // Never guess a grade or conflate Foil with Reverse Holo.
-    const finish = type.toLowerCase().trim();
+    const finish = monpriceFinish(type);
     if (card.name && card.expansion && card.number && quantity && finish) rows.push({ ...card, quantity: Number(quantity), language, finish, gradingCompany: '', grade: '', gradingPending: !raw, bounds: container.attrs.bounds });
   }
   return { mode: 'list', total: Number(totalText), rows, scroll: nodes.find(n => n.attrs.scrollable === 'true' && flatten(n).some(c => ['Nombre', 'Name'].includes(c.attrs.text))) };
@@ -64,15 +71,34 @@ export function readMonprice(root, language) {
 export function mergeSnapshot(session, sourceRows) {
   if (session.appliedAt || session.rows.some(r => r.transfer !== 'local')) throw new Error('Este lote ya comenzó a enviarse. No se modifica su captura.');
   const existing = new Map(session.rows.filter(r => r.androidKey).map(r => [r.androidKey, r]));
+  const incomingKeys = new Set(sourceRows.map(sourceKey));
+  const removed = [...existing.values()].filter(row => !incomingKeys.has(row.androidKey));
+  const added = sourceRows.filter(row => !existing.has(sourceKey(row)));
+  const family = value => String(value || '').normalize('NFKC').trim().toLowerCase();
+  // Monprice can replace the chosen printing in the same scan slot. A unique
+  // one-for-one replacement with unchanged name/language/source quantity is
+  // treated as a source correction; it never creates an extra physical unit.
+  const replacement = removed.length === 1 && added.length === 1 &&
+    family(removed[0].androidSnapshotName || removed[0].name) === family(added[0].name) &&
+    removed[0].sourceQuantity === added[0].quantity &&
+    removed[0].language === added[0].language ? removed[0] : null;
+  if (removed.some(row => row !== replacement && (row.quantityEdited || row.candidate))) throw new Error('La lista de Monprice cambió y quitaría una fila editada. Revisá el lote antes de continuar.');
   const next = sourceRows.map(source => {
-    const key = sourceKey(source), old = existing.get(key);
+    const key = sourceKey(source), old = existing.get(key) || (replacement && added[0] === source ? replacement : null);
     if (old) {
-      if (old.sourceQuantity !== source.quantity) { if (!old.quantityEdited) old.quantity = String(source.quantity); old.reviewed = false; }
-      old.sourceQuantity = source.quantity; return old;
+      const row = { ...old };
+      if (row.androidKey !== key) {
+        row.sourceCorrection = { name: old.androidSnapshotName || old.name, expansion: session.androidSnapshot?.find(r => sourceKey(r) === old.androidKey)?.expansion || old.expansion, number: session.androidSnapshot?.find(r => sourceKey(r) === old.androidKey)?.number || old.number };
+        if (!row.identityCorrected) {
+          Object.assign(row, { name: source.name, expansion: source.expansion, number: source.number, language: source.language, finish: source.finish, gradingCompany: source.gradingCompany, grade: source.grade, gradingPending: source.gradingPending, candidate: null, priceArs: '' });
+        }
+        row.androidKey = key; row.reviewed = false;
+      }
+      if (row.sourceQuantity !== source.quantity) { if (!row.quantityEdited) row.quantity = String(source.quantity); row.reviewed = false; }
+      row.sourceQuantity = source.quantity; row.androidSnapshotName = source.name; return row;
     }
-    return { id: randomUUID(), sourceRow: 0, ...source, quantity: String(source.quantity), sourceQuantity: source.quantity, androidKey: key, condition: session.androidCondition, priceArs: '', candidate: null, reviewed: false, ignored: false, transfer: 'local', gradingPending: source.gradingPending };
+    return { id: randomUUID(), sourceRow: 0, ...source, androidSnapshotName: source.name, quantity: String(source.quantity), sourceQuantity: source.quantity, androidKey: key, condition: session.androidCondition, priceArs: '', candidate: null, reviewed: false, ignored: false, transfer: 'local', gradingPending: source.gradingPending };
   });
-  if (session.rows.some(r => r.androidKey && !next.some(n => n.androidKey === r.androidKey) && (r.quantityEdited || r.candidate))) throw new Error('La lista de Monprice cambió y quitaría una fila editada. Revisá el lote antes de continuar.');
   session.rows = [...session.rows.filter(r => !r.androidKey), ...next];
   session.androidSnapshot = sourceRows;
   session.androidSyncedAt = new Date().toISOString();
@@ -119,7 +145,7 @@ export class AndroidBridge {
     const screen = await this.ui();
     if (screen.language && screen.language !== language) throw new Error('El idioma seleccionado no coincide con Monprice.');
     if (!allowExisting && !(screen.empty || (screen.mode === 'list' && screen.total === 0))) throw new Error('Para otro lote, iniciá una sesión de escaneo vacía en Monprice.');
-    if (!['scanner', 'list'].includes(screen.mode)) throw new Error('Abrí el escáner o la lista de cartas escaneadas de Monprice.');
+    if (!['scanner', 'list', 'correction'].includes(screen.mode)) throw new Error('Abrí el escáner o la lista de cartas escaneadas de Monprice.');
     this.status = { connected: true, mode: 'capture', message: 'Leyendo Monprice. Las cantidades se copian de su lista.' };
     await this.tick(); this.schedule();
   }

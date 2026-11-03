@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AndroidBridge, parseHierarchy, readMonprice, mergeSnapshot } from './android.mjs';
+import { AndroidBridge, parseHierarchy, readMonprice, mergeSnapshot, monpriceFinish } from './android.mjs';
 const leaf = (text = '', description = '') => `<node text="${text}" content-desc="${description}" bounds="[0,0][20,20]"/>`;
 const root = content => `<hierarchy><node package="com.sarafan.pokemon" bounds="[0,0][1080,2424]">${content}</node></hierarchy>`;
 const card = (name = 'Example', quantity = 1, finish = 'Normal') => `<node bounds="[0,700][1080,1200]">${leaf('', 'Decrease count')}${leaf(String(quantity))}${leaf('', 'Increase count')}${leaf('Nombre')}${leaf(name)}${leaf('Establecer')}${leaf('Example Set')}${leaf('Número')}${leaf('001/100')}${leaf('Tipo:')}${leaf(finish)}${leaf('Grading')}${leaf('', 'RAW')}</node>`;
@@ -71,5 +71,36 @@ test('snapshot refresh preserves manual quantities, ignores and catalog choices'
   mergeSnapshot(session, [{ ...rows[0], quantity: 4 }]);
   assert.equal(session.rows[0].quantity, '9'); assert.equal(session.rows[0].sourceQuantity, 4); assert.equal(session.rows[0].ignored, true); assert.equal(session.rows[0].candidate.inventoryItemId, 'chosen');
   assert.throws(() => mergeSnapshot(session, []), /quitaría/);
-  row.transfer = 'sent'; assert.throws(() => mergeSnapshot(session, rows), /enviarse/);
+  session.rows[0].transfer = 'sent'; assert.throws(() => mergeSnapshot(session, rows), /enviarse/);
+});
+
+test('Monprice specific ball patterns remain distinct from generic reverse holo', () => {
+  for (const [input, expected] of [['Normal', 'normal'], ['Reverse Holo', 'reverse holo'], ['Reverse Holo Master Ball', 'master ball'], ['Reverse Holo Poke Ball', 'poke ball'], ['Reverse Holo Poké Ball', 'poke ball'], ['Reverse Holo Energy', 'reverse holo energy']]) {
+    assert.equal(monpriceFinish(input), expected);
+    const result = readMonprice(parseHierarchy(list(card('Example', 1, input), 1)), 'EN'); assert.equal(result.rows[0].finish, expected);
+  }
+  assert.equal(readMonprice(parseHierarchy(root(leaf('Normal') + leaf('Reverse Holo Poke Ball'))), 'EN').mode, 'correction');
+  assert.equal(readMonprice(parseHierarchy(root(leaf('Which card is it?'))), 'EN').mode, 'correction');
+});
+test('one corrected printing keeps the same local row and edited quantity, without retaining an automatic old link', () => {
+  const session = { rows: [], androidCondition: 'NM' };
+  const source = readMonprice(parseHierarchy(list(card('Example', 1), 1)), 'EN').rows[0];
+  mergeSnapshot(session, [{ ...source, expansion: 'Set A', number: '016/217' }]);
+  const before = session.rows[0]; before.quantity = '7'; before.quantityEdited = true; before.candidate = { inventoryItemId: 'old-stock' }; before.priceArs = '4000'; before.reviewed = true;
+  mergeSnapshot(session, [{ ...source, expansion: 'Set B', number: '004/131', finish: 'poke ball' }]);
+  const corrected = session.rows[0]; assert.equal(session.rows.length, 1); assert.equal(corrected.id, before.id); assert.equal(corrected.quantity, '7');
+  assert.equal(corrected.expansion, 'Set B'); assert.equal(corrected.number, '004/131'); assert.equal(corrected.finish, 'poke ball'); assert.equal(corrected.candidate, null); assert.equal(corrected.priceArs, ''); assert.equal(corrected.reviewed, false);
+});
+test('an explicit PC identity correction survives a later Monprice correction', () => {
+  const session = { rows: [], androidCondition: 'NM' }, source = readMonprice(parseHierarchy(list(card('Example', 1), 1)), 'EN').rows[0];
+  mergeSnapshot(session, [source]); Object.assign(session.rows[0], { expansion: 'Chosen Set', finish: 'master ball', identityCorrected: true, candidate: { inventoryItemId: 'chosen' }, quantity: '4', quantityEdited: true });
+  mergeSnapshot(session, [{ ...source, finish: 'poke ball' }]);
+  assert.equal(session.rows[0].expansion, 'Chosen Set'); assert.equal(session.rows[0].finish, 'master ball'); assert.equal(session.rows[0].candidate.inventoryItemId, 'chosen'); assert.equal(session.rows[0].quantity, '4');
+});
+test('a rejected ambiguous source update does not mutate any previously saved row', () => {
+  const session = { rows: [], androidCondition: 'NM' }, source = readMonprice(parseHierarchy(list(card('Example', 1), 1)), 'EN').rows[0];
+  mergeSnapshot(session, [source, { ...source, name: 'Another' }]); session.rows[1].quantityEdited = true;
+  const before = structuredClone(session);
+  assert.throws(() => mergeSnapshot(session, [{ ...source, quantity: 2 }]), /quitaría/);
+  assert.deepEqual(session, before);
 });

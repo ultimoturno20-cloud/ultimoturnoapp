@@ -169,6 +169,7 @@ export async function startCompanion({ dataDir, port = 4318, apiBase = 'https://
             if (!candidate) throw new Error('La coincidencia cambió. Volvé a buscar.');
             session.account ||= { userId: connection.user.id, businessId: connection.user.businessId, displayName: connection.user.displayName };
             row.candidate = candidate;
+            row.identityCorrected = true;
             row.gradingPending = false;
             row.name = candidate.name; row.expansion = candidate.expansion; row.number = candidate.number;
             if (candidate.inventoryItemId) {
