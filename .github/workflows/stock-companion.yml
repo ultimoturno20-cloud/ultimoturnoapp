@@ -26,3 +26,14 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: node --test tools/stock-companion/*.test.mjs
+      - run: npm ci
+        working-directory: tools/stock-companion/desktop
+      - run: npm test
+        working-directory: tools/stock-companion/desktop
+      - run: npm run build
+        working-directory: tools/stock-companion/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UltimoTurno-Stock-Windows-x64
+          path: .work/stock-desktop-release/UltimoTurno-Stock-*.exe
+          if-no-files-found: error

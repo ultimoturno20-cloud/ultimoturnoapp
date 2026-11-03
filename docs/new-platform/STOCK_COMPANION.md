@@ -6,11 +6,58 @@ Funcionalidad nueva; no reemplaza ni completa etapas OP pendientes.
 
 ## Abrir en Windows
 
+La aplicación de escritorio se entrega como `UltimoTurno-Stock-0.2.0.exe`
+(Windows x64, portable). Doble clic abre una ventana propia y arranca su servicio
+interno; no requiere instalar Node.js, abrir una página ni mantener una consola.
+Cerrar la ventana detiene la conexión y el servicio. Abrirla otra vez conserva
+los lotes en `%LOCALAPPDATA%/UltimoTurno/StockCompanion/sessions.json`.
+Una segunda apertura trae al frente la ventana existente. No necesita permisos
+de administrador. El paquete de prueba todavía no está firmado digitalmente.
+En esta PC el acceso directo **UltimoTurno Stock** usa la carpeta instalada
+en `%LOCALAPPDATA%/Programs/UltimoTurno Stock/app`, para iniciar directamente
+sin extraer el portable en cada apertura. No mover el ejecutable fuera de esa
+carpeta: sus archivos acompañantes forman parte del programa.
+
+Con el Pixel conectado y Monprice abierto, usar **Conectar Monprice**.
+Si scrcpy está abierto la primera vez, se guarda automáticamente la ruta de ADB.
+También se puede elegir **Android → Configurar conexión Android…** y seleccionar
+`adb.exe` dentro de la carpeta de scrcpy; reiniciar para usar la ruta guardada.
+Después scrcpy no necesita estar abierto. ADB y las DLL que lo acompañan deben
+seguir instalados en esa carpeta. El teléfono requiere depuración USB autorizada.
+
+Si sigue activa la versión anterior en navegador, cerrar su consola antes de
+abrir la aplicación. No se inicia otra instancia sobre los mismos lotes ni se
+matan procesos ajenos. Tras un cierre anormal solo se recupera el bloqueo si
+su proceso ya no existe; un bloqueo inválido requiere revisión manual.
+
+### Desarrollo y empaquetado
+
+Desde `tools/stock-companion/desktop`, ejecutar `npm ci`, `npm test` y
+`npm run build`. El portable queda en `.work/stock-desktop-release/` de la raíz.
+Las dependencias tienen su propio lockfile y no cambian las de la plataforma.
+El empaquetado usa una carpeta temporal aislada: incluye únicamente la interfaz,
+el puente y `csv-parse`; no incluye `.env`, lotes, perfiles ni datos del repo.
+La ventana usa sandbox, aislamiento de contexto y no expone Node al renderer.
+Solo admite navegación a los documentos locales del compañero, sin ventanas
+externas ni permisos de cámara/micrófono de la PC.
+
+QA del ejecutable empaquetado: arranque sin Node externo, importación sintética,
+cantidad editada, navegación a lotes, bloqueo de navegación externa, cierre,
+liberación del bloqueo y recuperación de cantidad al reabrir. Sin llamadas a
+producción. Dos pruebas adicionales cubren bloqueo vivo/muerto/inválido y
+navegación permitida. El flujo de stock conserva las 33 pruebas del compañero.
+Validación general de esta entrega: lint, typecheck, db:verify y build aprobados.
+La suite general dio 297/298: una prueba de historial de precios abortó dentro
+de WASM/PGlite (`Aborted()`), sin cambios de código en esa área. Esa misma prueba
+pasó al repetirla aislada. No se declara una ejecución completa de check:new
+en verde para esta entrega; el empaquetado y la prueba del escritorio sí pasaron.
+
+### Alternativa de navegador para desarrollo
+
 Con Node.js 22 y dependencias del repositorio instaladas (`npm ci`), ejecutar
 `scripts/start-stock-companion.cmd` con doble clic. Abrir
 http://127.0.0.1:4318 y mantener abierta la consola. Ctrl+C cierra el servidor.
-Es una herramienta local con interfaz en navegador, todavía no un instalador
-ni un ejecutable independiente. No requiere arrancar la API, la base local ni
+Esta alternativa mantiene la interfaz en navegador. No requiere arrancar la API, la base local ni
 los workers. No carga `.env` del repositorio.
 
 ## Pantalla Monprice + lista + envío

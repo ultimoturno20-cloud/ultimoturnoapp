@@ -1,0 +1,25 @@
+{
+  "name": "ultimoturno-stock-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Mesa de escaneo de stock de UltimoTurno para Windows",
+  "author": "UltimoTurno",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "prepare:runtime": "node prepare.mjs",
+    "build": "npm run prepare:runtime && node build.mjs",
+    "test": "node --test lifecycle.test.mjs"
+  },
+  "dependencies": { "csv-parse": "7.0.3" },
+  "devDependencies": { "electron": "45.2.1", "electron-builder": "26.18.0" },
+  "build": {
+    "appId": "app.ultimoturno.stock",
+    "productName": "UltimoTurno Stock",
+    "directories": { "output": "../../../.work/stock-desktop-release" },
+    "files": ["main.mjs", "lifecycle.mjs", "runtime/**/*", "package.json"],
+    "win": { "target": "portable", "signAndEditExecutable": false },
+    "portable": { "artifactName": "UltimoTurno-Stock-${version}.exe", "requestExecutionLevel": "user" }
+  }
+}
