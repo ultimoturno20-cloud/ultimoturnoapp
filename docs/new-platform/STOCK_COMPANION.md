@@ -1,4 +1,4 @@
-# Programa compañero de stock · primera versión
+# Programa compañero de stock · mesa de escaneo
 
 Pedido: facilitar el ingreso de cientos de cartas desde un programa separado
 del panel. Responsable: Codex. Rama `codex/stock-companion`, base `a4c839e`.
@@ -12,6 +12,56 @@ http://127.0.0.1:4318 y mantener abierta la consola. Ctrl+C cierra el servidor.
 Es una herramienta local con interfaz en navegador, todavía no un instalador
 ni un ejecutable independiente. No requiere arrancar la API, la base local ni
 los workers. No carga `.env` del repositorio.
+
+## Pantalla Monprice + lista + envío
+
+La raíz abre la mesa de escaneo: Pixel/Monprice a la izquierda, cartas y editor
+de cantidades a la derecha. El flujo anterior de archivos sigue en `/batches`.
+No incorpora otro reconocedor ni cambia el manejo de repetidas de Monprice.
+
+1. Conectar Android por USB con depuración autorizada, abrir scrcpy y Monprice.
+2. Elegir nombre del lote, idioma y condición habitual en la PC; pulsar
+   **Conectar Monprice**. La primera conexión incluye la sesión actual de la app.
+3. Escanear en Monprice. Ante otra identidad reconocida, el puente abre su lista,
+   copia cantidades/acabados y vuelve al escáner. No usa el precio como contador
+   ni suma por cada frame. Las repetidas se resuelven en Monprice o editando
+   cantidad en la PC, como pidió el usuario.
+4. Ajustar cantidades con teclado o +/−. Las correcciones de PC sobreviven a
+   nuevas lecturas. La cantidad original de Monprice queda visible como referencia.
+5. **Enviar al stock** comprueba toda la lista, vincula coincidencias exactas,
+   solicita resolver las pendientes y muestra confirmación. Una vez confirmado,
+   prepara las capturas y aplica solo sus IDs desde un único botón. El precio
+   existente se conserva; las altas nuevas necesitan precio ARS explícito.
+
+**Terminar captura** permite revisar antes de enviar y deja Monprice en su lista.
+Después de un envío, otro lote exige comenzar con una sesión vacía de Monprice:
+no vuelve a copiar automáticamente las cartas del lote anterior. Las operaciones
+de stock siguen requiriendo admin. No se hicieron cargas productivas de prueba.
+
+La vista del Pixel utiliza capturas ADB periódicas, no video de 60 fps; no afecta
+al reconocimiento que corre en el teléfono. Se pueden tocar controles en la
+imagen, usar el Pixel directamente o mantener scrcpy abierto. ADB se descubre
+desde PATH, la instalación de scrcpy en ejecución o `COMPANION_ADB_PATH`.
+No se instalan apps en Android. Los frames viven en memoria; no se versionan
+capturas, seriales, catálogos operativos ni exportaciones reales.
+
+La lectura requiere Monprice al frente. Si aparece otra app, una pantalla de
+permisos o un bloqueo, se pausa la captura y no se automatiza esa pantalla.
+La lista se recorre por páginas y solo se acepta cuando sus cantidades suman
+el total mostrado por Monprice; una lectura incompleta/conflictiva no reemplaza
+el lote ni permite finalizar el envío. Los metadatos de graduación no reconocidos
+quedan pendientes. `Foil` se conserva como tal, sin inventar `Reverse Holo`.
+Las equivalencias `001/100` vs `1` requieren además nombre, edición y variante
+exactos; dos denominadores diferentes no se vinculan automáticamente.
+
+Esta versión depende de las etiquetas y estructura accesibles de Monprice
+(ES/EN). La prueba física confirmó Pixel 9 + Monprice, Pidgey/Team Up/121/181 y
+luego Farfetch'd/Team Up/127/181, una unidad normal de cada una. La segunda se
+agregó automáticamente al lote local; la pantalla real se mostró junto al editor.
+No se enviaron esas cartas al stock. No acredita rendimiento con cientos de
+cartas reales: la copia de lista puede pausar el escáner unos segundos. Se debe
+medir una tanda real; el CSV sigue disponible para listas muy largas o si la
+interfaz de Monprice cambia.
 
 ## Flujo
 
@@ -118,23 +168,27 @@ Reintentar los IDs no vuelve a sumar existencias. Esta prueba no usa la API
 desplegada; desactiva integraciones antes de importar el módulo de servidor.
 No realiza autenticaciones ni operaciones de QA en producción.
 
-Variables opcionales sin `.env`: `COMPANION_PORT`, `COMPANION_DATA_DIR` y
+Variables opcionales sin `.env`: `COMPANION_ADB_PATH`, `COMPANION_PORT`, `COMPANION_DATA_DIR` y
 `COMPANION_API_BASE` (solo producción canónica o HTTP localhost para QA).
 El lanzador indica el puerto estándar; si se cambia, usar la URL de la consola.
 
 ## Próximas etapas
 
-Validar un CSV/JSON real y medir una tanda de 50–100 cartas. Automatizar después
-la llegada del archivo desde el teléfono. La captura en vivo con scrcpy o un
-reconocedor propio requiere comprobar eventos de escaneo y dos ejemplares
-iguales consecutivos. Esta entrega no lee la cámara ni controla Monprice.
+Medir una tanda real de 50–100 cartas, incluida repetida después de otra carta,
+edición manual de cantidades y vuelta a un lote guardado. También validar el
+CSV/JSON del usuario como alternativa. La conexión lee/controla Monprice por
+ADB; no implementa un reconocedor propio ni intenta contar pasos físicos.
 
-Validación local realizada: 21 pruebas del compañero aprobadas; Chrome sin
+Validación local realizada: 29 pruebas del compañero aprobadas; Chrome sin
 conexión externa en 320/390/768/1440/1788 px, edición por teclado, filtros,
 persistencia, duplicado de archivo, error de acceso y botones de envío
 bloqueados sin conexión. Prueba de 123 filas en navegador: completar vacíos
 desde un filtro, conservar ES/LP/reverse, navegar 25/100 filas, recargar y
 marcar cantidades inválidas. No se verificó login ni sincronización productiva.
+La mesa integrada también se probó en los cinco anchos: vista del teléfono,
+lista de Monprice, cantidad editada conservada, finalización, vínculo y botón
+único de envío contra API simulada. La integración con API real aislada se
+mantiene en la suite. No se usan capturas reales como fixtures versionados.
 `npm run check:new` aprobado: lint, tipos, suite general, verificación aislada
 de DB y compilación. `git diff --check` sin errores. La creación de issue/PR
 requiere autenticación de GitHub; sigue pendiente si no hay sesión disponible.

@@ -59,10 +59,12 @@ export const markerFor = (session, row) => `UT-COMPANION:${session.id}:${row.id}
 export function exactStockCandidate(row, candidates) {
   if (candidates.length >= 30) return null; // A truncated result cannot establish uniqueness.
   const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
-  const fields = ['name', 'expansion', 'number', 'language', 'finish', 'gradingCompany', 'grade'];
+  const fields = ['name', 'expansion', 'language', 'finish', 'gradingCompany', 'grade'];
   if (rowErrors({ ...row, reviewed: true }).length) return null;
   const effectiveCondition = value => value.gradingCompany?.trim() && value.grade?.trim() ? 'graded' : norm(value.condition);
-  const matches = candidates.filter(c => c.inventoryItemId && fields.every(f => norm(c[f]) === norm(row[f])) && effectiveCondition(c) === effectiveCondition(row));
+  const numberParts = value => norm(value).split('/').map(part => part.replace(/^([a-z]*)0+(?=\d)/, '$1'));
+  const sameNumber = (a, b) => { const left = numberParts(a), right = numberParts(b); return left.length <= 2 && right.length <= 2 && left[0] === right[0] && (!left[1] || !right[1] || left[1] === right[1]); };
+  const matches = candidates.filter(c => c.inventoryItemId && fields.every(f => norm(c[f]) === norm(row[f])) && sameNumber(c.number, row.number) && effectiveCondition(c) === effectiveCondition(row));
   return matches.length === 1 ? matches[0] : null;
 }
 

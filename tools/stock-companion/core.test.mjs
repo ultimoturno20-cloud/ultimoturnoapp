@@ -98,4 +98,6 @@ test('automatic matches require exact full identity, a unique existing item and 
   const gradedCandidate = { ...candidate, gradingCompany: 'PSA', grade: '10', condition: 'GRADED' };
   assert.equal(exactStockCandidate(gradedRow, [gradedCandidate]), gradedCandidate);
   assert.equal(payloadFor(session(), gradedRow).condition, 'GRADED');
+  assert.equal(exactStockCandidate({ ...row, number: '001/100' }, [{ ...candidate, number: '1' }])?.inventoryItemId, 'stock');
+  assert.equal(exactStockCandidate({ ...row, number: '001/100' }, [{ ...candidate, number: '1/200' }]), null);
 });
