@@ -32,6 +32,7 @@ import { storePriceChangeKey } from "./store-admin-state.js";
 import { Trophy } from "lucide-react";
 import { ClaimBuyerRanking } from "./claim-buyers.js";
 import { OperationalHistoryView, type OperationalHistoryHandle } from "./operational-history.js";
+import { LotQuotesView, type LotQuotesHandle } from "./lot-quotes.js";
 
 type DeferredInstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -1001,6 +1002,7 @@ function App() {
   const pendingPriceRefresh = useRef(false);
   const activeViewRefreshes = useRef(0);
   const historyView = useRef<OperationalHistoryHandle>(null);
+  const quotesView = useRef<LotQuotesHandle>(null);
   const routeInitialized = useRef(false);
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
@@ -1233,6 +1235,8 @@ function App() {
       } else if (targetView === "resellers") {
         const stockData = await api<{ summary: StockSummary; items: StockRow[] }>("/stock");
         updates.push(() => setStock(stockData));
+      } else if (targetView === "lot-quotes") {
+        await quotesView.current?.refresh(force);
       } else if (targetView === "claims") {
         const [claimsData, stockData] = await Promise.all([api<ClaimsWorkspace>("/claims"), api<{ summary: StockSummary; items: StockRow[] }>("/stock")]);
         updates.push(() => { setClaims(claimsData); setStock(stockData); });
@@ -2755,6 +2759,7 @@ function App() {
         {!restrictedStockOwner ? <><NavButton href={viewPaths.orders} icon="orders" active={view === "orders"} onClick={() => setView("orders")}>Ordenes</NavButton>
         <NavButton href={viewPaths.sales} icon="sales" active={view === "sales"} onClick={() => setView("sales")}>Caja</NavButton>
         <NavButton href={viewPaths.claims} icon="claims" active={view === "claims" || view === "claim-planner"} onClick={() => setView("claims")}>Claims</NavButton>
+        <NavButton href={viewPaths["lot-quotes"]} icon="purchases" active={view === "lot-quotes"} onClick={() => setView("lot-quotes")}>Presupuestos</NavButton>
         <details className="more-nav">
           <summary>Mas</summary>
           <div onClick={(event) => {
@@ -2925,6 +2930,7 @@ function App() {
       {view === "claims" ? <ClaimsView workspace={claims} stockItems={stock.items} priceChartingCache={priceChartingCache} blueRate={blueRate} claimImageSearching={claimImageSearching} claimCardImageSearching={claimCardImageSearching} claimPriceRefreshing={claimPriceRefreshing} claimClosing={claimClosing} onCreateClaim={(name) => void createClaim(name)} onUpdateClaimSettings={(patch) => void updateClaimSettings(patch)} onSearchPriceCharting={(search, languageGroup) => void searchPriceChartingCache(search, languageGroup)} onAddCards={(ids, sectionId, cards) => void addClaimCards(ids, sectionId, cards)} onUpdateCard={(cardId, patch) => void updateClaimCard(cardId, patch)} onDeleteCard={(cardId) => void deleteClaimCard(cardId)} onSearchCardImage={(cardId) => void searchClaimCardImage(cardId)} onCreateSection={(name) => void createClaimSection(name)} onUpdateSection={(sectionId, patch) => void updateClaimSection(sectionId, patch)} onDeleteSection={(sectionId) => void deleteClaimSection(sectionId)} onAddFree={(input) => void addClaimFree(input)} onExportClaimCsv={() => exportClaimWorkspaceCsv(claims)} onExportOrders={() => void exportClaimOrdersPreview()} onGenerateGrid={() => void generateClaimGrid()} onSearchClaimImages={() => void searchClaimImages()} onRefreshClaimPrices={() => void refreshClaimPrices()} onStartLive={() => setView("claim-live")} onCloseClaim={() => void closeClaim()} onArchiveClaim={() => void archiveClaim()} /> : null}
       {view === "claim-planner" ? <ClaimPlannerView plansData={claimPlans} stockItems={stock.items} activeClaim={claims.activeClaim} onCreatePlan={createClaimPlanDraft} onUpdatePlan={updateClaimPlanDraft} onSaveItems={saveClaimPlanItems} onRemoveItem={removeClaimPlanItem} onGenerateProposal={generateClaimPlanProposal} onPublish={publishClaimPlanDraft} onError={showError} /> : null}
       {view === "claim-live" ? <ClaimLiveView workspace={claims} blueRate={blueRate} onGoClaims={() => setView("claims")} /> : null}
+      {view === "lot-quotes" && inventoryPreferenceScope ? <LotQuotesView key={inventoryPreferenceScope} ref={quotesView} request={api} scope={inventoryPreferenceScope} currentRate={blueRate.sell} /> : null}
       {view === "orders" ? <OrdersView key={inventoryPreferenceScope} preferenceScope={inventoryPreferenceScope} sales={sales} claims={claims} stockItems={stock.items} blueRate={blueRate} resellers={orderResellers} onAssignReseller={assignOrderReseller} onComplete={(id) => updateOrder(id, "complete")} onCancel={(id) => updateOrder(id, "cancel")} onPacked={(id) => updateOrder(id, "packed")} onDelivered={(id) => updateOrder(id, "delivered")} onPayment={updateOrderPayment} onNote={updateOrderNote} onMessageSent={updateOrderMessageSent} onLinePacked={updateOrderLinePacked} onLines={updateOrderLines} /> : null}
       {view === "sales" ? <SalesView key={inventoryPreferenceScope} preferenceScope={inventoryPreferenceScope} sales={sales} purchases={purchases} items={stock.items} resellers={financeResellers} blueRate={blueRate} costSaving={costSaving} onFillCosts={fillInventoryCosts} /> : null}
       {view === "purchases" ? (

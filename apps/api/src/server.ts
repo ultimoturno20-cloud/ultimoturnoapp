@@ -99,6 +99,7 @@ import {
   listSales,
   listSalesForActor,
   listOperationalHistory,
+  listLotQuotes, getLotQuote, saveLotQuote,
   listResellers,
   listStockForBusiness,
   listStockForActor,
@@ -4743,6 +4744,25 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       const saleItemId = url.pathname.split("/")[2];
       const body = await readJson<{ packed?: boolean }>(request);
       sendJson(response, 200, { sale: await updateSaleItemPacked(db, saleItemId, Boolean(body.packed), user) });
+      return;
+    }
+
+    if (url.pathname === "/lot-quotes" && request.method === "GET") {
+      sendJson(response, 200, await listLotQuotes(db, user, Object.fromEntries(url.searchParams)));
+      return;
+    }
+    const lotQuoteMatch = url.pathname.match(/^\/lot-quotes\/([^/]+)$/);
+    if (lotQuoteMatch && request.method === "GET") {
+      sendJson(response, 200, await getLotQuote(db, user, lotQuoteMatch[1]));
+      return;
+    }
+    if (lotQuoteMatch && request.method === "PUT") {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere rol administrador."), { statusCode: 403 });
+      const body = await readJson(request, 4_000_000).catch(error => {
+        if (error instanceof SyntaxError) throw Object.assign(new Error("Presupuesto invalido."), { statusCode: 400 });
+        throw error;
+      });
+      sendJson(response, 200, await saveLotQuote(db, user, lotQuoteMatch[1], body));
       return;
     }
 
