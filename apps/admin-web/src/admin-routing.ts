@@ -1,4 +1,4 @@
-export type AdminView = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
+export type AdminView = "dashboard" | "inventory" | "stock-intake" | "claims" | "claim-planner" | "claim-live" | "lot-quotes" | "orders" | "sales" | "purchases" | "catalog" | "movements" | "import" | "mobile-intake" | "resellers" | "admin";
 
 export const adminViewPaths: Record<AdminView, string> = {
   dashboard: "/admin",
@@ -7,6 +7,7 @@ export const adminViewPaths: Record<AdminView, string> = {
   claims: "/admin/claims",
   "claim-planner": "/admin/claims/planificar",
   "claim-live": "/admin/claims/en-vivo",
+  "lot-quotes": "/admin/presupuestos",
   orders: "/admin/ordenes",
   sales: "/admin/caja",
   purchases: "/admin/compras",
