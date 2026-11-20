@@ -14,6 +14,9 @@ export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
 export { listOperationalHistory } from "./operational-history.js";
 export { listLotQuotes, getLotQuote, saveLotQuote } from "./lot-quotes.js";
+export { getMaultConnection, saveMaultConnection, claimMaultLease, releaseMaultLease, stageMaultPage, listMaultCopies,
+  recordMaultResolution, maultPolicyReasons, applyMaultCopies, requireMaultAdmin, listMaultQueue } from "./mault-intake.js";
+export type { MaultConnection } from "./mault-intake.js";
 export { searchInventoryIntakeCandidates } from "./inventory-intake-search.js";
 import { guardStoreOrder } from "./store-checkout.js";
 import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
@@ -234,6 +237,7 @@ export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operatio
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 migrationFiles.push("0063_lot_quotes.sql");
+migrationFiles.push("0064_mault_intake.sql");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");

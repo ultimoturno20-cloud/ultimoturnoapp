@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { normalizeMaultCopy, decideMaultIntake, maultCopyFingerprint, maultReceiptKey, maultCategoryTags, type MaultIntakeContext, type MaultCategoryRule } from "./mault-intake.js";
+import { inventoryLanguageGroup } from "./inventory-query.js";
+import { defaultMaultSyncConfig, normalizeMaultSyncConfig } from "./mault-sync.js";
 
-const raw = (extra = {}) => ({ object: "scanned_card", id: "fixture-copy", card_id: "fixture-printing", collection: { id: "collection-a" }, game: "pokemon", name: "Fixture", set: "QA", collector_number: "001", lang: "es", condition: "NM", finish: "foil", foil_type: "Reverse Holo (Poké Ball)", needs_review: false, ...extra });
+const raw = (extra = {}) => ({ object: "scanned_card", id: "fixture-copy", card_id: "fixture-printing", collection: { id: "collection-a" }, stamp: null, game: "pokemon", name: "Fixture", set: "QA", collector_number: "001", lang: "es", condition: "NM", finish: "foil", foil_type: "Reverse Holo (Poké Ball)", needs_review: false, ...extra });
 const context = (extra: Partial<MaultIntakeContext> = {}): MaultIntakeContext => ({ businessId: "business-a", allowedCollectionIds: ["collection-a"], phase: "incremental", baselineComplete: true, conditionPolicy: "require_confirmation", conditionConfirmed: true, match: { catalogId: "catalog-a", sourceCardId: "fixture-printing", game: "pokemon", setCode: "qa", number: "1", language: "ES", condition: "NM", finish: "pokeball" }, ...extra });
+
+test("Mault config defaults to no stock writes and refuses untrusted policies; Asian codes keep their group", () => {
+  const defaults = defaultMaultSyncConfig();
+  assert.equal(defaults.enabled, false); assert.equal(defaults.autoImport, false); assert.equal(defaults.newItemPriceArs, null);
+  assert.throws(() => normalizeMaultSyncConfig({ ...defaults, enabled: true }));
+  assert.throws(() => normalizeMaultSyncConfig({ ...defaults, businessId: "other" }));
+  assert.throws(() => normalizeMaultSyncConfig({ ...defaults, newItemPriceArs: -1 }));
+  assert.throws(() => normalizeMaultSyncConfig({ ...defaults, autoImport: "true" }));
+  assert.equal(inventoryLanguageGroup("ID"), "japanese"); assert.equal(inventoryLanguageGroup("TH"), "japanese");
+});
 
 test("Mault contract preserves languages and exact special finishes without inferring condition", () => {
   assert.equal(normalizeMaultCopy(raw()).finish, "pokeball");
@@ -12,8 +24,8 @@ test("Mault contract preserves languages and exact special finishes without infe
   assert.equal(normalizeMaultCopy(raw({ lang: "zh-cn" })).language, "CHS");
   const unsupported = normalizeMaultCopy(raw({ foil_type: "Reverse Holo (Dusk Ball)" }));
   assert.equal(unsupported.sourceFoilType, "Reverse Holo (Dusk Ball)");
-  assert.equal(unsupported.finish, null);
-  assert.ok(unsupported.issues.includes("unsupported_or_conflicting_finish"));
+  assert.equal(unsupported.finish, "duskball");
+  assert.equal(normalizeMaultCopy(raw({ game: "pokemonjp", lang: "ja" })).game, "pokemon");
 });
 
 test("Mault contract refuses missing identity and never defaults unknown language to EN", () => {

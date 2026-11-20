@@ -28,6 +28,7 @@ import "./operational-workspace.css";
 import { adminViewPaths as viewPaths, adminViewFromUrl, isAdminPath, isResellerPortalPath, type AdminView as View } from "./admin-routing.js";
 import { retireLegacyStockWorker } from "./legacy-stock-worker.js";
 import { StoreSettingsPanel } from "./store-settings.js";
+import { MaultPanel } from "./mault-panel.js";
 import { storePriceChangeKey } from "./store-admin-state.js";
 import { Trophy } from "lucide-react";
 import { ClaimBuyerRanking } from "./claim-buyers.js";
@@ -7217,6 +7218,7 @@ function AdminView(props: {
 
       <UserManagementPanel users={props.users} onCreated={props.onUserCreated} />
       <StoreSettingsPanel request={api}/>
+      <MaultPanel request={api}/>
 
       <section className="metrics admin-metrics">
         <Metric label="Perfil" value={props.environment.dataProfile} helper={props.environment.allowExamples ? "permite ejemplos" : "datos reales"} />

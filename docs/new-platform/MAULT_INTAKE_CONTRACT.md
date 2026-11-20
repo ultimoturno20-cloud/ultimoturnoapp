@@ -1,187 +1,152 @@
-# Contrato de ingreso Mault (primera entrega, issue #43)
+# Ingreso Mault — issue #43, PR #44
 
-Estado: propuesta ejecutable en domain, sin endpoints ni migraciones aplicadas.
-`mault-intake.ts` normaliza la copia y evalua elegibilidad sin IO ni escrituras.
-No es un importador activo. Integrar y revisar este contrato antes de desarrollar
-sus consumidores, segun AGENTS.md. PR #44; no pertenece al plan OP.
-El PR tambien corrige, de manera independiente del consumidor futuro, la perdida
-de imagen guardada al agregar existencias sin enviar una imagen de reemplazo.
+Implementado en `codex/mault-api-trial`, base main/produccion `f0c3d1e`.
+No pertenece al plan OP. El usuario autorizo desarrollar y probar el consumidor
+antes de mergear el contrato. Revision cruzada, merge humano, migracion
+productiva y release siguen pendientes. No se importaron cartas reales ni se
+borro inventario.
 
-## Alcance y autorizacion
+## Momento del ingreso
 
-El objetivo es agregar copias nuevas de Pokemon al inventario central, manteniendo
-idioma, condicion y acabado. El primer contacto no debe sumar todo el historico.
-Elegir explicitamente las colecciones incluidas; ninguna seleccion equivale a cero
-cartas autorizadas, no a todas. Otros juegos quedan excluidos.
+La primera lectura completa registra el historico como `baseline`, sin sumar
+stock. Las nuevas copias se preparan despues de ese punto. Con autoImport
+habilitado, se ingresan al cumplir las politicas: por defecto, aprobacion en
+Mault, ubicacion en storage, identidad e imagen verificadas y condicion
+confirmada. NM puede ser el valor inicial del escaner; aceptar la condicion
+registrada requiere una decision explicita del admin.
 
-Solo un admin del negocio puede configurar conexion, colecciones, propietario y
-politica de condicion. businessId proviene de la sesion; un webhook o una copia
-de Mault nunca deciden negocio, propietario, precio de venta o cantidad.
-El contexto domain es interno del servidor, no un body HTTP confiable.
-El adaptador HTTP futuro debe validar tipos, enums y pertenencia de todos los IDs.
-Credenciales solo en servidor/archivo privado, nunca DTO, respuesta, auditoria
-o bundle navegador. Rotar la clave no debe cambiar la identidad de las copias.
+Escanear solamente no dispara el ingreso con esas politicas. Aprobar y guardar
+en storage permite que una sincronizacion posterior lo procese. Un worker
+externo consulta cada minuto: cada corrida lee una pagina de hasta 200 y prepara
+como maximo dos pendientes. Puede haber demora si hay muchas copias. Funciona
+con el navegador cerrado mientras el worker este encendido. No se inicio un
+worker productivo por este PR. No hay webhook implementado.
 
-## Estados por copia
+El historico solo se ingresa mediante seleccion y confirmacion expresa, una vez
+conciliado contra el inventario existente. Verificar seleccion no suma unidades.
+La vista pagina 50 copias y permite seleccionar hasta 10 IDs por lote; no hay
+operacion global truncada implicitamente a una pagina.
 
-| Estado | Existencias | Significado |
+## Colecciones, idiomas e identidad
+
+El admin elige colecciones por ID estable y asigna etiquetas de UltimoTurno.
+Las seis categorias solicitadas se configuran como Items -> items,
+Pokemon -> pokemon, Energy -> energy, Tools -> tools, Stadiums -> stadiums y
+Supporters -> supporters. No se deduce el tipo real por nombre o arte de carta.
+La interfaz permite agregar `jugables` a una regla. Una lista vacia no autoriza
+todas las colecciones. La caja se conserva como ubicacion, separada de las
+etiquetas. La posicion se muestra en la copia, sin convertirla en SKU.
+
+La API informa idioma, acabado, estampa y ubicacion; no imagenes ni tags.
+Idiomas desconocidos y variantes incompletas quedan para revision. ID/TH
+conservan su idioma y pertenecen al grupo regional asiatico ya existente en el
+helper de inventario. No se convierten a EN.
+
+Se distinguen normal, holo, reverse, Pokeball, Masterball y Dusk Ball. La estampa
+se conserva separada en el origen y se representa en el acabado del inventario
+como `acabado · estampa`, evitando mezclar Prize Pack con la version sin sello.
+Si el nombre sobrescribe ese acabado, la transaccion falla y hace rollback.
+Se comparan set, numero completo (ceros iniciales normalizados sin quitar un
+denominador), idioma, condicion, acabado y ubicacion al buscar stock central.
+Varios items coincidentes requieren revision.
+
+`pokemonjp` usa IDs de TCGtracking, no IDs TCGdex. Se reconoce como Pokemon pero
+no se interpreta con el catalogo occidental. Cartas japonesas y estampadas
+requieren confirmar manualmente la identidad de su imagen; no se descartan ni
+se publican con una imagen inglesa de respaldo.
+
+## Imagenes y precios
+
+Para Pokemon occidental se consulta TCGdex por ID e idioma, comprobando ID,
+nombre, set y numero. Se valida URL HTTPS de assets.tcgdex.net en el idioma
+exacto, HTTP, MIME, firma de imagen y tamano acotado, sin redirects. Ausencia o
+discrepancia deja la copia en revision, sin sumar stock. Confirmacion manual
+exige declarar edicion/idioma/acabado/estampa y deja auditoria. Tambien verifica
+el recurso; no acepta URLs arbitrarias del cliente.
+
+Un item existente conserva precio central ARS/USD, imagen manual y etiquetas,
+agregando las de su coleccion. La correccion general de addInventoryStock
+conserva image_url si se omite imageUrl; un vacio explicito mantiene el borrado
+previo. No persiste un fallback calculado como si fuera una imagen manual.
+
+No se usa el precio Mault como precio de venta. Por defecto las cartas nuevas
+no tienen precio autorizado y quedan para revision. El admin puede configurar
+un precio ARS unico para nuevas cartas solo si desea ese mismo importe para
+todas; no modifica precios existentes. No se reutiliza una cotizacion o redondeo
+historico. La configuracion inicial queda deshabilitada.
+
+## Persistencia y recuperacion
+
+Migracion aditiva `0064_mault_intake.sql`: conexion por negocio y copias con
+PK `(business_id, copy_id)`, payload, huella, estado, imagen y recibo. La unicidad
+no depende de clave API, coleccion ni caja. Rotar clave, mover caja o repetir
+lecturas no habilita otro ingreso del mismo ID. Reescanear fisicamente con otro
+ID es otra copia para Mault: requiere control operativo.
+
+El alta usa addInventoryStock y una transaccion: bloqueos de conexion/copia/item,
+revalidacion de politicas, movimiento, recibo, auditoria y revocacion de snapshot.
+Despues se invalida la cache en memoria existente. Fallo intermedio hace
+rollback; reintentar un ID confirmado devuelve el recibo sin sumar otra unidad.
+Cambios de identidad posteriores quedan en revision, sin modificar la unidad
+previa. Bajas o ausencias fuente no eliminan ni restan stock.
+
+Lease de 90 segundos impide corridas solapadas y cambios de configuracion durante
+la lectura. Cada pagina se persiste con su continuacion; el watermark final
+solo avanza al completar el recorrido. Fechas fuente monotonicas. Una copia
+inaccesible queda en revision y no bloquea indefinidamente las demas. Cambiar
+reglas de colecciones reinicia baseline/cursor conservando recibos. No hace
+falta borrar colecciones Mault para evitar duplicados; borrarlas impide revisar
+copias pendientes. Los recibos persisten aunque una coleccion desaparezca.
+
+## API e instalacion pendiente
+
+Solo admin autenticado del negocio; el alcance viene de la sesion. La clave
+Mault nunca va al navegador ni se recibe en cuerpos HTTP.
+
+| Ruta bajo /integrations/mault | Metodo | Funcion |
 | --- | --- | --- |
-| excluded | 0 | Otro juego o coleccion no habilitada |
-| baseline | 0 | Historico observado, pendiente de conciliacion explicita |
-| review | 0 | Identidad/variante/condicion dudosa o cambio posterior |
-| already_imported | 0 | Copia con recibo confirmado de ingreso previo |
-| ready | +1 propuesta | Coincidencia exacta y politicas satisfechas |
+| status | GET | Configuracion segura y totales globales |
+| config | PUT | Politicas y reglas, con version optimista |
+| collections | GET | Colecciones de la clave asignada |
+| preview | GET | Filtro y pagina de 50 copias |
+| run | POST | Una pagina y dos pendientes como maximo |
+| prepare | POST | Verifica seleccion sin sumar stock |
+| verify-image | POST | Confirmacion manual auditada |
+| apply | POST | Seleccion e historico confirmado |
 
-`ready` es una propuesta, NO un recibo de escritura. Cada scanned_card representa
-una unidad. Conservar el ID por copia; no agrupar y perder trazabilidad.
-`MaultIntakeCopy` conserva acabado original, idioma normalizado y ubicacion.
-El numero normaliza ceros iniciales, sin descartar un denominador contradictorio.
-El producto TCGplayer solo ayuda a buscar candidatos: no prueba la coincidencia
-de idioma/condicion/acabado ni sustituye el mapeo de la edicion.
+Servidor: `MAULT_API_URL=https://mault.xyz/api`, `MAULT_API_KEY` de solo lectura
+y `MAULT_BUSINESS_ID` exactamente igual al negocio autorizado. Sin coincidencia
+no se habilita esa clave. No copiarla a Preview; previews sin aislamiento de
+credenciales siguen bloqueados.
 
-Coincidencia requiere ID de impresion fuente, juego, set, numero, idioma,
-acabado y condicion. No aceptar nombre aproximado o numero en otro set.
-Pokeball, Masterball y Reverse son identidades diferentes.
-Dusk Ball se conserva en el origen y queda en revision: el enum actual de
-CardVariant no lo admite; no convertirlo a Reverse ni a otro por comodidad.
-Idiomas desconocidos no se convierten a EN. `zh-cn`/`zh-tw` -> CHS/CHT;
-`zh` sin variante queda pendiente. ID (indonesio) se conserva como ID.
+Worker: `node tools/mault-sync-worker.mjs` (o `--once`), con
+`ULTIMOTURNO_API_URL=https://ultimoturno.app/api` y credencial destino
+`ULTIMOTURNO_ACCESS_KEY` privada. No necesita la clave Mault, no imprime respuestas
+privadas y no reenvia credenciales por redirects.
 
-## Clasificacion Jugables y ubicacion
+UI en Admin / Configuracion. Tras aprobar y desplegar: asignar credenciales solo
+en servidor, seleccionar reglas/politicas, hacer baseline, revisar imagenes de
+una muestra y decidir carga historica/worker. No activar sin resolver precios
+de cartas nuevas y alcance del inventario existente.
 
-La API publica devuelve idioma y ubicacion (ID, nombre, posicion), pero no un
-campo de etiquetas. `maultCategoryTags` define reglas configuradas por admin:
-ID de coleccion o ID de caja -> categorias de UltimoTurno, scoped al negocio.
-La categoria operativa existente es `jugables` (plural). No deducir categorias
-ejecutando instrucciones o palabras libres dentro de nombres de cajas/cartas.
-Conservar categorias manuales; una mudanza no las elimina automaticamente.
-Los nombres se pueden cambiar sin perder el vinculo por ID.
+## QA y limites del reinicio
 
-Para clasificar al escanear, usar una coleccion Mault asignada a `jugables`.
-La caja fisica se registra por separado. Una regla por caja se conoce despues
-de guardar en esa ubicacion; el evento de escaneo todavia no tiene ubicacion.
-Estas reglas son contrato probado, no una configuracion productiva activa.
+PGlite nuevo y fixtures sinteticos: seis etiquetas/idiomas/imagenes, baseline,
+reintentos concurrentes, rollback, correcciones, aislamiento, politicas,
+estampas, precios e imagenes manuales. HTTP: auth y no exposicion de clave.
+Paginacion segura y rechazo de imagen incorrecta.
+Chrome local: seis imagenes publicas en 320/390/768/1440/1788 px sin desbordes;
+recarga conserva las seis, filtro vacio, error, teclado y movimiento reducido.
+Formulario abierto en esos cinco anchos, edicion/descarte de etiquetas y estado
+de carga comprobados. Gate local completo: 332 tests, lint, tipos, DB temporal y
+build aprobados. Regresiones finales adicionales cubren reanudacion de baseline
+parcial y rechazo de correcciones antiguas; ver CI del head final del PR.
+No certifica cobertura visual de todo el stock real. Se verifico previamente
+una muestra real por idioma autorizada, sin publicar IDs ni credenciales.
 
-Antes de activar el consumidor, verificar tambien los filtros regionales para
-los codigos ID/TH: inventoryLanguageGroup reconoce los nombres completos pero
-no esos dos codigos y hoy cae en el grupo english. El idioma de la variante se
-conserva; falta resolver esa clasificacion regional en frontend/SQL con paridad,
-sin convertir la variante a EN. No se modificaron esos filtros en este PR.
-
-## Imagenes y prueba antes de reiniciar inventario
-
-La API publica de copias no devuelve imagenes. El adaptador Pokemon de Mault
-usa TCGdex: el consumidor debera resolver la impresion fuente por ID e idioma
-y verificar la imagen de ese mismo idioma; no usar una imagen inglesa como
-si fuera espanola por compartir un producto TCGplayer. Catalogo exacto o imagen
-verificada del proveedor; las ausentes quedan pendientes para este reinicio.
-No eliminar catalogo, cache de imagenes o imagenes manuales al vaciar stock.
-
-La verificacion de disponibilidad real tomo una muestra por idioma y comprobo
-ID de catalogo, HTTP, MIME, firma WebP y coincidencia de idioma de la URL.
-No demuestra cobertura de todas las cartas ni render visual en la plataforma.
-El test sintetico de ingreso verifica persistencia/reapertura, separacion de
-idiomas, categoria, ubicacion y conservacion de imagen al sumar otra unidad.
-La correccion conserva el image_url almacenado si el ingreso omite imageUrl;
-un imageUrl vacio explicito conserva el comportamiento previo de borrado.
-No copia un fallback calculado a una imagen manual permanente.
-
-El usuario solicita reconstruir desde cero. Antes de ejecutar ese cambio real:
-prueba completa del consumidor en DB nueva y QA visual de las imagenes tras
-ingreso/recarga, validacion de reintentos, y backup privado recuperable del
-inventario/variantes/imagenes/categorias. Precisar el alcance central/propietarios
-y las reservas/asignaciones reales; preservar ordenes, cobros, historial, claims
-y catalogo. Este PR NO borra ni vacia stock. Solo despues del recorrido validado
-se prepara el vaciado acotado y la importacion historica confirmada de Mault.
-
-El endpoint actual `/inventory/reset-stock` pone a cero existencias Y reservas
-de todos los items activos del negocio, sin filtro de propietario. No usarlo
-automaticamente para esta migracion. La comprobacion previa debe resolver ese
-alcance y los pedidos/asignaciones. El script legacy reset-available-stock-api.ps1
-exporta un respaldo parcial sin imagenes/categorias: no alcanza como backup de
-esta reconstruccion. No se ejecutaron ese endpoint ni ese script.
-
-NM puede ser el valor inicial de Mault. Politica inicial: require_confirmation.
-El administrador puede autorizar accept_recorded en configuracion persistida;
-no inferir esa autorizacion de needs_review=false ni de is_reviewed=true.
-Errores de reconocimiento de Mault permanecen pendientes.
-
-## Primera sincronizacion y recuperacion
-
-1. Leer todas las paginas autorizadas con la clave de solo lectura y sin tocar stock.
-2. Registrar baseline por ID. Marcar baselineComplete solo tras recorrido completo.
-3. La fase incremental solo agrega IDs nuevos, nunca los de baseline.
-4. Importar historico requiere preview y confirmacion explicita, conciliando
-   cartas ya ingresadas manualmente/por CSV. No comparar snapshots y sumar
-   diferencias ciegamente: ventas/reservas tambien cambian cantidades.
-5. Persistir pendientes aunque se avance el cursor, para resolverlos despues.
-6. Actualizar cursor solo despues de persistir todas las copias del recorrido.
-   Un fallo deja el cursor anterior; volver a leer no vuelve a sumar recibos.
-
-Los eventos son aceleradores; una lectura incremental de respaldo recupera
-avisos perdidos. Validar firma HMAC sobre body original, antiguedad y conexion
-antes de aceptar el webhook. No confiar en los datos del evento como identidad
-final: reconsultar las copias cuando corresponda. Eventos fuera de orden no
-pueden deshacer una correccion mas nueva. Mault no informa bajas por `since`;
-esta primera integracion NO elimina ni resta inventario por una ausencia.
-
-## Persistencia prevista (no implementada en este PR)
-
-Recibo unico por `(business_id, provider='mault', source_copy_id)`.
-No incluir clave, conexion o coleccion en esa unicidad: rotacion/reconexion y
-movimientos de caja no deben habilitar un segundo ingreso de la misma copia.
-`maultReceiptKey` documenta esa identidad; NO es un lock ni un recibo durable.
-Fingerprint de identidad excluye precios, ubicacion y coleccion. Cambiar una
-identidad ya ingresada genera revision, nunca otra unidad automatica.
-
-En transaccion: bloquear/insertar recibo unico, bloquear captura y item destino,
-revalidar permisos/variante/estado, reutilizar el ingreso y movimiento existentes,
-marcar imported con item destino y revocar snapshot de stock. Despues del commit,
-invalidar cache de memoria existente. Rollback ante cualquier fallo.
-Otro proceso simultaneo o respuesta perdida devuelve el recibo previo.
-Solo promover baseline a imported en fase historica confirmada.
-Guardar movimiento y recibo en la misma transaccion; no usar un archivo local
-como proteccion frente a duplicados ni escribir directamente en Supabase.
-
-Conservar precios centrales vigentes, cantidades reservadas y asignadas,
-imagenes manuales y ordenes existentes. El precio Mault es referencia NM,
-no costo de compra ni precio de venta autorizado. Los items nuevos necesitan
-la politica vigente de precios, sin reutilizar cambios/redondeos historicos.
-
-## Contrato HTTP propuesto para la entrega posterior
-
-Administracion autenticada, scoped al negocio:
-
-- `GET /integrations/mault/status`: conectado, fase, colecciones habilitadas,
-  ultima lectura, errores y totales; sin secretos ni exportaciones completas.
-- `POST /integrations/mault/preview`: preview paginado de pendientes y resumen
-  global. Catalogo/IDs seleccionados y permisos se resuelven en servidor.
-- `POST /integrations/mault/apply`: seleccion explicita de copyIds y requestId;
-  revalida y devuelve recibos, nunca confia en quantityDelta/catalogId cliente.
-- `POST /integrations/mault/webhook`: firma por conexion; persistencia idempotente
-  rapida y procesamiento reanudable. No tarea larga sin durable acknowledgement.
-
-La sincronizacion automatica incremental debe funcionar con el navegador cerrado.
-Definir worker externo/cron reanudable segun limites de Vercel, sin crear otra
-base/capa de cache. No iniciar workers ni habilitar importaciones por este PR.
-
-## Aceptacion de la entrega posterior
-
-Pruebas DB/HTTP en PGlite nuevo: mismo ID dos veces/concurrente/respuesta perdida,
-rotacion de clave, mudanza entre colecciones, rollback, cursor parcial, evento
-repetido/firma invalida/fuera de orden, permisos de otro negocio/propietario,
-variante incorrecta, Dusk Ball, condicion no confirmada, historico y baja fuente.
-Comprobar reservas/asignaciones/precios e invalidacion snapshot/cache.
-UI nueva necesita QA en los cinco anchos y estados exigidos por AGENTS.md.
-No escribir cartas reales ni aplicar migraciones productivas como prueba.
-
-## Evidencia de esta entrega
-
-- `npm run check:new`: 325 tests aprobados, lint, tipos, DB temporal y build OK.
-- Incluye regresiones de categorias por ID/negocio y de persistencia de imagen,
-  idioma y categorias al agregar unidades y reabrir la base sintetica.
-- Resolucion de domain, DB e importers dentro del worktree de esta tarea.
-- Lectura real autenticada y multipagina validada; resumen solo en carpeta
-  privada fuera de Git, sin registros reales o claves en esta entrega.
-- Sin conciliacion real de catalogo, importaciones reales, worker, webhook activo,
-  migraciones, UI, merge o deploy. Revision cruzada e integracion pendientes.
+Antes del reinicio real falta respaldo privado recuperable y definir alcance
+central/propietarios/reservas/asignaciones. Preservar ordenes, pagos, claims,
+historial, catalogo e imagenes manuales. `/inventory/reset-stock` pone a cero
+existencias Y reservas de todos los activos del negocio: no usar automaticamente.
+El backup parcial del script legacy de reset carece de imagenes/categorias.
+No se ejecutaron ese endpoint ni ese script.

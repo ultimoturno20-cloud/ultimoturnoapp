@@ -4,9 +4,10 @@ import { inventoryTags } from "./inventory-query.js";
 export type MaultCategoryRule = {
   businessId: string; sourceKind: "collection" | "location"; sourceId: string; tags: string[];
 };
-export type MaultFinish = "normal" | "holo" | "reverse" | "pokeball" | "masterball";
+export type MaultFinish = "normal" | "holo" | "reverse" | "pokeball" | "masterball" | "duskball";
 export type MaultIntakeCopy = {
-  copyId: string; cardId: string; collectionId: string; game: string;
+  copyId: string; cardId: string; collectionId: string; game: string; sourceGame: string;
+  setName: string; stamp: string | null; reviewed: boolean; sourceUpdatedAt: string;
   name: string; setCode: string; number: string; language: string; sourceLanguage: string;
   condition: string; finish: MaultFinish | null; sourceFinish: string;
   sourceFoilType: string; tcgplayerProductId: number | null;
@@ -20,6 +21,7 @@ export type MaultIntakeReceipt = {
 export type MaultCatalogMatch = {
   catalogId: string; sourceCardId: string; game: string; setCode: string;
   number: string; language: string; condition: string; finish: MaultFinish;
+  sourceGame?: string; stamp?: string | null;
 };
 export type MaultIntakeContext = {
   /** Always derived by the server from its authenticated target, never a webhook. */
@@ -43,7 +45,7 @@ const str = (value: unknown) => typeof value === "string" ? value.trim() : "";
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const key = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 const languages: Record<string, string> = { en: "EN", es: "ES", pt: "PT", it: "IT", de: "DE", fr: "FR", ja: "JA", ko: "KO", "zh-cn": "CHS", "zh-tw": "CHT", id: "ID", th: "TH" };
-const finishes: Record<string, MaultFinish> = { holo: "holo", "reverse holo": "reverse", "reverse holo (poke ball)": "pokeball", "reverse holo (master ball)": "masterball" };
+const finishes: Record<string, MaultFinish> = { holo: "holo", "reverse holo": "reverse", "reverse holo (poke ball)": "pokeball", "reverse holo (master ball)": "masterball", "reverse holo (dusk ball)": "duskball" };
 
 export function normalizeMaultCopy(input: unknown): MaultIntakeCopy {
   const raw = record(input);
@@ -65,9 +67,15 @@ export function normalizeMaultCopy(input: unknown): MaultIntakeCopy {
   if (!finish) issues.push("unsupported_or_conflicting_finish");
   const needsReview = raw.needs_review !== false;
   if (needsReview) issues.push("source_needs_review");
+  if (!Object.hasOwn(raw, "stamp") || (raw.stamp !== null && typeof raw.stamp !== "string")) issues.push("stamp_not_reported");
+  const stamp = str(raw.stamp) || null;
+  if (stamp && stamp.length > 160) issues.push("unsupported_stamp");
+  const sourceGame = str(raw.game);
   const location = record(raw.location);
   return {
-    copyId, cardId, name, setCode, number, game: str(raw.game),
+    copyId, cardId, name, setCode, number, sourceGame, game: sourceGame === "pokemonjp" ? "pokemon" : sourceGame,
+    setName: str(raw.set_name), stamp, reviewed: raw.is_reviewed === true,
+    sourceUpdatedAt: Number.isFinite(Date.parse(str(raw.updated_at))) ? str(raw.updated_at) : "",
     collectionId: str(record(raw.collection).id), language, sourceLanguage, condition, finish,
     sourceFinish, sourceFoilType, needsReview, issues,
     tcgplayerProductId: Number.isSafeInteger(raw.tcgplayer_product_id) && Number(raw.tcgplayer_product_id) > 0 ? Number(raw.tcgplayer_product_id) : null,
@@ -78,7 +86,12 @@ export function normalizeMaultCopy(input: unknown): MaultIntakeCopy {
 /** Stable identity signature; deliberately excludes prices, collection and location. */
 export function maultCopyFingerprint(copy: MaultIntakeCopy): string {
   return JSON.stringify([copy.cardId, copy.game, copy.setCode, copy.number, copy.language,
-    copy.condition, copy.finish, copy.sourceFinish, copy.sourceFoilType, copy.sourceLanguage]);
+    copy.condition, copy.finish, copy.sourceFinish, copy.sourceFoilType, copy.sourceLanguage, copy.sourceGame, copy.stamp]);
+}
+
+export function maultInventoryFinish(copy: MaultIntakeCopy): string {
+  if (!copy.finish) throw new Error("Acabado Mault sin resolver.");
+  return copy.finish + (copy.stamp ? ` · ${copy.stamp}` : "");
 }
 
 export function maultReceiptKey(businessId: string, copyId: string): string {
@@ -95,7 +108,7 @@ export function maultCategoryTags(copy: MaultIntakeCopy, businessId: string, rul
   return inventoryTags([currentTags, ...selected.flatMap(rule => rule.tags)].join(","));
 }
 
-const numberKey = (value: string) => value.toUpperCase().split("/").map(part => part.replace(/^0+(?=\d)/, "")).join("/");
+export const maultNumberKey = (value: string) => value.trim().toUpperCase().split("/").map(part => part.replace(/^0+(?=\d)/, "")).join("/");
 
 export function decideMaultIntake(copy: MaultIntakeCopy, context: MaultIntakeContext): MaultIntakeDecision {
   const fingerprint = maultCopyFingerprint(copy);
@@ -117,7 +130,8 @@ export function decideMaultIntake(copy: MaultIntakeCopy, context: MaultIntakeCon
   const match = context.match;
   if (typeof match === "string") reasons.push(match === "ambiguous" ? "ambiguous_catalog_match" : "catalog_not_found");
   else if (!match.catalogId || match.sourceCardId !== copy.cardId || match.game !== copy.game
-    || key(match.setCode) !== key(copy.setCode) || numberKey(match.number) !== numberKey(copy.number)
+    || (match.sourceGame || "pokemon") !== copy.sourceGame || (match.stamp ?? null) !== copy.stamp
+    || key(match.setCode) !== key(copy.setCode) || maultNumberKey(match.number) !== maultNumberKey(copy.number)
     || match.language !== copy.language || match.condition !== copy.condition || match.finish !== copy.finish) reasons.push("catalog_variant_mismatch");
   if (reasons.length) return result("review", [...new Set(reasons)]);
   if (typeof match === "string") throw new Error("Falta coincidencia de catalogo.");

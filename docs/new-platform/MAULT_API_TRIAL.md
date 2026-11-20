@@ -1,6 +1,6 @@
 # Prueba de API Mault
 
-Primera etapa: lectura y diagnostico. No importa cartas ni modifica Mault,
+Esta herramienta sigue siendo de lectura y diagnostico. No importa cartas ni modifica Mault,
 stock, precios, reservas o pedidos. No carga la API ni la base de UltimoTurno.
 Issue #43. Base de esta entrega: origin/main y produccion f0c3d1e.
 
@@ -49,18 +49,16 @@ para respetar 60/minuto. Ante 401/403/429, HTML, error o paginacion invalida,
 falla sin imprimir respuesta remota ni presentar un resultado parcial.
 Limite defensivo 120 paginas: falla explicitamente si se excede.
 
-Siguiente etapa, despues de comprobar datos reales: contrato de importacion
-con vinculacion exacta de catalogo y negocio/propietario, recibos transaccionales
-por copia, politica de revision/condicion, precios centrales y recuperacion.
-Webhook firmado mas lectura incremental de respaldo; las bajas no aparecen en
-la lectura incremental documentada y requieren una politica explicita.
-No activar carga automatica ni importar el historico sin definir alcance y
-conciliar cartas ya ingresadas por CSV o manualmente. No hay despliegue.
+El consumidor implementado en esta misma rama utiliza lectura incremental y
+recibos transaccionales, con configuracion y revision en Admin. El usuario
+autorizo desarrollar/probar antes del merge contractual. No se desplego ni se
+activo una carga real. Las bajas no aparecen en la lectura incremental y no
+se restan automaticamente. Ver MAULT_INTAKE_CONTRACT.md para operacion y limites.
 
 La lectura real autenticada y multipagina se verifico con configuracion privada,
 sin publicar registros, identificadores de cartas o credenciales. La elegibilidad
 contractual agrega reglas mas estrictas que este diagnostico basico. Ver
-MAULT_INTAKE_CONTRACT.md y packages/domain/src/mault-intake.ts. El contrato aun no
-es un consumidor activo ni una prueba de escritura idempotente en base de datos.
+MAULT_INTAKE_CONTRACT.md y packages/domain/src/mault-intake.ts. El consumidor
+DB/HTTP tiene pruebas idempotentes en PGlite nuevo; aun no esta en produccion.
 
 Referencia oficial: https://github.com/maultxyz/mault/blob/master/docs/public-api.md
