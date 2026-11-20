@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizeMaultCopy, decideMaultIntake, maultCopyFingerprint, maultReceiptKey, type MaultIntakeContext } from "./mault-intake.js";
+import { normalizeMaultCopy, decideMaultIntake, maultCopyFingerprint, maultReceiptKey, maultCategoryTags, type MaultIntakeContext, type MaultCategoryRule } from "./mault-intake.js";
 
 const raw = (extra = {}) => ({ object: "scanned_card", id: "fixture-copy", card_id: "fixture-printing", collection: { id: "collection-a" }, game: "pokemon", name: "Fixture", set: "QA", collector_number: "001", lang: "es", condition: "NM", finish: "foil", foil_type: "Reverse Holo (Poké Ball)", needs_review: false, ...extra });
 const context = (extra: Partial<MaultIntakeContext> = {}): MaultIntakeContext => ({ businessId: "business-a", allowedCollectionIds: ["collection-a"], phase: "incremental", baselineComplete: true, conditionPolicy: "require_confirmation", conditionConfirmed: true, match: { catalogId: "catalog-a", sourceCardId: "fixture-printing", game: "pokemon", setCode: "qa", number: "1", language: "ES", condition: "NM", finish: "pokeball" }, ...extra });
@@ -66,4 +66,20 @@ test("baseline historical copies need an explicit historical phase to become eli
   const receipt = { businessId: "business-a", copyId: copy.copyId, state: "baseline" as const, fingerprint: maultCopyFingerprint(copy) };
   assert.equal(decideMaultIntake(copy, context({ receipt })).quantityDelta, 0);
   assert.equal(decideMaultIntake(copy, context({ receipt, phase: "confirmed_history" })).quantityDelta, 1);
+});
+
+test("category mappings use stable IDs in the same business and preserve manual tags", () => {
+  const copy = normalizeMaultCopy(raw({ location: { id: "box-a", name: "Jugable", position: 1 } }));
+  const rules: MaultCategoryRule[] = [
+    { businessId: "business-a", sourceKind: "collection", sourceId: "collection-a", tags: ["jugables"] },
+    { businessId: "business-a", sourceKind: "location", sourceId: "box-a", tags: ["JUGABLES", "promo"] },
+    { businessId: "business-b", sourceKind: "collection", sourceId: "collection-a", tags: ["not-ours"] },
+  ];
+  assert.deepEqual(maultCategoryTags(copy, "business-a", rules, "vitrina"), ["vitrina", "jugables", "promo"]);
+  assert.deepEqual(maultCategoryTags(copy, "business-a", []), [], "A location name alone is not a category rule");
+  const renamed = { ...copy, location: { ...copy.location!, name: "Renamed box" } };
+  assert.deepEqual(maultCategoryTags(renamed, "business-a", rules), ["jugables", "promo"]);
+  const noLocation = normalizeMaultCopy(raw());
+  assert.deepEqual(maultCategoryTags(noLocation, "business-a", rules), ["jugables"], "Collection mapping already works at scan time");
+  assert.throws(() => maultCategoryTags(copy, "", rules));
 });

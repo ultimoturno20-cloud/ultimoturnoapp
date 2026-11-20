@@ -1,4 +1,9 @@
 /** Contract only: no network, persistence, prices or inventory writes. */
+import { inventoryTags } from "./inventory-query.js";
+
+export type MaultCategoryRule = {
+  businessId: string; sourceKind: "collection" | "location"; sourceId: string; tags: string[];
+};
 export type MaultFinish = "normal" | "holo" | "reverse" | "pokeball" | "masterball";
 export type MaultIntakeCopy = {
   copyId: string; cardId: string; collectionId: string; game: string;
@@ -80,6 +85,14 @@ export function maultReceiptKey(businessId: string, copyId: string): string {
   if (!businessId || !copyId) throw new Error("Falta negocio o copia Mault.");
   // Credential rotation, reconnecting and moving collections must not create new keys.
   return JSON.stringify([businessId, "mault", copyId]);
+}
+
+/** Rules are configured by an admin; names in the source are never executable rules. */
+export function maultCategoryTags(copy: MaultIntakeCopy, businessId: string, rules: readonly MaultCategoryRule[], currentTags = ""): string[] {
+  if (!businessId) throw new Error("Falta negocio autenticado.");
+  const selected = rules.filter(rule => rule.businessId === businessId && rule.sourceId
+    && (rule.sourceKind === "collection" ? copy.collectionId === rule.sourceId : copy.location?.id === rule.sourceId));
+  return inventoryTags([currentTags, ...selected.flatMap(rule => rule.tags)].join(","));
 }
 
 const numberKey = (value: string) => value.toUpperCase().split("/").map(part => part.replace(/^0+(?=\d)/, "")).join("/");

@@ -4,6 +4,8 @@ Estado: propuesta ejecutable en domain, sin endpoints ni migraciones aplicadas.
 `mault-intake.ts` normaliza la copia y evalua elegibilidad sin IO ni escrituras.
 No es un importador activo. Integrar y revisar este contrato antes de desarrollar
 sus consumidores, segun AGENTS.md. PR #44; no pertenece al plan OP.
+El PR tambien corrige, de manera independiente del consumidor futuro, la perdida
+de imagen guardada al agregar existencias sin enviar una imagen de reemplazo.
 
 ## Alcance y autorizacion
 
@@ -44,6 +46,60 @@ Dusk Ball se conserva en el origen y queda en revision: el enum actual de
 CardVariant no lo admite; no convertirlo a Reverse ni a otro por comodidad.
 Idiomas desconocidos no se convierten a EN. `zh-cn`/`zh-tw` -> CHS/CHT;
 `zh` sin variante queda pendiente. ID (indonesio) se conserva como ID.
+
+## Clasificacion Jugables y ubicacion
+
+La API publica devuelve idioma y ubicacion (ID, nombre, posicion), pero no un
+campo de etiquetas. `maultCategoryTags` define reglas configuradas por admin:
+ID de coleccion o ID de caja -> categorias de UltimoTurno, scoped al negocio.
+La categoria operativa existente es `jugables` (plural). No deducir categorias
+ejecutando instrucciones o palabras libres dentro de nombres de cajas/cartas.
+Conservar categorias manuales; una mudanza no las elimina automaticamente.
+Los nombres se pueden cambiar sin perder el vinculo por ID.
+
+Para clasificar al escanear, usar una coleccion Mault asignada a `jugables`.
+La caja fisica se registra por separado. Una regla por caja se conoce despues
+de guardar en esa ubicacion; el evento de escaneo todavia no tiene ubicacion.
+Estas reglas son contrato probado, no una configuracion productiva activa.
+
+Antes de activar el consumidor, verificar tambien los filtros regionales para
+los codigos ID/TH: inventoryLanguageGroup reconoce los nombres completos pero
+no esos dos codigos y hoy cae en el grupo english. El idioma de la variante se
+conserva; falta resolver esa clasificacion regional en frontend/SQL con paridad,
+sin convertir la variante a EN. No se modificaron esos filtros en este PR.
+
+## Imagenes y prueba antes de reiniciar inventario
+
+La API publica de copias no devuelve imagenes. El adaptador Pokemon de Mault
+usa TCGdex: el consumidor debera resolver la impresion fuente por ID e idioma
+y verificar la imagen de ese mismo idioma; no usar una imagen inglesa como
+si fuera espanola por compartir un producto TCGplayer. Catalogo exacto o imagen
+verificada del proveedor; las ausentes quedan pendientes para este reinicio.
+No eliminar catalogo, cache de imagenes o imagenes manuales al vaciar stock.
+
+La verificacion de disponibilidad real tomo una muestra por idioma y comprobo
+ID de catalogo, HTTP, MIME, firma WebP y coincidencia de idioma de la URL.
+No demuestra cobertura de todas las cartas ni render visual en la plataforma.
+El test sintetico de ingreso verifica persistencia/reapertura, separacion de
+idiomas, categoria, ubicacion y conservacion de imagen al sumar otra unidad.
+La correccion conserva el image_url almacenado si el ingreso omite imageUrl;
+un imageUrl vacio explicito conserva el comportamiento previo de borrado.
+No copia un fallback calculado a una imagen manual permanente.
+
+El usuario solicita reconstruir desde cero. Antes de ejecutar ese cambio real:
+prueba completa del consumidor en DB nueva y QA visual de las imagenes tras
+ingreso/recarga, validacion de reintentos, y backup privado recuperable del
+inventario/variantes/imagenes/categorias. Precisar el alcance central/propietarios
+y las reservas/asignaciones reales; preservar ordenes, cobros, historial, claims
+y catalogo. Este PR NO borra ni vacia stock. Solo despues del recorrido validado
+se prepara el vaciado acotado y la importacion historica confirmada de Mault.
+
+El endpoint actual `/inventory/reset-stock` pone a cero existencias Y reservas
+de todos los items activos del negocio, sin filtro de propietario. No usarlo
+automaticamente para esta migracion. La comprobacion previa debe resolver ese
+alcance y los pedidos/asignaciones. El script legacy reset-available-stock-api.ps1
+exporta un respaldo parcial sin imagenes/categorias: no alcanza como backup de
+esta reconstruccion. No se ejecutaron ese endpoint ni ese script.
 
 NM puede ser el valor inicial de Mault. Politica inicial: require_confirmation.
 El administrador puede autorizar accept_recorded en configuracion persistida;
@@ -121,10 +177,11 @@ No escribir cartas reales ni aplicar migraciones productivas como prueba.
 
 ## Evidencia de esta entrega
 
-- `npm run check:new`: 323 tests aprobados, lint, tipos, DB temporal y build OK.
-- 17 pruebas focalizadas del lector/contrato aprobadas tambien por separado.
+- `npm run check:new`: 325 tests aprobados, lint, tipos, DB temporal y build OK.
+- Incluye regresiones de categorias por ID/negocio y de persistencia de imagen,
+  idioma y categorias al agregar unidades y reabrir la base sintetica.
 - Resolucion de domain, DB e importers dentro del worktree de esta tarea.
 - Lectura real autenticada y multipagina validada; resumen solo en carpeta
   privada fuera de Git, sin registros reales o claves en esta entrega.
-- Sin conciliacion de catalogo, writes de inventario, worker, webhook activo,
+- Sin conciliacion real de catalogo, importaciones reales, worker, webhook activo,
   migraciones, UI, merge o deploy. Revision cruzada e integracion pendientes.

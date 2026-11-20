@@ -5211,7 +5211,7 @@ export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput,
       && (!input.location || same(item.location, input.location));
     const existing = stock.items.find((item) => identityMatches(item) && item.ownerUserId === ownerUserId);
     const template = existing || stock.items.find(identityMatches);
-    const existingNotes = existing ? await connection.query<{ notes: string }>("select notes from card_products where id = $1 and business_id = $2", [existing.product.id, actor.businessId]) : null;
+    const existingNotes = existing ? await connection.query<{ notes: string; image_url: string | null }>("select notes, image_url from card_products where id = $1 and business_id = $2", [existing.product.id, actor.businessId]) : null;
     return upsertInventoryItem(connection, {
       ...input,
       ownerUserId,
@@ -5224,6 +5224,7 @@ export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput,
       location: input.location || existing?.location,
       intakeBatch: input.intakeBatch || existing?.intakeBatch,
       tags: input.tags || existing?.tags,
+      imageUrl: input.imageUrl === undefined ? existingNotes?.rows[0]?.image_url ?? undefined : input.imageUrl,
       notes: input.notes || existingNotes?.rows[0]?.notes || "",
       inventoryStatus: existing?.inventoryStatus || input.inventoryStatus,
       stockMovementReferenceType: "intake",
