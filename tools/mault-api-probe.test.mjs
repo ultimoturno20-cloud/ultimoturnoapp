@@ -15,11 +15,35 @@ test("reader follows every page, uses GET and refuses redirects", async () => {
     assert.equal(options.method, "GET");
     assert.equal(options.redirect, "error");
     assert.equal(options.headers["X-API-Key"], config.apiKey);
-    return calls.length === 1 ? response(page([card()], true, "https://mault.test/api/v1/cards?cursor=next")) : response(page([card({ id: "scan-b" })]));
+    return calls.length === 1 ? response(page([card()], true, "https://mault.test/api/v1/cards?limit=500&collection=collection-a&cursor=next")) : response(page([card({ id: "scan-b" })]));
   }));
   assert.equal((await client.cards("collection-a")).length, 2);
   assert.match(calls[0], /collection=collection-a/);
   assert.equal(calls.length, 2);
+});
+
+test("hosted public pagination links keep the configured proxy and collection scope", async () => {
+  const calls = [];
+  const client = createMaultReader(config, dependencies(async url => {
+    calls.push(String(url));
+    return response(calls.length === 1
+      ? page([card()], true, "https://mault.test/v1/cards?limit=500&collection=ours&cursor=next")
+      : page([card({ id: "scan-b" })]));
+  }));
+  assert.equal((await client.cards("ours")).length, 2);
+  assert.equal(new URL(calls[1]).pathname, "/api/v1/cards");
+  assert.equal(new URL(calls[1]).searchParams.get("collection"), "ours");
+});
+
+test("pagination cannot drop or replace the selected collection", async () => {
+  for (const suffix of ["limit=500&cursor=next", "limit=500&collection=other&cursor=next"]) {
+    let calls = 0;
+    const client = createMaultReader(config, dependencies(async () => {
+      calls++; return response(page([], true, "https://mault.test/v1/cards?" + suffix));
+    }));
+    await assert.rejects(client.cards("ours"), /filtros/);
+    assert.equal(calls, 1);
+  }
 });
 
 test("reader never sends credentials to another origin, endpoint or userinfo URL", async () => {

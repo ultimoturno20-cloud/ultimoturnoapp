@@ -41,7 +41,10 @@ No consulta ni concilia el inventario existente. Un reescaneo fisico con otro
 ID sigue siendo otra copia para Mault y necesita control operativo.
 
 Consulta GET con timeout por peticion, sin seguir redirecciones, y verifica
-origen y endpoint antes de enviar la clave a cada pagina. Espacia consultas
+origen y endpoint antes de enviar la clave a cada pagina. La instancia alojada
+devuelve enlaces /v1/cards; solo ese endpoint del mismo origen se reubica a
+/api/v1/cards conservando filtros, para completar lecturas mayores a 500 copias.
+Un cambio de coleccion o filtros entre paginas cancela el informe. Espacia consultas
 para respetar 60/minuto. Ante 401/403/429, HTML, error o paginacion invalida,
 falla sin imprimir respuesta remota ni presentar un resultado parcial.
 Limite defensivo 120 paginas: falla explicitamente si se excede.
@@ -53,5 +56,11 @@ Webhook firmado mas lectura incremental de respaldo; las bajas no aparecen en
 la lectura incremental documentada y requieren una politica explicita.
 No activar carga automatica ni importar el historico sin definir alcance y
 conciliar cartas ya ingresadas por CSV o manualmente. No hay despliegue.
+
+La lectura real autenticada y multipagina se verifico con configuracion privada,
+sin publicar registros, identificadores de cartas o credenciales. La elegibilidad
+contractual agrega reglas mas estrictas que este diagnostico basico. Ver
+MAULT_INTAKE_CONTRACT.md y packages/domain/src/mault-intake.ts. El contrato aun no
+es un consumidor activo ni una prueba de escritura idempotente en base de datos.
 
 Referencia oficial: https://github.com/maultxyz/mault/blob/master/docs/public-api.md

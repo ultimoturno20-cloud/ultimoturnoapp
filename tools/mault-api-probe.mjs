@@ -9,6 +9,16 @@ export function createMaultReader(config, { fetchImpl = fetch, pause = ms => new
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) throw new Error("La URL base debe ser HTTPS y no contener credenciales ni parametros.");
   if (!text(config.apiKey) || !config.apiKey.startsWith("mv_") || /\s/.test(config.apiKey)) throw new Error("Configura una clave Mault valida en apiKey.");
   const root = base.href.replace(/\/$/, "") + "/v1/";
+  function pageUrl(value, current, expectedPath) {
+    const target = new URL(value, current);
+    // Hosted Mault emits /v1 links although its reverse proxy serves /api/v1.
+    // Rebase only this exact same-origin endpoint; never forward the key elsewhere.
+    const publicPath = expectedPath.startsWith("/api/v1/") ? expectedPath.slice(4) : expectedPath;
+    if (target.origin !== base.origin || target.username || target.password || target.hash
+      || ![expectedPath, publicPath].includes(target.pathname)) throw new Error("Mault devolvio una pagina fuera del endpoint permitido.");
+    target.pathname = expectedPath;
+    return target;
+  }
   let requests = 0;
   async function get(url, expectedPath) {
     const target = new URL(url);
@@ -40,7 +50,13 @@ export function createMaultReader(config, { fetchImpl = fetch, pause = ms => new
       seen.add(url);
       const page = await get(url, first.pathname);
       data.push(...page.data);
-      url = page.has_more ? new URL(page.next_page, url).href : null;
+      if (page.has_more) {
+        const next = pageUrl(page.next_page, url, first.pathname);
+        for (const [key, value] of Object.entries(params)) {
+          if (value && next.searchParams.get(key) !== value) throw new Error("Mault cambio los filtros de paginacion; informe cancelado.");
+        }
+        url = next.href;
+      } else url = null;
     }
     return data;
   }
