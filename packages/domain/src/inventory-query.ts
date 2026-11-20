@@ -179,7 +179,7 @@ export function inventoryLanguageGroup(language: string): LanguageGroupFilter {
   if (["chinese", "simplified", "traditional", "taiwan"].some((token) => normalized.includes(token))) return "chinese";
   if (["zh", "cn", "chs", "cht", "china"].some((token) => tokens.has(token))) return "chinese";
   if (["japanese", "japan", "korean", "korea", "indonesia", "indonesian", "thai", "thailand", "vietnam", "asia"].some((token) => normalized.includes(token))) return "japanese";
-  if (["ja", "jp", "kr", "ko"].some((token) => tokens.has(token))) return "japanese";
+  if (["ja", "jp", "kr", "ko", "id", "th"].some((token) => tokens.has(token))) return "japanese";
   return "english";
 }
 

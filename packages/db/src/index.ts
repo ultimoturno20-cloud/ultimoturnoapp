@@ -14,6 +14,9 @@ export { listStoreCatalog, setStorefrontPublication } from "./storefront.js";
 export { getStoreSettings, saveStoreSettings, createStoreOrder, expireStoreOrders } from "./store-checkout.js";
 export { listOperationalHistory } from "./operational-history.js";
 export { listLotQuotes, getLotQuote, saveLotQuote } from "./lot-quotes.js";
+export { getMaultConnection, saveMaultConnection, claimMaultLease, releaseMaultLease, stageMaultPage, listMaultCopies,
+  recordMaultResolution, maultPolicyReasons, applyMaultCopies, requireMaultAdmin, listMaultQueue } from "./mault-intake.js";
+export type { MaultConnection } from "./mault-intake.js";
 export { searchInventoryIntakeCandidates } from "./inventory-intake-search.js";
 import { guardStoreOrder } from "./store-checkout.js";
 import { allocateClaimBuyerUnits, normalizeClaimBuyerKey } from "@ultimoturno/domain";
@@ -234,6 +237,7 @@ export const migrationFiles = ["0001_initial_stock_readonly.sql", "0002_operatio
 export const seedFiles = ["0001_demo_seed.sql", "0002_extended_demo_seed.sql"];
 
 migrationFiles.push("0063_lot_quotes.sql");
+migrationFiles.push("0064_mault_intake.sql");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -5211,7 +5215,7 @@ export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput,
       && (!input.location || same(item.location, input.location));
     const existing = stock.items.find((item) => identityMatches(item) && item.ownerUserId === ownerUserId);
     const template = existing || stock.items.find(identityMatches);
-    const existingNotes = existing ? await connection.query<{ notes: string }>("select notes from card_products where id = $1 and business_id = $2", [existing.product.id, actor.businessId]) : null;
+    const existingNotes = existing ? await connection.query<{ notes: string; image_url: string | null }>("select notes, image_url from card_products where id = $1 and business_id = $2", [existing.product.id, actor.businessId]) : null;
     return upsertInventoryItem(connection, {
       ...input,
       ownerUserId,
@@ -5224,6 +5228,7 @@ export async function addInventoryStock(db: PGlite, input: UpsertInventoryInput,
       location: input.location || existing?.location,
       intakeBatch: input.intakeBatch || existing?.intakeBatch,
       tags: input.tags || existing?.tags,
+      imageUrl: input.imageUrl === undefined ? existingNotes?.rows[0]?.image_url ?? undefined : input.imageUrl,
       notes: input.notes || existingNotes?.rows[0]?.notes || "",
       inventoryStatus: existing?.inventoryStatus || input.inventoryStatus,
       stockMovementReferenceType: "intake",

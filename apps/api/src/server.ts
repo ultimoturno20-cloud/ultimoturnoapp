@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { findExactTcgdexClaimImage, resolveClaimImage } from "./claim-image-resolver.js";
+import { maultService } from "./mault-integration.js";
 import {
   listStoreCatalog,
   setStorefrontPublication,
@@ -4248,6 +4249,23 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const user: AuthenticatedUser = sessionUser || { ...(await operationalUser()), roles: ["admin"] };
+
+    if (url.pathname.startsWith("/integrations/mault/")) {
+      if (!user.roles?.includes("admin")) throw Object.assign(new Error("Se requiere administrador."), { statusCode: 403 });
+      const source = process.env.MAULT_BUSINESS_ID === user.businessId && process.env.MAULT_API_KEY
+        ? { baseUrl: process.env.MAULT_API_URL || "https://mault.xyz/api", apiKey: process.env.MAULT_API_KEY } : null;
+      const service = maultService(db, user, source, { invalidate: () => stockReadCache.delete(user.businessId) });
+      const action = url.pathname.slice("/integrations/mault/".length);
+      if (action === "status" && request.method === "GET") { sendJson(response, 200, await service.status()); return; }
+      if (action === "collections" && request.method === "GET") { sendJson(response, 200, await service.collections()); return; }
+      if (action === "preview" && request.method === "GET") { sendJson(response, 200, await service.preview(Object.fromEntries(url.searchParams))); return; }
+      if (action === "config" && request.method === "PUT") { sendJson(response, 200, await service.configure(await readJson(request, 32768))); return; }
+      if (action === "run" && request.method === "POST") { sendJson(response, 200, await service.run()); return; }
+      if (action === "apply" && request.method === "POST") { sendJson(response, 200, await service.apply(await readJson(request, 8192))); return; }
+      if (action === "prepare" && request.method === "POST") { sendJson(response, 200, await service.prepareSelection(await readJson(request, 8192))); return; }
+      if (action === "verify-image" && request.method === "POST") { sendJson(response, 200, await service.verifyImage(await readJson(request, 8192))); return; }
+      sendJson(response, 404, { error: "Accion Mault no encontrada." }); return;
+    }
 
     if (["/stock", "/inventory/view", "/inventory/items", "/sales", "/order-boards"].includes(url.pathname) && request.method === "GET") {
       if (await expireStoreOrders(db, user.businessId)) stockReadCache.delete(user.businessId);
